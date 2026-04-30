@@ -38,6 +38,8 @@ import {
   Puzzle,
   ScrollText,
   Settings2,
+  Sparkles,
+  KeyRound,
   SquarePen,
   User,
 } from "lucide-react";
@@ -118,6 +120,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     { to: "/agents", icon: Bot, label: t.nav.agents },
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },
     { to: "/skills", icon: Puzzle, label: t.nav.skills },
+    { to: "/templates", icon: Sparkles, label: "模板中心" },
+    { to: "/activation", icon: KeyRound, label: "激活与设备" },
     { to: "/memory", icon: Brain, label: t.nav.memory },
     { to: "/logs", icon: ScrollText, label: t.nav.logs },
   ];
@@ -417,6 +421,18 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                 <Settings2 className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">{t.settings.title}</span>
               </DropdownMenuItem>
+
+              {isLoggedIn && (
+                <DropdownMenuItem
+                  asChild
+                  className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer"
+                >
+                  <NavLink to="/profile">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">个人中心</span>
+                  </NavLink>
+                </DropdownMenuItem>
+              )}
 
               <DropdownMenuItem
                 onClick={() =>

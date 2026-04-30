@@ -17,6 +17,8 @@ import { createAuthRoutes } from './auth.ts'
 import { createCreditRoutes } from './credit.ts'
 import { createProxyRoutes } from './proxy.ts'
 import { createRealtimeRoutes } from './realtime.ts'
+import { createCommercialRoutes } from './commercial.ts'
+import { createCommercialAuthRoutes } from './commercial-auth.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
 import type { MessageRouter, ChannelManager } from '../channel/index.ts'
@@ -76,9 +78,13 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createLogsRoutes())
   app.route('/api', createWebhooksRoutes(channelManager))
   app.route('/api', createSettingsRoutes())
+  // Commercial auth must mount BEFORE upstream auth to override POST /auth/login and GET /auth/user
+  app.route('/api', createCommercialAuthRoutes())
   app.route('/api', createAuthRoutes())
   app.route('/api', createCreditRoutes())
   app.route('/api', createProxyRoutes())
+  // Commercial isolation layer — device, templates, chat proxy
+  app.route('/api', createCommercialRoutes())
 
   return app
 }

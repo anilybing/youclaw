@@ -39,7 +39,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 data/
 
 # Agent workspaces（运行时从内置模板自动生成）
-agents/
+# agents/ removed for Tauri build - directory must be visible to resource glob
 
 # Playwright
 test-results/

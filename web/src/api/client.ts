@@ -1589,3 +1589,95 @@ export async function logoutChannel(id: string) {
     method: 'POST',
   })
 }
+
+// ===== Commercial API (MVP Cloud Service) =====
+
+export interface TemplateItem {
+  id: string
+  templateKey: string
+  templateName: string
+  category: string
+  description: string
+  creditCost: number
+  exampleInput: string
+}
+
+export interface TemplateDetail {
+  templateKey: string
+  templateName: string
+  description: string
+  creditCost: number
+  inputSchema: { fields: Array<{ key: string; label: string; placeholder: string; required: boolean; maxLength?: number }> }
+  outputType: string
+}
+
+export interface TemplateRunResult {
+  runId: string
+  runStatus: string
+  creditCost: number
+  outputContent: string
+  balanceAfter: number
+}
+
+export interface DeviceItem {
+  id: string
+  deviceName: string
+  osName: string
+  bindStatus: string
+  firstBoundAt: string
+  lastActiveAt: string
+  isCurrent: boolean
+}
+
+export interface ChatRunResult {
+  runId: string
+  runStatus: string
+  creditCost: number
+  outputContent: string
+  balanceAfter: number
+}
+
+export async function mvpLogin(params: { mobile?: string; email?: string; displayName?: string }) {
+  return apiFetch<{ token: string; user: AuthUser & { mobile?: string; activated?: boolean; availableCredit?: number } }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function getTemplateList(category?: string) {
+  const params = category ? `?category=${encodeURIComponent(category)}` : ''
+  return apiFetch<{ items: TemplateItem[] }>(`/api/templates/list${params}`)
+}
+
+export async function getTemplateDetail(templateKey: string) {
+  return apiFetch<TemplateDetail>(`/api/templates/detail?templateKey=${encodeURIComponent(templateKey)}`)
+}
+
+export async function runTemplate(params: { templateKey: string; inputPayload: Record<string, string>; deviceId: string }) {
+  return apiFetch<TemplateRunResult>('/api/templates/run', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function getTemplateRunDetail(runId: string) {
+  return apiFetch<any>(`/api/templates/run-detail?runId=${encodeURIComponent(runId)}`)
+}
+
+export async function getDeviceList() {
+  return apiFetch<{ items: DeviceItem[] }>('/api/device/list')
+}
+
+export async function unbindDevice(deviceId: string) {
+  return apiFetch<{ ok: boolean }>('/api/device/unbind', {
+    method: 'POST',
+    body: JSON.stringify({ deviceId }),
+  })
+}
+
+export async function runChat(params: { message: string; deviceId: string }) {
+  return apiFetch<ChatRunResult>('/api/chat/run', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}

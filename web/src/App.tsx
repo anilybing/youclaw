@@ -9,6 +9,9 @@ import { Logs } from './pages/Logs'
 import { Skills } from './pages/Skills'
 import { Login } from './pages/Login'
 import { EnvSetup } from './pages/EnvSetup'
+import { Templates } from './pages/commercial/Templates'
+import { Activation } from './pages/commercial/Activation'
+import { Profile } from './pages/commercial/Profile'
 import { PortConflictDialog } from './components/PortConflictDialog'
 import { AppToaster } from './components/AppToaster'
 import { CloseConfirmDialog } from './components/CloseConfirmDialog'
@@ -308,6 +311,9 @@ export default function App() {
           <Route path="/skills" element={<Skills />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="/activation" element={<Activation />} />
+          <Route path="/profile" element={<Profile />} />
         </Route>
         <Route path="*" element={<Navigate to={canPass ? "/" : "/login"} replace />} />
       </Routes>

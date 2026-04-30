@@ -14,13 +14,13 @@ export function getAuthToken(): string | null {
 }
 
 // Save token to kv_state
-function saveAuthToken(token: string): void {
+export function saveAuthToken(token: string): void {
   const db = getDatabase()
   db.run("INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)", [AUTH_TOKEN_KEY, token])
 }
 
 // Clear token
-function clearAuthToken(): void {
+export function clearAuthToken(): void {
   const db = getDatabase()
   db.run("DELETE FROM kv_state WHERE key = ?", [AUTH_TOKEN_KEY])
 }

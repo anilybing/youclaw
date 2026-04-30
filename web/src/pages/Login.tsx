@@ -1,19 +1,29 @@
 import { useEffect, useState } from "react"
 import { useI18n } from "@/i18n"
 import { useAppRuntimeStore } from "@/stores/app"
-import { LogIn, Loader2, Calendar, MessageSquare, ShieldCheck, Settings2 } from "lucide-react"
+import { mvpLogin } from "@/api/client"
+import { LogIn, Loader2, Calendar, MessageSquare, ShieldCheck, Settings2, Phone, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isTauri } from "@/api/transport"
 import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog"
+import { notify } from "@/stores/app-runtime"
 import logoUrl from "@/assets/logo.png"
 
 const LOGIN_SETTINGS_TABS: SettingsTab[] = ["general", "models", "environment", "about"]
 
 export function Login() {
   const { t } = useI18n()
-  const { authLoading, login } = useAppRuntimeStore()
+  const { authLoading, fetchUser, fetchCreditBalance } = useAppRuntimeStore()
   const [version, setVersion] = useState("")
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [loginMethod, setLoginMethod] = useState<"mobile" | "email">("mobile")
+  const [mobile, setMobile] = useState("")
+  const [email, setEmail] = useState("")
+  const [displayName, setDisplayName] = useState("")
+  const [loginInProgress, setLoginInProgress] = useState(false)
 
   useEffect(() => {
     if (!isTauri) return
@@ -21,6 +31,40 @@ export function Login() {
       invoke<string>("get_version").then((v) => setVersion("v" + v))
     })
   }, [])
+
+  async function handleLogin() {
+    setLoginInProgress(true)
+    try {
+      const params: { mobile?: string; email?: string; displayName?: string } = {}
+      if (loginMethod === "mobile") {
+        if (!mobile.trim()) {
+          notify.error("请输入手机号")
+          return
+        }
+        params.mobile = mobile.trim()
+      } else {
+        if (!email.trim()) {
+          notify.error("请输入邮箱")
+          return
+        }
+        params.email = email.trim()
+      }
+      if (displayName.trim()) {
+        params.displayName = displayName.trim()
+      }
+
+      await mvpLogin(params)
+      await fetchUser()
+      await fetchCreditBalance()
+      notify.success("登录成功")
+    } catch (err: any) {
+      notify.error(err.message || "登录失败")
+    } finally {
+      setLoginInProgress(false)
+    }
+  }
+
+  const isLoading = authLoading || loginInProgress
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
@@ -99,34 +143,76 @@ export function Login() {
           </div>
 
           <div className="w-full max-w-sm space-y-6">
-            <div className="text-center">
-              <p className="text-muted-foreground mb-8 text-sm">
-                {t.account.loginHint}
-              </p>
+            <Tabs value={loginMethod} onValueChange={(v: string) => setLoginMethod(v as "mobile" | "email")}>
+              <TabsList className="w-full">
+                <TabsTrigger value="mobile" className="flex-1 gap-1.5">
+                  <Phone className="h-3.5 w-3.5" />
+                  手机号
+                </TabsTrigger>
+                <TabsTrigger value="email" className="flex-1 gap-1.5">
+                  <Mail className="h-3.5 w-3.5" />
+                  邮箱
+                </TabsTrigger>
+              </TabsList>
 
-              <Button
-                size="lg"
-                onClick={() => login()}
-                disabled={authLoading}
-                className="w-full gap-2 py-6 text-sm font-semibold rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all duration-200"
-              >
-                {authLoading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    {t.account.loggingIn}
-                  </>
-                ) : (
-                  <>
-                    <LogIn size={18} />
-                    {t.login.continueLogin}
-                  </>
-                )}
-              </Button>
+              <TabsContent value="mobile" className="space-y-4 mt-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="mobile">手机号</Label>
+                  <Input
+                    id="mobile"
+                    placeholder="请输入手机号"
+                    value={mobile}
+                    onChange={(e) => setMobile(e.target.value)}
+                  />
+                </div>
+              </TabsContent>
 
-              <p className="mt-4 text-xs text-muted-foreground">
-                {t.login.redirectHint}
-              </p>
+              <TabsContent value="email" className="space-y-4 mt-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">邮箱</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="请输入邮箱地址"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="displayName">昵称（选填）</Label>
+              <Input
+                id="displayName"
+                placeholder="给自己取个名字"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
             </div>
+
+            <Button
+              size="lg"
+              onClick={handleLogin}
+              disabled={isLoading}
+              className="w-full gap-2 py-6 text-sm font-semibold rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all duration-200"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  {t.account.loggingIn}
+                </>
+              ) : (
+                <>
+                  <LogIn size={18} />
+                  登录 / 注册
+                </>
+              )}
+            </Button>
+
+            <p className="text-center text-xs text-muted-foreground">
+              首次登录将自动创建账号
+            </p>
 
             <div className="pt-6 border-t border-border/50 text-center">
               <Button
