@@ -94,14 +94,14 @@ export default function App() {
 
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
     const normalizeDeepLink = (rawUrl: string) => {
-      const start = rawUrl.indexOf('youclaw://')
+      const start = rawUrl.indexOf('XiaoJuClaw://')
       if (start === -1) return null
       const normalized = rawUrl
         .slice(start)
         .trim()
         .replace(/^['"]+/, '')
         .replace(/['"]+$/, '')
-      return normalized.startsWith('youclaw://') ? normalized : null
+      return normalized.startsWith('XiaoJuClaw://') ? normalized : null
     }
 
     const persistAuthTokenWithRetry = async (token: string) => {
@@ -155,7 +155,7 @@ export default function App() {
         return
       }
 
-      if (url.protocol !== 'youclaw:') {
+      if (url.protocol !== 'XiaoJuClaw:') {
         void logAuthClientEvent('warn', 'Ignoring deep link with unexpected protocol', {
           rawUrl: sanitizedUrl,
           protocol: url.protocol,
@@ -285,7 +285,7 @@ export default function App() {
     void initializeDeepLinks()
     // Intentionally avoid replaying plugin `getCurrent()` URLs here.
     // In Tauri, that value can survive a webview refresh and re-deliver the
-    // last `youclaw://auth/callback?...` URL, which would silently restore a
+    // last `XiaoJuClaw://auth/callback?...` URL, which would silently restore a
     // logged-out session after the user reloads the page.
 
     return () => {
