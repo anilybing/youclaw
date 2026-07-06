@@ -1,5 +1,5 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog"
 import { GeneralPanel } from "./GeneralPanel"
 import { MarketplacePanel } from "./MarketplacePanel"
@@ -50,6 +50,13 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
   const defaultTab = initialTab && tabs.some((tab) => tab.id === initialTab) ? initialTab : fallbackTab
   const [currentTab, setCurrentTab] = useState<Tab>(defaultTab)
   const activeTab = tabs.some((tab) => tab.id === currentTab) ? currentTab : fallbackTab
+
+  // 应用内导航（如账户面板跳激活页）时自动关闭设置弹窗
+  useEffect(() => {
+    const onNavigate = () => onOpenChange(false)
+    window.addEventListener('xjc:navigate', onNavigate)
+    return () => window.removeEventListener('xjc:navigate', onNavigate)
+  }, [onOpenChange])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

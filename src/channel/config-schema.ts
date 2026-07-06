@@ -4,8 +4,10 @@ import { BUILD_CONSTANTS } from '../config/build-constants.ts'
 
 // ===== Config schema for each channel type =====
 
-const WEBSITE_URL = (BUILD_CONSTANTS['XiaoJuClaw_WEBSITE_URL'] || 'https://XiaoJuClaw.dev').replace(/\/+$/, '')
-const DOCS_BASE_URL = `${WEBSITE_URL}/docs/channels`
+const WEBSITE_URL = (BUILD_CONSTANTS['XiaoJuClaw_WEBSITE_URL'] || 'https://www.xiaojuclaw.top').replace(/\/+$/, '')
+// [XJC] 渠道文档统一指向官网教程页（MVP 无 /docs/* 路径，避免落到管理后台）；
+// 用 hash 区分渠道，教程页可按需锚点定位。
+const DOCS_BASE_URL = `${WEBSITE_URL}/site/tutorials.html#channel`
 
 export const TelegramConfigSchema = z.object({
   botToken: z.string().min(1),
@@ -129,10 +131,10 @@ export const CHANNEL_TYPE_REGISTRY: Record<string, ChannelTypeInfo> = {
   'wechat-oa': {
     type: 'wechat-oa',
     label: 'WeChat Official Account',
-    description: 'WeChat Official Account via ReadmeX Bridge (Long Polling)',
+    description: 'WeChat Official Account bridge (Long Polling)',
     chatIdPrefix: 'wxoa:',
     configFields: [],
-    docsUrl: 'https://readmex.com',
+    docsUrl: `${DOCS_BASE_URL}/wechat-oa`,
     configSchema: WechatOAConfigSchema,
   },
   'wechat-personal': {

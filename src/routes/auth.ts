@@ -37,18 +37,10 @@ export function createAuthRoutes() {
     })
   })
 
-  // GET /auth/login — Return login URL (frontend opens in browser)
+  // GET /auth/login — [XJC] 商业版禁用：外跳云端登录页会落到管理后台，
+  // 登录一律走应用内 /login 页（commercial-auth 手机号/邮箱登录）。
   app.get('/auth/login', (c) => {
-    const websiteUrl = getEnv().XiaoJuClaw_WEBSITE_URL
-    if (!websiteUrl) {
-      return c.json({ error: 'Cloud service not configured' }, 501)
-    }
-    const platform = c.req.query('platform')
-    const redirectUri = platform === 'tauri'
-      ? 'XiaoJuClaw://auth/callback'
-      : `http://${c.req.header('host') || `localhost:${getEnv().PORT}`}/api/auth/callback`
-    const loginUrl = `${websiteUrl}/login?redirect_uri=${encodeURIComponent(redirectUri)}&app_name=XiaoJuClaw`
-    return c.json({ loginUrl })
+    return c.json({ error: 'disabled in commercial build', errorCode: 'FEATURE_DISABLED' }, 410)
   })
 
   // GET /auth/callback — Receive token from website callback
@@ -153,18 +145,10 @@ export function createAuthRoutes() {
     return c.json({ ok: true })
   })
 
-  // GET /auth/pay-url — Return payment page URL
+  // GET /auth/pay-url — [XJC] 商业版禁用：外跳云端支付页会落到管理后台，
+  // 充值一律走应用内「激活与设备」页兑换激活码。
   app.get('/auth/pay-url', (c) => {
-    const websiteUrl = getEnv().XiaoJuClaw_WEBSITE_URL
-    if (!websiteUrl) {
-      return c.json({ error: 'Cloud service not configured' }, 501)
-    }
-    const platform = c.req.query('platform')
-    const redirectUri = platform === 'tauri'
-      ? 'XiaoJuClaw://pay/callback'
-      : `http://${c.req.header('host') || `localhost:${getEnv().PORT}`}/api/auth/pay-callback`
-    const payUrl = `${websiteUrl}/pay?redirect_uri=${encodeURIComponent(redirectUri)}`
-    return c.json({ payUrl })
+    return c.json({ error: 'disabled in commercial build', errorCode: 'FEATURE_DISABLED' }, 410)
   })
 
   // GET /auth/pay-callback — Receive payment success callback

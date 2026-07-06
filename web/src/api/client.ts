@@ -1243,10 +1243,8 @@ export async function getCloudStatus() {
   return apiFetch<{ enabled: boolean }>('/api/auth/cloud-status')
 }
 
-export async function getAuthLoginUrl(platform?: string) {
-  const params = platform ? `?platform=${platform}` : ''
-  return apiFetch<{ loginUrl: string }>(`/api/auth/login${params}`)
-}
+// [XJC] 云端 OAuth 外跳登录已移除（商业版只用应用内登录页），
+// 对应 Sidecar 路由 /api/auth/login 已禁用（410）。
 
 export async function getAuthUser() {
   return apiFetch<AuthUser>('/api/auth/user')
@@ -1260,10 +1258,8 @@ export async function getAuthStatus() {
   return apiFetch<{ loggedIn: boolean }>('/api/auth/status')
 }
 
-export async function getPayUrl(platform?: string) {
-  const params = platform ? `?platform=${platform}` : ''
-  return apiFetch<{ payUrl: string }>(`/api/auth/pay-url${params}`)
-}
+// [XJC] 云端支付页外跳已移除（充值 = 应用内激活码兑换），
+// 对应 Sidecar 路由 /api/auth/pay-url 已禁用（410）。
 
 export async function saveAuthToken(token: string) {
   return apiFetch<{ ok: boolean }>('/api/auth/save-token', {

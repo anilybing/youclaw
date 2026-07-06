@@ -4,12 +4,10 @@ import {
   ActiveModelProvider,
   checkEnv,
   authLogout,
-  getAuthLoginUrl,
   getAuthStatus,
   getAuthUser,
   getCloudStatus,
   getCreditBalance,
-  getPayUrl,
   getRegistrySources,
   getSettings,
   updateProfile as apiUpdateProfile,
@@ -19,7 +17,7 @@ import {
   type RegistrySelectableSource,
   type RegistrySourceInfo,
 } from '@/api/client'
-import { getPortableDiskSpace, isTauri, openExternal } from '@/api/transport'
+import { getPortableDiskSpace, isTauri } from '@/api/transport'
 import { resolvePreferredRegistrySource } from '@/lib/registry-source'
 import { getErrorMessage, logAuthClientEvent } from '@/lib/auth-debug'
 import { applyThemeToDOM } from '@/hooks/useTheme'
@@ -151,28 +149,12 @@ export const notify = Object.assign(
   },
 ) as NotifyFn
 
-async function ensureWindowsDeepLinkRegistration(): Promise<void> {
-  if (!isTauri || !navigator.userAgent.includes('Windows')) return
-
-  try {
-    await logAuthClientEvent('info', 'Checking Windows deep-link registration', {
-      platform: 'windows',
-      scheme: 'XiaoJuClaw',
-    })
-    const { register } = await import('@tauri-apps/plugin-deep-link')
-    // Always re-register to ensure the registry points to the current exe,
-    // not a stale path from a previous installation or dev build.
-    await register('XiaoJuClaw')
-    await logAuthClientEvent('info', 'Windows deep-link protocol registered', {
-      scheme: 'XiaoJuClaw',
-    })
-  } catch (err) {
-    await logAuthClientEvent('error', 'Failed to verify/register Windows deep-link protocol', {
-      error: getErrorMessage(err),
-      scheme: 'XiaoJuClaw',
-    })
-    console.error('Failed to verify/register deep-link protocol:', err)
-  }
+// 商业版应用内导航：store 无路由上下文，通过 history API + popstate 驱动
+// react-router；同时广播事件让打开中的弹窗（如设置）自行关闭。
+function navigateInApp(path: string): void {
+  window.dispatchEvent(new CustomEvent('xjc:navigate', { detail: { path } }))
+  window.history.pushState({}, '', path)
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 function formatBytes(bytes: number): string {
@@ -286,67 +268,10 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
   },
 
   login: async () => {
-    try {
-      set({ authLoading: true })
-      await logAuthClientEvent('info', 'Login flow started', {
-        isTauri,
-        isWindows: navigator.userAgent.includes('Windows'),
-      })
-
-      const startPolling = () => {
-        clearAuthPolling()
-        void logAuthClientEvent('info', 'Started login status polling', {
-          timeoutMs: 120000,
-          intervalMs: 2000,
-        })
-        authPollInterval = setInterval(async () => {
-          try {
-            const { loggedIn } = await getAuthStatus()
-            if (loggedIn) {
-              clearAuthPolling()
-              void logAuthClientEvent('info', 'Login status polling detected authenticated session')
-              await get().fetchUser()
-              await get().fetchCreditBalance()
-              set({ authLoading: false })
-            }
-          } catch {
-            // Continue polling
-          }
-        }, 2000)
-        authPollTimeout = setTimeout(() => {
-          clearAuthPolling()
-          void logAuthClientEvent('warn', 'Login status polling timed out', {
-            timeoutMs: 120000,
-          })
-          set({ authLoading: false })
-        }, 120000)
-      }
-
-      if (isTauri) {
-        await ensureWindowsDeepLinkRegistration()
-        const { loginUrl } = await getAuthLoginUrl('tauri')
-        await logAuthClientEvent('info', 'Opening external login URL for desktop auth', {
-          platform: 'tauri',
-          loginUrl,
-        })
-        await openExternal(loginUrl)
-        startPolling()
-      } else {
-        const { loginUrl } = await getAuthLoginUrl()
-        await logAuthClientEvent('info', 'Opening external login URL for web auth', {
-          platform: 'web',
-          loginUrl,
-        })
-        await openExternal(loginUrl)
-        startPolling()
-      }
-    } catch (err) {
-      await logAuthClientEvent('error', 'Login flow failed before browser redirect', {
-        error: getErrorMessage(err),
-      })
-      console.error('Login failed:', err)
-      set({ authLoading: false })
-    }
+    // 商业版：仅保留应用内登录页（手机号/邮箱），外跳云端 OAuth 已移除，
+    // 防止任何指向管理后台的浏览器跳转。
+    void logAuthClientEvent('info', 'Login redirected to in-app login page')
+    navigateInApp('/login')
   },
 
   logout: async () => {
@@ -375,32 +300,8 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
   },
 
   openPayPage: async () => {
-    try {
-      if (isTauri) {
-        const { payUrl } = await getPayUrl('tauri')
-        await openExternal(payUrl)
-      } else {
-        const { payUrl } = await getPayUrl()
-        await openExternal(payUrl)
-      }
-
-      const oldBalance = get().creditBalance
-      const pollInterval = setInterval(async () => {
-        try {
-          const { balance } = await getCreditBalance()
-          if (balance !== oldBalance) {
-            clearInterval(pollInterval)
-            set({ creditBalance: balance })
-          }
-        } catch {
-          // Continue polling
-        }
-      }, 3000)
-
-      setTimeout(() => clearInterval(pollInterval), 120000)
-    } catch (err) {
-      console.error('Open pay page failed:', err)
-    }
+    // 商业版：充值 = 应用内「激活与设备」页兑换激活码，不打开任何外部网页
+    navigateInApp('/activation')
   },
 
   hydrate: async () => {

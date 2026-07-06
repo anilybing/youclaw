@@ -749,7 +749,7 @@ export const en = {
     credits: 'Credits',
     creditBalance: 'Credit Balance',
     transactions: 'Transaction History',
-    topUp: 'Top Up',
+    topUp: 'Redeem Code',
     notLoggedIn: 'Not logged in',
     loginSuccess: 'Login successful',
     loggingIn: 'Waiting for login...',
@@ -789,9 +789,9 @@ export const en = {
   },
   insufficientCredits: {
     title: 'Insufficient Credits',
-    description: 'Your credit balance is insufficient to complete this request. Please top up to continue using the service.',
+    description: 'Your credit balance is insufficient to complete this request. Please redeem an activation code to continue.',
     currentBalance: 'Current balance: ',
-    topUp: 'Top Up Now',
+    topUp: 'Redeem Activation Code',
   },
   browser: {
     title: 'Browser Profiles',

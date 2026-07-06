@@ -751,7 +751,7 @@ export const zh: Translations = {
     credits: '积分',
     creditBalance: '积分余额',
     transactions: '积分流水',
-    topUp: '充值',
+    topUp: '兑换激活码',
     notLoggedIn: '未登录',
     loginSuccess: '登录成功',
     loggingIn: '等待登录中...',
@@ -791,9 +791,9 @@ export const zh: Translations = {
   },
   insufficientCredits: {
     title: '积分不足',
-    description: '您的积分余额不足，无法完成本次请求。请充值后继续使用。',
+    description: '您的积分余额不足，无法完成本次请求。请兑换激活码补充积分后继续使用。',
     currentBalance: '当前余额：',
-    topUp: '立即充值',
+    topUp: '去兑换激活码',
   },
   browser: {
     title: '浏览器 Profile',
