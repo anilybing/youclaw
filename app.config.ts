@@ -1,5 +1,5 @@
 /**
- * YouClaw Application Configuration
+ * XiaoJuClaw Application Configuration
  *
  * Single source of truth for all app-level constants.
  * Both backend (src/) and frontend (web/src/) import from this file.
@@ -7,8 +7,8 @@
 
 const appConfig = {
   // ── App Info ──
-  name: 'YouClaw',
-  identifier: 'com.youclaw.app',
+  name: 'XiaoJuClaw',
+  identifier: 'com.XiaoJuClaw.app',
   github: 'https://github.com/CodePhiliaX/youClaw',
   supportEmail: 'support@chat2db-ai.com',
 
@@ -18,7 +18,7 @@ const appConfig = {
   defaultModel: 'minimax/MiniMax-M2.7-highspeed',
   defaultLogLevel: 'info' as const,
 
-  // ── CDN ──
+  // ── CDN ──  https://cdn.chat2db-ai.com/youclaw/tools/git/Git-2.53.0.2-64-bit.exe.zip
   cdnBase: 'https://cdn.chat2db-ai.com/youclaw',
   toolsCdnBase: 'https://cdn.chat2db-ai.com/youclaw/tools',
 

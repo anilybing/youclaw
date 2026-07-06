@@ -5,7 +5,7 @@ argument-hint: "[beta]"
 
 # Release Command
 
-Create a new YouClaw release (stable or beta) with auto-generated changelog.
+Create a new XiaoJuClaw release (stable or beta) with auto-generated changelog.
 
 ## Arguments
 
@@ -106,7 +106,7 @@ Ask for explicit confirmation before proceeding. This is a destructive operation
 
 ```bash
 # Create annotated tag
-git tag -a vX.Y.Z -m "YouClaw vX.Y.Z
+git tag -a vX.Y.Z -m "XiaoJuClaw vX.Y.Z
 
 CHANGELOG_CONTENT_HERE"
 
@@ -128,12 +128,12 @@ for i in $(seq 1 18); do
 done
 
 # Update release notes
-gh release edit vX.Y.Z --title "YouClaw vX.Y.Z" --notes "CHANGELOG_CONTENT"
+gh release edit vX.Y.Z --title "XiaoJuClaw vX.Y.Z" --notes "CHANGELOG_CONTENT"
 ```
 
 ## Step 7: Report
 
 Print:
-- ✅ Release URL: `https://github.com/CodePhiliaX/youclaw/releases/tag/vX.Y.Z`
+- ✅ Release URL: `https://github.com/CodePhiliaX/XiaoJuClaw/releases/tag/vX.Y.Z`
 - CI builds are in progress — artifacts will appear when complete
 - For stable releases: OSS upload and updater manifest will be generated after builds complete

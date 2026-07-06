@@ -1,7 +1,7 @@
 let pollTimer = null
 
 const DEBUGGER_PROTOCOL_VERSION = '1.3'
-const SNAPSHOT_REF_ATTRIBUTE = 'data-youclaw-ref'
+const SNAPSHOT_REF_ATTRIBUTE = 'data-XiaoJuClaw-ref'
 const RESTRICTED_URL_PREFIXES = [
   'chrome://',
   'edge://',
@@ -711,7 +711,7 @@ function ensurePolling() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('YouClaw Main Browser Bridge installed')
+  console.log('XiaoJuClaw Main Browser Bridge installed')
   ensurePolling()
 })
 
@@ -803,6 +803,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.debugger.onDetach.addListener((source) => {
   void getBridgeState().then((state) => {
     if (!state.tabId || String(source.tabId) !== String(state.tabId)) return
-    console.warn('YouClaw debugger detached from the bridge tab', source.tabId)
+    console.warn('XiaoJuClaw debugger detached from the bridge tab', source.tabId)
   })
 })

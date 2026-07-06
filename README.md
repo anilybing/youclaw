@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="web/src/assets/logo.png" width="120" alt="YouClaw Logo" />
+  <img src="web/src/assets/logo.png" width="120" alt="XiaoJuClaw Logo" />
 </p>
 
-<h1 align="center">YouClaw</h1>
+<h1 align="center">XiaoJuClaw</h1>
 
 <p align="center">
   <strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a> | <a href="./README.ja.md">日本語</a>
@@ -20,18 +20,18 @@
 </p>
 
 <p align="center">
-  <strong>If YouClaw is useful to you, give it a GitHub Star.</strong><br />
+  <strong>If XiaoJuClaw is useful to you, give it a GitHub Star.</strong><br />
   More stars help more people discover the project.
 </p>
 
 <p align="center">
   <a href="https://github.com/CodePhiliaX/youClaw/stargazers">
-    <img src="https://img.shields.io/github/stars/CodePhiliaX/youClaw?style=for-the-badge&logo=github&color=ffcb47&label=Star%20YouClaw" alt="Star YouClaw on GitHub" />
+    <img src="https://img.shields.io/github/stars/CodePhiliaX/youClaw?style=for-the-badge&logo=github&color=ffcb47&label=Star%20XiaoJuClaw" alt="Star XiaoJuClaw on GitHub" />
   </a>
 </p>
 
 <p align="center">
-  <sub>One click helps keep YouClaw improving.</sub>
+  <sub>One click helps keep XiaoJuClaw improving.</sub>
 </p>
 
 ---
@@ -40,7 +40,7 @@
 
 ### macOS
 
-Download the `.dmg` file from the [Releases](https://github.com/CodePhiliaX/youClaw/releases) page, open it and drag **YouClaw** into Applications.
+Download the `.dmg` file from the [Releases](https://github.com/CodePhiliaX/youClaw/releases) page, open it and drag **XiaoJuClaw** into Applications.
 
 > Apple Silicon (M1/M2/M3/M4) and Intel are both supported.
 
@@ -68,7 +68,7 @@ Download the `.exe` installer from [Releases](https://github.com/CodePhiliaX/you
 
 ## Browser Profiles
 
-YouClaw supports three browser profile drivers:
+XiaoJuClaw supports three browser profile drivers:
 
 - `Managed Chromium` — recommended for most users
 - `Remote CDP` — for existing advanced automation setups
@@ -123,12 +123,12 @@ Detailed guide:
 
 <p align="center">
   <a href="https://github.com/CodePhiliaX/youClaw/stargazers">
-    <img src="https://img.shields.io/badge/Star%20YouClaw%20before%20you%20start-Support%20the%20project-ffcb47?style=for-the-badge&logo=github&logoColor=black" alt="Star YouClaw before you start" />
+    <img src="https://img.shields.io/badge/Star%20XiaoJuClaw%20before%20you%20start-Support%20the%20project-ffcb47?style=for-the-badge&logo=github&logoColor=black" alt="Star XiaoJuClaw before you start" />
   </a>
 </p>
 
 <p align="center">
-  <strong>Before Quick Start: Star if you want to see YouClaw keep improving.</strong><br />
+  <strong>Before Quick Start: Star if you want to see XiaoJuClaw keep improving.</strong><br />
   It is a small click that makes the project easier to sustain.
 </p>
 
@@ -206,7 +206,7 @@ bun test:e2e:ui      # Run E2E tests with UI
 | `MODEL_API_KEY` | Yes | — | Model API key |
 | `MODEL_BASE_URL` | No | — | Custom model API base URL |
 | `PORT` | No | `62601` | Backend server port |
-| `DATA_DIR` | No | `./data` in dev, `~/.youclaw` in desktop production | Data storage directory. For dev, set `DATA_DIR=~/.youclaw-dev` if you want an isolated user-home data dir |
+| `DATA_DIR` | No | `./data` in dev, `~/.XiaoJuClaw` in desktop production | Data storage directory. For dev, set `DATA_DIR=~/.XiaoJuClaw-dev` if you want an isolated user-home data dir |
 | `LOG_LEVEL` | No | `info` | Log level |
 | `TELEGRAM_BOT_TOKEN` | No | — | Enable Telegram channel |
 | `DINGTALK_CLIENT_ID` | No | — | DingTalk app client ID |
@@ -220,8 +220,8 @@ bun test:e2e:ui      # Run E2E tests with UI
 | `WECOM_AGENT_ID` | No | — | WeCom agent ID |
 | `WECOM_TOKEN` | No | — | WeCom callback token |
 | `WECOM_ENCODING_AES_KEY` | No | — | WeCom callback AES key |
-| `YOUCLAW_WEBSITE_URL` | No | — | Cloud service website URL |
-| `YOUCLAW_API_URL` | No | — | Cloud service API URL |
+| `XiaoJuClaw_WEBSITE_URL` | No | — | Cloud service website URL |
+| `XiaoJuClaw_API_URL` | No | — | Cloud service API URL |
 | `MINIMAX_API_KEY` | No | — | MiniMax web search API key |
 | `MINIMAX_API_HOST` | No | — | MiniMax API host |
 

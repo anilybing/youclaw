@@ -1,14 +1,14 @@
 # 浏览器 Profile 说明
 
-浏览器 Profile 用来让 YouClaw 在不同聊天和 Agent 运行之间复用浏览器状态。它可以保存登录态、Cookie、标签页和运行时元数据，避免浏览器工具每次都从空白状态开始。
+浏览器 Profile 用来让 XiaoJuClaw 在不同聊天和 Agent 运行之间复用浏览器状态。它可以保存登录态、Cookie、标签页和运行时元数据，避免浏览器工具每次都从空白状态开始。
 
 当前项目支持三种浏览器 Profile 驱动：
 
 | 驱动 | 适合场景 | 工作方式 | 建议 |
 | --- | --- | --- | --- |
-| `managed` | 大多数用户 | YouClaw 自己启动并管理一个隔离的 Chromium Profile | 默认推荐 |
-| `remote-cdp` | 高级用户 / 远程环境 | YouClaw 连接一个已经存在的 CDP 端点 | 仅在你本来就有自动化环境时使用 |
-| `extension-relay` | 高级本机附着场景 | YouClaw 通过 relay token 安全附着到本机 loopback CDP 端点 | 保留为高级选项 |
+| `managed` | 大多数用户 | XiaoJuClaw 自己启动并管理一个隔离的 Chromium Profile | 默认推荐 |
+| `remote-cdp` | 高级用户 / 远程环境 | XiaoJuClaw 连接一个已经存在的 CDP 端点 | 仅在你本来就有自动化环境时使用 |
+| `extension-relay` | 高级本机附着场景 | XiaoJuClaw 通过 relay token 安全附着到本机 loopback CDP 端点 | 保留为高级选项 |
 
 ## 我应该选哪个驱动？
 
@@ -16,7 +16,7 @@
 
 如果你想要最简单、最稳妥的方式，就用 `Managed Chromium`。
 
-- 浏览器由 YouClaw 负责启动
+- 浏览器由 XiaoJuClaw 负责启动
 - 登录状态保存在应用管理的 Profile 数据目录里
 - 对需要手动登录、验证码、2FA 的网站最友好
 - 和你日常使用的主浏览器相互隔离
@@ -54,9 +54,9 @@
 
 它现在能做的事情：
 
-- 在 YouClaw 中生成一个 relay token
+- 在 XiaoJuClaw 中生成一个 relay token
 - 只接受本机 loopback CDP URL，例如 `http://127.0.0.1:9222`
-- 让 YouClaw 附着到你自己先启动好的、本机浏览器会话
+- 让 XiaoJuClaw 附着到你自己先启动好的、本机浏览器会话
 
 它现在**还不能**做的事情：
 
@@ -72,14 +72,14 @@
 
 1. 先手动启动一个开启了 remote debugging 的本机 Chrome / Chromium
 2. 确认 loopback CDP 端点可访问
-3. 在 YouClaw 里创建一个 `Extension Relay` Profile
+3. 在 XiaoJuClaw 里创建一个 `Extension Relay` Profile
 4. 复制这个 Profile 展示出来的 relay token
 5. 把 loopback CDP URL 填进去并执行 attach
-6. 之后让 YouClaw 复用这个浏览器会话
+6. 之后让 XiaoJuClaw 复用这个浏览器会话
 
 ### 为什么一定要有 CDP？
 
-当前 relay 的底层是通过 Chrome DevTools Protocol（CDP）控制浏览器。如果浏览器没有暴露 CDP 端点，YouClaw 就没有可附着的入口。
+当前 relay 的底层是通过 Chrome DevTools Protocol（CDP）控制浏览器。如果浏览器没有暴露 CDP 端点，XiaoJuClaw 就没有可附着的入口。
 
 这意味着：
 
@@ -97,7 +97,7 @@ Google Chrome：
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 Chromium：
@@ -105,7 +105,7 @@ Chromium：
 ```bash
 "/Applications/Chromium.app/Contents/MacOS/Chromium" \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 ### Linux
@@ -113,7 +113,7 @@ Chromium：
 ```bash
 google-chrome \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 或者：
@@ -121,7 +121,7 @@ google-chrome \
 ```bash
 chromium \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 ### Windows
@@ -129,7 +129,7 @@ chromium \
 ```powershell
 & "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" `
   --remote-debugging-port=9222 `
-  --user-data-dir="$env:TEMP\youclaw-cdp"
+  --user-data-dir="$env:TEMP\XiaoJuClaw-cdp"
 ```
 
 ### 如何验证
@@ -142,7 +142,7 @@ http://127.0.0.1:9222/json/version
 
 如果一切正常，你会看到一段 JSON，其中包含 `webSocketDebuggerUrl`。
 
-之后在 YouClaw 里可以填写两种形式之一：
+之后在 XiaoJuClaw 里可以填写两种形式之一：
 
 - `http://127.0.0.1:9222`
 - 或者 `webSocketDebuggerUrl` 对应的完整 `ws://127.0.0.1:9222/devtools/browser/...`
@@ -178,4 +178,4 @@ http://127.0.0.1:9222/json/version
 
 ### 那为什么还要保留 Extension Relay？
 
-因为在某些高级本机场景下，你确实会想复用一个已经运行中的浏览器会话，而不是让 YouClaw 另起一个隔离 managed Profile。
+因为在某些高级本机场景下，你确实会想复用一个已经运行中的浏览器会话，而不是让 XiaoJuClaw 另起一个隔离 managed Profile。

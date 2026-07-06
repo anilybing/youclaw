@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="web/src/assets/logo.png" width="120" alt="YouClaw Logo" />
+  <img src="web/src/assets/logo.png" width="120" alt="XiaoJuClaw Logo" />
 </p>
 
-<h1 align="center">YouClaw</h1>
+<h1 align="center">XiaoJuClaw</h1>
 
 <p align="center">
   <a href="./README.md">English</a> | <a href="./README.zh-CN.md">简体中文</a> | <strong>日本語</strong>
@@ -20,18 +20,18 @@
 </p>
 
 <p align="center">
-  <strong>YouClaw が役に立ったら、GitHub Star で応援してください。</strong><br />
-  Star が増えるほど、YouClaw を見つける人が増え、今後の開発の後押しになります。
+  <strong>XiaoJuClaw が役に立ったら、GitHub Star で応援してください。</strong><br />
+  Star が増えるほど、XiaoJuClaw を見つける人が増え、今後の開発の後押しになります。
 </p>
 
 <p align="center">
   <a href="https://github.com/CodePhiliaX/youClaw/stargazers">
-    <img src="https://img.shields.io/github/stars/CodePhiliaX/youClaw?style=for-the-badge&logo=github&color=ffcb47&label=Star%20YouClaw" alt="Star YouClaw on GitHub" />
+    <img src="https://img.shields.io/github/stars/CodePhiliaX/youClaw?style=for-the-badge&logo=github&color=ffcb47&label=Star%20XiaoJuClaw" alt="Star XiaoJuClaw on GitHub" />
   </a>
 </p>
 
 <p align="center">
-  <sub>小さなクリックが、YouClaw の継続的な改善につながります。</sub>
+  <sub>小さなクリックが、XiaoJuClaw の継続的な改善につながります。</sub>
 </p>
 
 ---
@@ -40,7 +40,7 @@
 
 ### macOS
 
-[Releases](https://github.com/CodePhiliaX/youClaw/releases) ページから `.dmg` ファイルをダウンロードし、開いて **YouClaw** を Applications にドラッグしてください。
+[Releases](https://github.com/CodePhiliaX/youClaw/releases) ページから `.dmg` ファイルをダウンロードし、開いて **XiaoJuClaw** を Applications にドラッグしてください。
 
 > Apple Silicon（M1/M2/M3/M4）と Intel の両方に対応しています。
 
@@ -115,7 +115,7 @@
 </p>
 
 <p align="center">
-  <strong>始める前に: YouClaw の継続的な改善を応援するなら、ぜひ Star をお願いします。</strong><br />
+  <strong>始める前に: XiaoJuClaw の継続的な改善を応援するなら、ぜひ Star をお願いします。</strong><br />
   小さなクリックですが、プロジェクトの継続に大きく効きます。
 </p>
 
@@ -193,7 +193,7 @@ bun test:e2e:ui      # UI 付きで E2E テストを実行
 | `MODEL_API_KEY` | はい | — | モデル API key |
 | `MODEL_BASE_URL` | いいえ | — | カスタムモデル API Base URL |
 | `PORT` | いいえ | `62601` | バックエンドサーバーポート |
-| `DATA_DIR` | いいえ | 開発時は `./data`、デスクトップ本番では `~/.youclaw` | データ保存ディレクトリ。開発でユーザーホーム配下に分けたい場合は `DATA_DIR=~/.youclaw-dev` を明示設定してください |
+| `DATA_DIR` | いいえ | 開発時は `./data`、デスクトップ本番では `~/.XiaoJuClaw` | データ保存ディレクトリ。開発でユーザーホーム配下に分けたい場合は `DATA_DIR=~/.XiaoJuClaw-dev` を明示設定してください |
 | `LOG_LEVEL` | いいえ | `info` | ログレベル |
 | `TELEGRAM_BOT_TOKEN` | いいえ | — | Telegram チャネルを有効化 |
 | `DINGTALK_CLIENT_ID` | いいえ | — | DingTalk アプリ Client ID |
@@ -207,8 +207,8 @@ bun test:e2e:ui      # UI 付きで E2E テストを実行
 | `WECOM_AGENT_ID` | いいえ | — | WeCom Agent ID |
 | `WECOM_TOKEN` | いいえ | — | WeCom コールバック Token |
 | `WECOM_ENCODING_AES_KEY` | いいえ | — | WeCom コールバック AES Key |
-| `YOUCLAW_WEBSITE_URL` | いいえ | — | クラウドサービスの Web サイト URL |
-| `YOUCLAW_API_URL` | いいえ | — | クラウドサービスの API URL |
+| `XiaoJuClaw_WEBSITE_URL` | いいえ | — | クラウドサービスの Web サイト URL |
+| `XiaoJuClaw_API_URL` | いいえ | — | クラウドサービスの API URL |
 | `MINIMAX_API_KEY` | いいえ | — | MiniMax Web Search API key |
 | `MINIMAX_API_HOST` | いいえ | — | MiniMax API Host |
 

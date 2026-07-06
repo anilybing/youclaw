@@ -25,16 +25,16 @@ function humanizeBridgeError(error) {
   const message = error instanceof Error ? error.message : String(error)
   const normalized = message.toLowerCase()
   if (normalized.includes('pairing code expired')) {
-    return 'The pairing code expired. Generate a new pairing code in YouClaw and try again.'
+    return 'The pairing code expired. Generate a new pairing code in XiaoJuClaw and try again.'
   }
   if (normalized.includes('invalid pairing code')) {
-    return 'The pairing code is invalid. Copy the latest code from YouClaw and try again.'
+    return 'The pairing code is invalid. Copy the latest code from XiaoJuClaw and try again.'
   }
   if (normalized.includes('invalid browser extension session token') || normalized.includes('browser extension session not found')) {
-    return 'This browser bridge session is no longer valid. Generate a new pairing code in YouClaw to pair again.'
+    return 'This browser bridge session is no longer valid. Generate a new pairing code in XiaoJuClaw to pair again.'
   }
   if (normalized.includes('failed to fetch') || normalized.includes('networkerror')) {
-    return 'Cannot reach the YouClaw backend. Check the backend URL and make sure the app is running.'
+    return 'Cannot reach the XiaoJuClaw backend. Check the backend URL and make sure the app is running.'
   }
   return message
 }
@@ -150,7 +150,7 @@ async function refreshUi() {
 
   if (activeTabId && attachedTabId === activeTabId) {
     connectButton.textContent = 'Reconnect Current Tab'
-    setStatus('Current tab is connected to YouClaw.')
+    setStatus('Current tab is connected to XiaoJuClaw.')
     return
   }
 
@@ -296,7 +296,7 @@ connectButton.addEventListener('click', async () => {
   try {
     await saveDefaults()
     await connectCurrentTab()
-    setStatus('Current tab connected to YouClaw.')
+    setStatus('Current tab connected to XiaoJuClaw.')
     await refreshUi()
   } catch (error) {
     setStatus(humanizeBridgeError(error), true)
@@ -312,7 +312,7 @@ disconnectButton.addEventListener('click', async () => {
   setStatus('Disconnecting current tab...')
   try {
     await disconnectCurrentTab()
-    setStatus('Current tab disconnected from YouClaw.')
+    setStatus('Current tab disconnected from XiaoJuClaw.')
     await refreshUi()
   } catch (error) {
     setStatus(humanizeBridgeError(error), true)

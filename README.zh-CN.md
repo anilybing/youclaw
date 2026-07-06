@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="web/src/assets/logo.png" width="120" alt="YouClaw Logo" />
+  <img src="web/src/assets/logo.png" width="120" alt="XiaoJuClaw Logo" />
 </p>
 
-<h1 align="center">YouClaw</h1>
+<h1 align="center">XiaoJuClaw</h1>
 
 <p align="center">
   <a href="./README.md">English</a> | <strong>简体中文</strong> | <a href="./README.ja.md">日本語</a>
@@ -20,13 +20,13 @@
 </p>
 
 <p align="center">
-  <strong>如果 YouClaw 对你有帮助，欢迎点一个 Star。</strong><br />
-  每一个 Star 都会帮助更多人发现 YouClaw，也会直接支持项目后续迭代。
+  <strong>如果 XiaoJuClaw 对你有帮助，欢迎点一个 Star。</strong><br />
+  每一个 Star 都会帮助更多人发现 XiaoJuClaw，也会直接支持项目后续迭代。
 </p>
 
 <p align="center">
   <a href="https://github.com/CodePhiliaX/youClaw/stargazers">
-    <img src="https://img.shields.io/github/stars/CodePhiliaX/youClaw?style=for-the-badge&logo=github&color=ffcb47&label=Star%20YouClaw" alt="Star YouClaw" />
+    <img src="https://img.shields.io/github/stars/CodePhiliaX/youClaw?style=for-the-badge&logo=github&color=ffcb47&label=Star%20XiaoJuClaw" alt="Star XiaoJuClaw" />
   </a>
 </p>
 
@@ -40,7 +40,7 @@
 
 ### macOS
 
-从 [Releases](https://github.com/CodePhiliaX/youClaw/releases) 页面下载 `.dmg` 文件，打开后将 **YouClaw** 拖入 Applications。
+从 [Releases](https://github.com/CodePhiliaX/youClaw/releases) 页面下载 `.dmg` 文件，打开后将 **XiaoJuClaw** 拖入 Applications。
 
 > 同时支持 Apple Silicon（M1/M2/M3/M4）和 Intel。
 
@@ -68,7 +68,7 @@
 
 ## 浏览器 Profile
 
-YouClaw 当前支持三种浏览器 Profile 驱动：
+XiaoJuClaw 当前支持三种浏览器 Profile 驱动：
 
 - `Managed Chromium`：适合大多数用户，默认推荐
 - `Remote CDP`：适合已经有自动化环境的高级用法
@@ -128,7 +128,7 @@ YouClaw 当前支持三种浏览器 Profile 驱动：
 </p>
 
 <p align="center">
-  <strong>开始之前：如果你希望 YouClaw 持续更新，欢迎先点个 Star。</strong><br />
+  <strong>开始之前：如果你希望 XiaoJuClaw 持续更新，欢迎先点个 Star。</strong><br />
   这是支持项目继续演进最直接的一种方式。
 </p>
 
@@ -206,7 +206,7 @@ bun test:e2e:ui      # 以 UI 模式运行 E2E 测试
 | `MODEL_API_KEY` | 是 | — | 模型 API key |
 | `MODEL_BASE_URL` | 否 | — | 自定义模型 API Base URL |
 | `PORT` | 否 | `62601` | 后端服务端口 |
-| `DATA_DIR` | 否 | 开发环境 `./data`，桌面生产环境 `~/.youclaw` | 数据存储目录。开发时如果希望放到用户目录，建议显式设置 `DATA_DIR=~/.youclaw-dev` |
+| `DATA_DIR` | 否 | 开发环境 `./data`，桌面生产环境 `~/.XiaoJuClaw` | 数据存储目录。开发时如果希望放到用户目录，建议显式设置 `DATA_DIR=~/.XiaoJuClaw-dev` |
 | `LOG_LEVEL` | 否 | `info` | 日志级别 |
 | `TELEGRAM_BOT_TOKEN` | 否 | — | 启用 Telegram 渠道 |
 | `DINGTALK_CLIENT_ID` | 否 | — | 钉钉应用 Client ID |
@@ -220,8 +220,8 @@ bun test:e2e:ui      # 以 UI 模式运行 E2E 测试
 | `WECOM_AGENT_ID` | 否 | — | 企业微信 Agent ID |
 | `WECOM_TOKEN` | 否 | — | 企业微信回调 Token |
 | `WECOM_ENCODING_AES_KEY` | 否 | — | 企业微信回调 AES Key |
-| `YOUCLAW_WEBSITE_URL` | 否 | — | 云服务网站地址 |
-| `YOUCLAW_API_URL` | 否 | — | 云服务 API 地址 |
+| `XiaoJuClaw_WEBSITE_URL` | 否 | — | 云服务网站地址 |
+| `XiaoJuClaw_API_URL` | 否 | — | 云服务 API 地址 |
 | `MINIMAX_API_KEY` | 否 | — | MiniMax Web Search API key |
 | `MINIMAX_API_HOST` | 否 | — | MiniMax API Host |
 

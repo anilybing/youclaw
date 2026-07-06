@@ -1,14 +1,14 @@
 # Browser Profiles
 
-Browser profiles let YouClaw reuse browser state across chats and agent runs. A profile can store login sessions, cookies, open tabs, and runtime metadata so the browser tools do not need to start from a blank state every time.
+Browser profiles let XiaoJuClaw reuse browser state across chats and agent runs. A profile can store login sessions, cookies, open tabs, and runtime metadata so the browser tools do not need to start from a blank state every time.
 
 This project currently supports three browser profile drivers:
 
 | Driver | Best for | How it works | Recommendation |
 | --- | --- | --- | --- |
-| `managed` | Most users | YouClaw launches and manages an isolated Chromium profile | Recommended default |
-| `remote-cdp` | Advanced users / remote environments | YouClaw connects to an already-available CDP endpoint | Use only if you already have a browser automation setup |
-| `extension-relay` | Advanced local attach flow | YouClaw securely attaches to a loopback CDP endpoint on the same machine with a relay token | Keep as an advanced option |
+| `managed` | Most users | XiaoJuClaw launches and manages an isolated Chromium profile | Recommended default |
+| `remote-cdp` | Advanced users / remote environments | XiaoJuClaw connects to an already-available CDP endpoint | Use only if you already have a browser automation setup |
+| `extension-relay` | Advanced local attach flow | XiaoJuClaw securely attaches to a loopback CDP endpoint on the same machine with a relay token | Keep as an advanced option |
 
 ## Which driver should I choose?
 
@@ -16,7 +16,7 @@ This project currently supports three browser profile drivers:
 
 Use `Managed Chromium` if you want the simplest and safest setup.
 
-- YouClaw starts the browser for you.
+- XiaoJuClaw starts the browser for you.
 - Login state is stored in the profile data directory managed by the app.
 - This is the easiest option for websites that need manual login, CAPTCHA handling, or 2FA.
 - It keeps browser state isolated from your everyday browser profile.
@@ -37,7 +37,7 @@ Examples:
 
 - A browser started by your own automation scripts
 - A browser running on another machine that exposes a trusted CDP URL
-- A containerized environment where browser lifecycle is managed outside YouClaw
+- A containerized environment where browser lifecycle is managed outside XiaoJuClaw
 
 Tradeoffs:
 
@@ -54,9 +54,9 @@ Important: in the current implementation, this is **not yet** a zero-config brow
 
 What it does today:
 
-- Generates a relay token inside YouClaw
+- Generates a relay token inside XiaoJuClaw
 - Accepts only loopback CDP URLs such as `http://127.0.0.1:9222`
-- Lets YouClaw attach to a browser you started yourself on the same machine
+- Lets XiaoJuClaw attach to a browser you started yourself on the same machine
 
 What it does **not** do today:
 
@@ -72,14 +72,14 @@ The current flow is:
 
 1. Start a local Chrome / Chromium instance with remote debugging enabled
 2. Verify that a loopback CDP endpoint is reachable
-3. Create an `Extension Relay` profile in YouClaw
+3. Create an `Extension Relay` profile in XiaoJuClaw
 4. Copy the relay token shown in the profile
 5. Paste the loopback CDP URL into the profile and attach
-6. Let YouClaw reuse that browser session
+6. Let XiaoJuClaw reuse that browser session
 
 ### Why does it need CDP?
 
-The current relay implementation talks to the browser through the Chrome DevTools Protocol (CDP). If the browser does not expose a CDP endpoint, YouClaw has nothing to attach to.
+The current relay implementation talks to the browser through the Chrome DevTools Protocol (CDP). If the browser does not expose a CDP endpoint, XiaoJuClaw has nothing to attach to.
 
 That means:
 
@@ -97,7 +97,7 @@ Google Chrome:
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 Chromium:
@@ -105,7 +105,7 @@ Chromium:
 ```bash
 "/Applications/Chromium.app/Contents/MacOS/Chromium" \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 ### Linux
@@ -113,7 +113,7 @@ Chromium:
 ```bash
 google-chrome \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 or:
@@ -121,7 +121,7 @@ or:
 ```bash
 chromium \
   --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/youclaw-cdp
+  --user-data-dir=/tmp/XiaoJuClaw-cdp
 ```
 
 ### Windows
@@ -129,7 +129,7 @@ chromium \
 ```powershell
 & "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" `
   --remote-debugging-port=9222 `
-  --user-data-dir="$env:TEMP\youclaw-cdp"
+  --user-data-dir="$env:TEMP\XiaoJuClaw-cdp"
 ```
 
 ### Verify the endpoint
@@ -178,4 +178,4 @@ Only if that browser already exposes a loopback CDP endpoint. A normal browser p
 
 ### Why would I still use Extension Relay?
 
-Use it when you want to reuse an already-running local browser session instead of letting YouClaw launch a separate managed profile.
+Use it when you want to reuse an already-running local browser session instead of letting XiaoJuClaw launch a separate managed profile.
