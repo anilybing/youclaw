@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 // Remove CLAUDECODE env var to prevent inherited Claude-specific session detection
 delete process.env.CLAUDECODE
 

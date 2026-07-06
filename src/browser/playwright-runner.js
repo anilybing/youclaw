@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { stdin, stdout, stderr, exit } from 'node:process'
 import { chromium } from 'playwright-core'
 

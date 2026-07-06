@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useState, useEffect, useCallback } from 'react'
 import { useI18n } from '@/i18n'
 import { useAppPreferencesStore, type CloseAction } from '@/stores/app'

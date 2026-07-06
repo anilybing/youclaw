@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { createStateStorage } from '@/lib/storage'

@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { Bot } from 'grammy'
 import { getLogger } from '../logger/index.ts'
 import type { Channel, InboundMessage, OnInboundMessage } from './types.ts'

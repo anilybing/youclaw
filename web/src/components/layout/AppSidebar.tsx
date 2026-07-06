@@ -1,4 +1,5 @@
-﻿import { openExternal } from "@/api/transport";
+﻿// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+import { openExternal } from "@/api/transport";
 import {
   AlertDialog,
   AlertDialogAction,

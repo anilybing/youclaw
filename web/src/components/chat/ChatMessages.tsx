@@ -1,4 +1,5 @@
-﻿import { useEffect } from 'react'
+﻿// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+import { useEffect } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {

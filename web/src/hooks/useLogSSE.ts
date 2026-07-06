@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useEffect, useRef } from 'react'
 import { getBaseUrlSync } from '@/api/transport'
 import type { LogEntry } from '@/api/client'

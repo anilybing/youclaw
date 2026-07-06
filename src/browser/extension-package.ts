@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve, relative } from 'node:path'
 import { zipSync } from 'fflate'

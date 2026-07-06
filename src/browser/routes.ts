@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { Hono } from 'hono'
 import { z } from 'zod/v4'
 import type { AgentManager } from '../agent/index.ts'

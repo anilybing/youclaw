@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { getBackendBaseUrl, getPortableSetting, isTauri, savePortableSetting } from './transport'
 import type { Attachment } from '../types/attachment'
 import { ApiError } from '../lib/api-error'

@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { getDatabase } from '../db/index.ts'
 import { getEnv } from '../config/index.ts'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'

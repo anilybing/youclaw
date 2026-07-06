@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 /**
  * Built-in default agent template constants
  * Automatically written to agents/default/ on first startup

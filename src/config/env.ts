@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { z } from 'zod/v4'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'

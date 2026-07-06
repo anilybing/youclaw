@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 // Unified storage layer: Tauri -> Store (settings.json), Web -> localStorage
 
 import type { StateStorage } from 'zustand/middleware'

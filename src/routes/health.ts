@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { Hono } from 'hono'
 import { existsSync, mkdirSync, chmodSync, writeFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'

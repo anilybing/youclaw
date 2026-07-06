@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 export type BrowserDriver = 'managed' | 'remote-cdp' | 'extension-relay'
 export type BrowserTarget = 'host' | 'sandbox'
 export type BrowserRefAction = 'click' | 'type' | 'select' | 'check' | 'uncheck'

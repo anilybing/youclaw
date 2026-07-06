@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react'
 import { getLogDates, getLogEntries } from '../api/client'

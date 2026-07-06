@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { type ReactNode, useState, useEffect } from 'react'
 import { AppSidebar } from './AppSidebar'
 import { ChatProvider } from '@/hooks/useChatContext'

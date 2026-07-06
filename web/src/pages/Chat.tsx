@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
