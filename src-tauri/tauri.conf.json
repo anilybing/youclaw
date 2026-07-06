@@ -1,19 +1,19 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "YouClaw",
+  "productName": "XiaoJuClaw",
   "version": "1.0.0",
-  "identifier": "com.youclaw.app",
+  "identifier": "com.xiaojuclaw.app",
   "build": {
-    "beforeDevCommand": "cd web && bun run dev & bun run src/index.ts & wait",
+    "beforeDevCommand": "bun run dev:tauri:services",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "cd web && bun run build",
+    "beforeBuildCommand": "bun run build:web",
     "frontendDist": "../web/dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "You Claw",
+        "title": "XiaoJuClaw",
         "width": 1400,
         "height": 900,
         "minWidth": 800,
@@ -40,9 +40,9 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true,
-    "targets": "all",
+    "targets": ["nsis", "msi"],
     "externalBin": [
-      "bin/youclaw-server"
+      "bin/XiaoJuClaw-server"
     ],
     "resources": [
       "../agents/**/*",
@@ -67,13 +67,13 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["youclaw"]
+        "schemes": ["xiaojuclaw"]
       }
     },
     "updater": {
       "endpoints": [
         "https://UPDATER_ENDPOINT_PLACEHOLDER/releases/latest.json",
-        "https://github.com/CodePhiliaX/youClaw/releases/latest/download/latest.json"
+        "https://github.com/CodePhiliaX/XiaoJuClaw/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGNkVEQjU0NTk0REM5MQpSV1NSM0pSRnRlMzJBdWtwUm1oWjdxVjZmS2xHTG1PMHRBZ1l3bThUaXhPZFo4VldBdEpya1U3cwo="
     }

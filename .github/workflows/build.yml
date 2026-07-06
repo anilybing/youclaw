@@ -92,23 +92,23 @@ jobs:
 
       - name: Build sidecar
         env:
-          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
-          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
-          YOUCLAW_BUILTIN_API_URL: ${{ secrets.YOUCLAW_BUILTIN_API_URL }}
-          YOUCLAW_BUILTIN_AUTH_TOKEN: ${{ secrets.YOUCLAW_BUILTIN_AUTH_TOKEN }}
+          XiaoJuClaw_WEBSITE_URL: ${{ secrets.XiaoJuClaw_WEBSITE_URL }}
+          XiaoJuClaw_API_URL: ${{ secrets.XiaoJuClaw_API_URL }}
+          XiaoJuClaw_BUILTIN_API_URL: ${{ secrets.XiaoJuClaw_BUILTIN_API_URL }}
+          XiaoJuClaw_BUILTIN_AUTH_TOKEN: ${{ secrets.XiaoJuClaw_BUILTIN_AUTH_TOKEN }}
         run: |
           mkdir -p src-tauri/bin
           node -e "
             const e = process.env;
             const c = {};
-            for (const k of ['YOUCLAW_WEBSITE_URL','YOUCLAW_API_URL','YOUCLAW_BUILTIN_API_URL','YOUCLAW_BUILTIN_AUTH_TOKEN']) {
+            for (const k of ['XiaoJuClaw_WEBSITE_URL','XiaoJuClaw_API_URL','XiaoJuClaw_BUILTIN_API_URL','XiaoJuClaw_BUILTIN_AUTH_TOKEN']) {
               if (e[k]) c[k] = e[k];
             }
             require('fs').writeFileSync('src/config/build-constants.ts',
               'export const BUILD_CONSTANTS: Record<string, string> = ' + JSON.stringify(c, null, 2) + '\n');
             console.log('build-constants.ts:', Object.keys(c));
           "
-          bun build --compile --target=${{ matrix.bun_target }} src/index.ts --outfile src-tauri/bin/youclaw-server-${{ matrix.sidecar_suffix }}
+          bun build --compile --target=${{ matrix.bun_target }} src/index.ts --outfile src-tauri/bin/XiaoJuClaw-server-${{ matrix.sidecar_suffix }}
 
       - name: Import macOS certificates
         uses: apple-actions/import-codesign-certs@v3
@@ -169,23 +169,23 @@ jobs:
       - name: Build sidecar
         shell: bash
         env:
-          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
-          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
-          YOUCLAW_BUILTIN_API_URL: ${{ secrets.YOUCLAW_BUILTIN_API_URL }}
-          YOUCLAW_BUILTIN_AUTH_TOKEN: ${{ secrets.YOUCLAW_BUILTIN_AUTH_TOKEN }}
+          XiaoJuClaw_WEBSITE_URL: ${{ secrets.XiaoJuClaw_WEBSITE_URL }}
+          XiaoJuClaw_API_URL: ${{ secrets.XiaoJuClaw_API_URL }}
+          XiaoJuClaw_BUILTIN_API_URL: ${{ secrets.XiaoJuClaw_BUILTIN_API_URL }}
+          XiaoJuClaw_BUILTIN_AUTH_TOKEN: ${{ secrets.XiaoJuClaw_BUILTIN_AUTH_TOKEN }}
         run: |
           mkdir -p src-tauri/bin
           node -e "
             const e = process.env;
             const c = {};
-            for (const k of ['YOUCLAW_WEBSITE_URL','YOUCLAW_API_URL','YOUCLAW_BUILTIN_API_URL','YOUCLAW_BUILTIN_AUTH_TOKEN']) {
+            for (const k of ['XiaoJuClaw_WEBSITE_URL','XiaoJuClaw_API_URL','XiaoJuClaw_BUILTIN_API_URL','XiaoJuClaw_BUILTIN_AUTH_TOKEN']) {
               if (e[k]) c[k] = e[k];
             }
             require('fs').writeFileSync('src/config/build-constants.ts',
               'export const BUILD_CONSTANTS: Record<string, string> = ' + JSON.stringify(c, null, 2) + '\n');
             console.log('build-constants.ts:', Object.keys(c));
           "
-          bun build --compile --target=bun-windows-x64 src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-pc-windows-msvc.exe
+          bun build --compile --target=bun-windows-x64 src/index.ts --outfile src-tauri/bin/XiaoJuClaw-server-x86_64-pc-windows-msvc.exe
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -332,23 +332,23 @@ jobs:
 
       - name: Build sidecar
         env:
-          YOUCLAW_WEBSITE_URL: ${{ secrets.YOUCLAW_WEBSITE_URL }}
-          YOUCLAW_API_URL: ${{ secrets.YOUCLAW_API_URL }}
-          YOUCLAW_BUILTIN_API_URL: ${{ secrets.YOUCLAW_BUILTIN_API_URL }}
-          YOUCLAW_BUILTIN_AUTH_TOKEN: ${{ secrets.YOUCLAW_BUILTIN_AUTH_TOKEN }}
+          XiaoJuClaw_WEBSITE_URL: ${{ secrets.XiaoJuClaw_WEBSITE_URL }}
+          XiaoJuClaw_API_URL: ${{ secrets.XiaoJuClaw_API_URL }}
+          XiaoJuClaw_BUILTIN_API_URL: ${{ secrets.XiaoJuClaw_BUILTIN_API_URL }}
+          XiaoJuClaw_BUILTIN_AUTH_TOKEN: ${{ secrets.XiaoJuClaw_BUILTIN_AUTH_TOKEN }}
         run: |
           mkdir -p src-tauri/bin
           node -e "
             const e = process.env;
             const c = {};
-            for (const k of ['YOUCLAW_WEBSITE_URL','YOUCLAW_API_URL','YOUCLAW_BUILTIN_API_URL','YOUCLAW_BUILTIN_AUTH_TOKEN']) {
+            for (const k of ['XiaoJuClaw_WEBSITE_URL','XiaoJuClaw_API_URL','XiaoJuClaw_BUILTIN_API_URL','XiaoJuClaw_BUILTIN_AUTH_TOKEN']) {
               if (e[k]) c[k] = e[k];
             }
             require('fs').writeFileSync('src/config/build-constants.ts',
               'export const BUILD_CONSTANTS: Record<string, string> = ' + JSON.stringify(c, null, 2) + '\n');
             console.log('build-constants.ts:', Object.keys(c));
           "
-          bun build --compile --target=bun-linux-x64 src/index.ts --outfile src-tauri/bin/youclaw-server-x86_64-unknown-linux-gnu
+          bun build --compile --target=bun-linux-x64 src/index.ts --outfile src-tauri/bin/XiaoJuClaw-server-x86_64-unknown-linux-gnu
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -415,7 +415,7 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          OSS_BASE="oss://${OSS_BUCKET}/youclaw/releases/${TAG}"
+          OSS_BASE="oss://${OSS_BUCKET}/XiaoJuClaw/releases/${TAG}"
           CDN_BASE="${CDN_BASE_URL}/releases/${TAG}"
 
           mkdir -p assets
@@ -440,7 +440,7 @@ jobs:
             # Strip version from filename for stable download link
             if [ "$IS_BETA" = "false" ]; then
               LATEST_NAME=$(echo "$NAME" | sed "s/_${VERSION}//")
-              ossutil cp "$f" "oss://${OSS_BUCKET}/youclaw/releases/latest/${LATEST_NAME}" -f
+              ossutil cp "$f" "oss://${OSS_BUCKET}/XiaoJuClaw/releases/latest/${LATEST_NAME}" -f
             fi
           done
 
@@ -514,7 +514,7 @@ jobs:
           ossutil cp latest.json "${OSS_BASE}/latest.json" -f
           if [ "$IS_BETA" = "false" ]; then
             # Stable: overwrite the fixed updater endpoint and GitHub Release fallback
-            ossutil cp latest.json "oss://${OSS_BUCKET}/youclaw/releases/latest.json" -f
+            ossutil cp latest.json "oss://${OSS_BUCKET}/XiaoJuClaw/releases/latest.json" -f
             gh release upload "$TAG" latest.json -R "$REPO" --clobber
           else
             echo "Beta release — skipping latest.json promotion to stable endpoint"

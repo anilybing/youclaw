@@ -15,9 +15,24 @@ export default defineConfig([
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
+    linterOptions: {
+      reportUnusedDisableDirectives: false,
+    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      'react-refresh/only-export-components': ['error', {
+        allowConstantExport: true,
+        allowExportNames: [
+          'usePromptInputController',
+          'useProviderAttachments',
+          'usePromptInputAttachments',
+          'LocalReferencedSourcesContext',
+          'usePromptInputReferencedSources',
+        ],
+      }],
     },
   },
 ])

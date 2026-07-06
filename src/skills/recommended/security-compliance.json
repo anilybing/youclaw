@@ -33,18 +33,6 @@
     ]
   },
   {
-    "slug": "google-workspace-admin",
-    "displayName": "Google Workspace Admin",
-    "summary": "Google Workspace Admin SDK integration with managed OAuth.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "google"
-    ]
-  },
-  {
     "slug": "security-auditor",
     "displayName": "Security Auditor",
     "summary": "Audit code and auth flows for common web vulnerabilities and OWASP-class issues.",
@@ -196,18 +184,6 @@
       "review",
       "compliance",
       "verified"
-    ]
-  },
-  {
-    "slug": "clawsec",
-    "displayName": "ClawSec",
-    "summary": "Manage and operate ClawSec Monitor v3.0, a MITM HTTP/HTTPS proxy that logs AI agent traffic, detects exfiltration and injection.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "clawsec"
     ]
   },
   {

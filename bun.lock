@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "youclaw",
+      "name": "XiaoJuClaw",
       "dependencies": {
         "@cedrugs/pdf-parse": "^1.0.0",
         "@larksuiteoapi/node-sdk": "^1.59.0",

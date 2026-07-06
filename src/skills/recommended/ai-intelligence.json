@@ -159,18 +159,6 @@
     ]
   },
   {
-    "slug": "agent-memory",
-    "displayName": "Agent Memory",
-    "summary": "Persistent memory for AI agents to store facts, learn from actions, recall information, and track entities across sessions.",
-    "category": "ai-intelligence",
-    "tags": [
-      "memory",
-      "agent",
-      "automation",
-      "assistant"
-    ]
-  },
-  {
     "slug": "deep-research-pro",
     "displayName": "Deep Research Pro",
     "summary": "Multi-source deep research agent.",

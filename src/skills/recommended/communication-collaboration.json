@@ -45,18 +45,6 @@
     ]
   },
   {
-    "slug": "discord",
-    "displayName": "Discord",
-    "summary": "Use when you need to control Discord from Clawdbot via the discord tool: send messages, react, post or upload stickers, upload emojis,.",
-    "category": "communication-collaboration",
-    "tags": [
-      "search",
-      "web",
-      "chat",
-      "communication"
-    ]
-  },
-  {
     "slug": "outlook-api",
     "displayName": "Outlook",
     "summary": "Read, send, and manage Outlook mail, folders, calendar events, and contacts via Microsoft Graph.",
@@ -65,30 +53,6 @@
       "integrations",
       "microsoft",
       "email"
-    ]
-  },
-  {
-    "slug": "whatsapp-business",
-    "displayName": "WhatsApp Business",
-    "summary": "WhatsApp Business API integration with managed OAuth.",
-    "category": "communication-collaboration",
-    "tags": [
-      "chat",
-      "communication",
-      "messaging",
-      "collaboration"
-    ]
-  },
-  {
-    "slug": "x-twitter",
-    "displayName": "x-twitter",
-    "summary": "Interact with Twitter/X — read tweets, search, post, like, retweet, and manage your timeline.",
-    "category": "communication-collaboration",
-    "tags": [
-      "search",
-      "web",
-      "chat",
-      "communication"
     ]
   },
   {

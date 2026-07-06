@@ -22,7 +22,7 @@ async function fetchWithRetry(url: string): Promise<Response> {
     const response = await fetch(url, {
       headers: {
         Accept: 'application/json,application/zip,*/*',
-        'User-Agent': 'youclaw-recommended-validator',
+        'User-Agent': 'XiaoJuClaw-recommended-validator',
       },
     })
 

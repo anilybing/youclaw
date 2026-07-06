@@ -9,7 +9,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -17,12 +17,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 const binDir = resolve(root, 'src-tauri', 'bin')
 
+function loadDotEnvForBuild() {
+  let content = ''
+  try {
+    content = readFileSync(resolve(root, '.env'), 'utf-8')
+  } catch {
+    return
+  }
+
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+
+    const eqIndex = line.indexOf('=')
+    if (eqIndex === -1) continue
+
+    const key = line.slice(0, eqIndex).trim()
+    let value = line.slice(eqIndex + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (key && value && !process.env[key]) {
+      process.env[key] = value
+    }
+  }
+}
+
 // Bun compile target -> Tauri sidecar filename mapping
 const targets = {
-  'bun-darwin-arm64': 'youclaw-server-aarch64-apple-darwin',
-  'bun-darwin-x64': 'youclaw-server-x86_64-apple-darwin',
-  'bun-linux-x64-baseline': 'youclaw-server-x86_64-unknown-linux-gnu',
-  'bun-windows-x64-baseline': 'youclaw-server-x86_64-pc-windows-msvc.exe',
+  'bun-darwin-arm64': 'XiaoJuClaw-server-aarch64-apple-darwin',
+  'bun-darwin-x64': 'XiaoJuClaw-server-x86_64-apple-darwin',
+  'bun-linux-x64-baseline': 'XiaoJuClaw-server-x86_64-unknown-linux-gnu',
+  'bun-windows-x64-baseline': 'XiaoJuClaw-server-x86_64-pc-windows-msvc.exe',
 }
 
 // Detect current platform target
@@ -38,12 +64,17 @@ function getCurrentTarget() {
 
 // Generate build-constants.ts from env vars, compiled into sidecar
 function generateBuildConstants() {
-  const envKeys = ['YOUCLAW_WEBSITE_URL', 'YOUCLAW_API_URL', 'YOUCLAW_BUILTIN_API_URL', 'YOUCLAW_BUILTIN_AUTH_TOKEN']
+  const envPairs = [
+    ['XiaoJuClaw_WEBSITE_URL', 'YOUCLAW_WEBSITE_URL'],
+    ['XiaoJuClaw_API_URL', 'YOUCLAW_API_URL'],
+    ['XiaoJuClaw_BUILTIN_API_URL', 'YOUCLAW_BUILTIN_API_URL'],
+    ['XiaoJuClaw_BUILTIN_AUTH_TOKEN', 'YOUCLAW_BUILTIN_AUTH_TOKEN'],
+  ]
   const entries = {}
-  for (const key of envKeys) {
-    const val = process.env[key]
+  for (const [currentKey, legacyKey] of envPairs) {
+    const val = process.env[currentKey] || process.env[legacyKey]
     if (val) {
-      entries[key] = val
+      entries[currentKey] = val
     }
   }
 
@@ -66,6 +97,15 @@ function build(bunTarget, outName) {
     )
     console.log(`  Done: ${outPath}`)
   } catch (err) {
+    if (process.platform === 'win32' && bunTarget === 'bun-windows-x64-baseline') {
+      console.warn(`  Target build failed, retrying with native Bun compile: ${err.message}`)
+      execSync(
+        `bun build --compile src/index.ts --outfile "${outPath}"`,
+        { cwd: root, stdio: 'inherit' }
+      )
+      console.log(`  Done: ${outPath}`)
+      return
+    }
     console.error(`  Failed to build ${bunTarget}:`, err.message)
     process.exit(1)
   }
@@ -75,6 +115,7 @@ function build(bunTarget, outName) {
 mkdirSync(binDir, { recursive: true })
 
 // Generate compile-time constants
+loadDotEnvForBuild()
 generateBuildConstants()
 
 const buildAll = process.argv.includes('--all')

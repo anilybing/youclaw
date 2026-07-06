@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul 2>&1
-title YouClaw Server Debug
+title XiaoJuClaw Server Debug
 
 echo ============================================
-echo   YouClaw Server Debug Launcher
+echo   XiaoJuClaw Server Debug Launcher
 echo ============================================
 echo.
 
@@ -40,7 +40,7 @@ echo.
 :: ---- Locate server exe ----
 set "SERVER_EXE="
 
-:: Support drag-and-drop: user drags youclaw-server.exe onto this bat
+:: Support drag-and-drop: user drags XiaoJuClaw-server.exe onto this bat
 if not "%~1"=="" (
     if exist "%~1" (
         set "SERVER_EXE=%~1"
@@ -49,36 +49,36 @@ if not "%~1"=="" (
 )
 
 :: Same directory as this script
-if exist "%~dp0youclaw-server.exe" (
-    set "SERVER_EXE=%~dp0youclaw-server.exe"
+if exist "%~dp0XiaoJuClaw-server.exe" (
+    set "SERVER_EXE=%~dp0XiaoJuClaw-server.exe"
     goto :found
 )
 
 :: Common install paths
 for %%D in (
-    "%LOCALAPPDATA%\YouClaw"
-    "%LOCALAPPDATA%\Programs\YouClaw"
-    "%ProgramFiles%\YouClaw"
+    "%LOCALAPPDATA%\XiaoJuClaw"
+    "%LOCALAPPDATA%\Programs\XiaoJuClaw"
+    "%ProgramFiles%\XiaoJuClaw"
 ) do (
-    if exist "%%~D\youclaw-server.exe" (
-        set "SERVER_EXE=%%~D\youclaw-server.exe"
+    if exist "%%~D\XiaoJuClaw-server.exe" (
+        set "SERVER_EXE=%%~D\XiaoJuClaw-server.exe"
         goto :found
     )
 )
 
-:: Search all drives for YouClaw folder
+:: Search all drives for XiaoJuClaw folder
 for %%X in (C D E F G) do (
-    if exist "%%X:\YouClaw\youclaw-server.exe" (
-        set "SERVER_EXE=%%X:\YouClaw\youclaw-server.exe"
+    if exist "%%X:\XiaoJuClaw\XiaoJuClaw-server.exe" (
+        set "SERVER_EXE=%%X:\XiaoJuClaw\XiaoJuClaw-server.exe"
         goto :found
     )
 )
 
-echo [ERROR] youclaw-server.exe not found.
+echo [ERROR] XiaoJuClaw-server.exe not found.
 echo.
 echo Usage:
-echo   1. Copy this script next to youclaw-server.exe, then double-click
-echo   2. Or drag youclaw-server.exe onto this script
+echo   1. Copy this script next to XiaoJuClaw-server.exe, then double-click
+echo   2. Or drag XiaoJuClaw-server.exe onto this script
 echo.
 goto :end
 

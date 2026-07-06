@@ -1,5 +1,4 @@
 fn main() {
-    // Embed Windows manifest to request administrator privileges (UAC shield icon)
     #[cfg(target_os = "windows")]
     {
         let mut res = tauri_build::WindowsAttributes::new();

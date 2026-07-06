@@ -123,30 +123,6 @@
     ]
   },
   {
-    "slug": "desktop-control",
-    "displayName": "Desktop Control",
-    "summary": "Advanced desktop automation with mouse, keyboard, and screen control.",
-    "category": "productivity",
-    "tags": [
-      "productivity",
-      "automation",
-      "workflows",
-      "desktop"
-    ]
-  },
-  {
-    "slug": "outlook-graph",
-    "displayName": "Outlook Graph",
-    "summary": "Connect OpenClaw to Outlook and Microsoft Graph for email, calendar, contacts, and folder operations using a pre-provided access token.",
-    "category": "productivity",
-    "tags": [
-      "email",
-      "calendar",
-      "productivity",
-      "automation"
-    ]
-  },
-  {
     "slug": "trello",
     "displayName": "Trello",
     "summary": "Manage Trello boards, lists, and cards for lightweight project coordination.",

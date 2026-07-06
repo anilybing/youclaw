@@ -1,4 +1,6 @@
 use serde::Serialize;
+use serde_json::{Map, Value};
+use std::path::PathBuf;
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, AtomicU8, Ordering},
@@ -12,7 +14,16 @@ use tauri::{
 };
 use tauri_plugin_log::{Target, TargetKind, TimezoneStrategy};
 use tauri_plugin_shell::ShellExt;
-use tauri_plugin_store::StoreExt;
+
+#[derive(Serialize)]
+struct PortableDiskSpace {
+    data_dir: String,
+    total_bytes: u64,
+    free_bytes: u64,
+    used_bytes: u64,
+    free_percent: f64,
+    warning_level: String,
+}
 
 /// Sidecar child process handle
 struct SidecarState(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
@@ -49,6 +60,184 @@ impl SidecarReadyState {
     }
 }
 
+fn normalize_path(path: PathBuf) -> String {
+    let mut value = path.to_string_lossy().to_string();
+    if value.starts_with("\\\\?\\") {
+        value = value[4..].to_string();
+    }
+    value
+}
+
+fn is_writable_dir(dir: &PathBuf) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let probe = dir.join(format!(".XiaoJuClaw-write-test-{}-{}", std::process::id(), chrono_like_timestamp()));
+    if std::fs::write(&probe, b"ok").is_err() {
+        return false;
+    }
+    std::fs::remove_file(probe).is_ok()
+}
+
+fn chrono_like_timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn resolve_portable_data_dir(app: &AppHandle) -> PathBuf {
+    if let Ok(value) = std::env::var("XiaoJuClaw_PORTABLE_DATA_DIR") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let candidate = exe_dir.join("XiaoJuClawData");
+            if is_writable_dir(&candidate) {
+                return candidate;
+            }
+        }
+    }
+
+    app.path().app_data_dir().unwrap_or_else(|_| {
+        std::env::temp_dir().join("XiaoJuClawData")
+    })
+}
+
+fn portable_settings_path(app: &AppHandle) -> PathBuf {
+    let data_dir = resolve_portable_data_dir(app);
+    let _ = std::fs::create_dir_all(&data_dir);
+    data_dir.join("settings.json")
+}
+
+fn portable_secrets_path(app: &AppHandle) -> PathBuf {
+    let data_dir = resolve_portable_data_dir(app);
+    let _ = std::fs::create_dir_all(&data_dir);
+    data_dir.join("secrets.json")
+}
+
+fn read_json_object(path: &PathBuf) -> Option<Map<String, Value>> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<Value>(&content).ok()?.as_object().cloned()
+}
+
+fn read_portable_settings(app: &AppHandle) -> Map<String, Value> {
+    let settings_path = portable_settings_path(app);
+    if let Some(settings) = read_json_object(&settings_path) {
+        return settings;
+    }
+
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let legacy_path = app_data_dir.join("settings.json");
+        if legacy_path != settings_path {
+            if let Some(settings) = read_json_object(&legacy_path) {
+                let _ = write_portable_settings(app, &settings);
+                return settings;
+            }
+        }
+    }
+
+    Map::new()
+}
+
+fn write_portable_settings(app: &AppHandle, settings: &Map<String, Value>) -> Result<(), String> {
+    let settings_path = portable_settings_path(app);
+    if let Some(parent) = settings_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let content = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    std::fs::write(settings_path, content).map_err(|e| e.to_string())
+}
+
+fn read_portable_secrets(app: &AppHandle) -> Map<String, Value> {
+    read_json_object(&portable_secrets_path(app)).unwrap_or_else(Map::new)
+}
+
+fn write_portable_secrets(app: &AppHandle, secrets: &Map<String, Value>) -> Result<(), String> {
+    let secrets_path = portable_secrets_path(app);
+    if let Some(parent) = secrets_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let content = serde_json::to_string_pretty(secrets).map_err(|e| e.to_string())?;
+    std::fs::write(secrets_path, content).map_err(|e| e.to_string())
+}
+
+fn validate_portable_secret_key(key: &str) -> Result<(), String> {
+    let is_valid = !key.is_empty()
+        && key.len() <= 80
+        && key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+    if is_valid {
+        Ok(())
+    } else {
+        Err("Invalid secret key".into())
+    }
+}
+
+fn read_portable_setting(app: &AppHandle, key: &str) -> Option<String> {
+    read_portable_settings(app)
+        .get(key)
+        .and_then(|value| value.as_str().map(str::to_owned))
+}
+
+#[cfg(target_os = "windows")]
+fn query_disk_space_for_path(path: &PathBuf) -> Result<(u64, u64), String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetDiskFreeSpaceExW(
+            lpDirectoryName: *const u16,
+            lpFreeBytesAvailableToCaller: *mut u64,
+            lpTotalNumberOfBytes: *mut u64,
+            lpTotalNumberOfFreeBytes: *mut u64,
+        ) -> i32;
+    }
+
+    let mut free_available = 0u64;
+    let mut total_bytes = 0u64;
+    let mut total_free = 0u64;
+    let mut path_wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    path_wide.push(0);
+
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            path_wide.as_ptr(),
+            &mut free_available,
+            &mut total_bytes,
+            &mut total_free,
+        )
+    };
+
+    if ok == 0 {
+        Err("Failed to query disk space".into())
+    } else {
+        Ok((total_bytes, free_available))
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn query_disk_space_for_path(_path: &PathBuf) -> Result<(u64, u64), String> {
+    Err("Disk space query is not supported on this platform".into())
+}
+
+fn read_close_action_setting(app: &AppHandle) -> Option<String> {
+    if let Some(value) = read_portable_setting(app, "close_action") {
+        return Some(value);
+    }
+
+    let preferences = read_portable_setting(app, "XiaoJuClaw-app-preferences")?;
+    let parsed = serde_json::from_str::<Value>(&preferences).ok()?;
+    parsed
+        .get("state")
+        .and_then(|state| state.get("closeAction"))
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
 #[derive(Clone, Serialize)]
 struct SidecarEvent {
     status: String,
@@ -64,14 +253,14 @@ fn enqueue_deep_link(app: &AppHandle, url: String) {
 }
 
 fn normalize_deep_link(raw: &str) -> Option<String> {
-    let start = raw.find("youclaw://")?;
+    let start = raw.find("XiaoJuClaw://")?;
     let candidate = raw[start..]
         .trim()
         .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
         .trim_end_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
         .to_string();
 
-    if candidate.starts_with("youclaw://") {
+    if candidate.starts_with("XiaoJuClaw://") {
         Some(candidate)
     } else {
         None
@@ -101,11 +290,7 @@ enum CloseAction {
 }
 
 fn get_close_action(app: &AppHandle) -> CloseAction {
-    match app.store("settings.json").ok()
-        .and_then(|store| store.get("close_action"))
-        .and_then(|v| v.as_str().map(str::trim).map(str::to_owned))
-        .as_deref()
-    {
+    match read_close_action_setting(app).as_deref() {
         Some("minimize") => CloseAction::Minimize,
         Some("quit") => CloseAction::Quit,
         _ => CloseAction::Ask,
@@ -278,9 +463,13 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     let state = app.state::<SidecarState>();
 
     // Read preferred port from Tauri Store, default 62601
-    let port: u16 = app.store("settings.json").ok()
-        .and_then(|store| store.get("preferred_port"))
-        .and_then(|v| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+    let data_dir = resolve_portable_data_dir(app);
+    let data_dir_str = normalize_path(data_dir.clone());
+    let settings_path = portable_settings_path(app);
+    let settings_path_str = normalize_path(settings_path);
+
+    let port: u16 = read_portable_setting(app, "preferred_port")
+        .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(62601);
     log::info!("Using port {} (from store or default)", port);
 
@@ -294,7 +483,9 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
     let mut env_vars: Vec<(String, String)> = vec![];
     env_vars.push(("PORT".into(), port.to_string()));
-    env_vars.push(("YOUCLAW_USE_PREFERRED_PORT".into(), "1".into()));
+    env_vars.push(("DATA_DIR".into(), data_dir_str.clone()));
+    env_vars.push(("XiaoJuClaw_SETTINGS_FILE".into(), settings_path_str));
+    log::info!("Portable data dir: {}", data_dir_str);
 
     // Ensure PATH includes common bun/node install paths (PATH is minimal when launched from Finder/Explorer)
     {
@@ -437,7 +628,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
             if !pkg_json.exists() {
                 let version = app.config().version.clone().unwrap_or_else(|| "1.0.0".into());
                 let content = format!(
-                    r#"{{"name":"youclaw","version":"{}","type":"module","private":true}}"#,
+                    r#"{{"name":"XiaoJuClaw","version":"{}","type":"module","private":true}}"#,
                     version
                 );
                 if let Err(e) = std::fs::write(&pkg_json, content) {
@@ -448,7 +639,7 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     }
 
     let shell = app.shell();
-    let mut cmd = shell.sidecar("youclaw-server").map_err(|e| e.to_string())?;
+    let mut cmd = shell.sidecar("XiaoJuClaw-server").map_err(|e| e.to_string())?;
 
     for (key, val) in env_vars {
         cmd = cmd.env(key, val);
@@ -553,6 +744,94 @@ fn kill_sidecar(app: &AppHandle) {
 }
 
 // ===== Tauri Commands =====
+
+#[tauri::command]
+fn get_portable_data_dir(app: AppHandle) -> String {
+    normalize_path(resolve_portable_data_dir(&app))
+}
+
+#[tauri::command]
+fn get_portable_disk_space(app: AppHandle) -> Result<PortableDiskSpace, String> {
+    let data_dir = resolve_portable_data_dir(&app);
+    let _ = std::fs::create_dir_all(&data_dir);
+    let (total_bytes, free_bytes) = query_disk_space_for_path(&data_dir)?;
+    let used_bytes = total_bytes.saturating_sub(free_bytes);
+    let free_percent = if total_bytes > 0 {
+        (free_bytes as f64 / total_bytes as f64) * 100.0
+    } else {
+        0.0
+    };
+    let warning_level = if free_bytes < 512 * 1024 * 1024 || free_percent < 5.0 {
+        "critical"
+    } else if free_bytes < 2 * 1024 * 1024 * 1024 || free_percent < 10.0 {
+        "low"
+    } else {
+        "ok"
+    };
+
+    Ok(PortableDiskSpace {
+        data_dir: normalize_path(data_dir),
+        total_bytes,
+        free_bytes,
+        used_bytes,
+        free_percent,
+        warning_level: warning_level.into(),
+    })
+}
+
+#[tauri::command]
+fn portable_setting_get(app: AppHandle, key: String) -> Option<String> {
+    read_portable_setting(&app, &key)
+}
+
+#[tauri::command]
+fn portable_setting_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    let mut settings = read_portable_settings(&app);
+    if key == "XiaoJuClaw-app-preferences" {
+        if let Ok(parsed) = serde_json::from_str::<Value>(&value) {
+            if let Some(close_action) = parsed
+                .get("state")
+                .and_then(|state| state.get("closeAction"))
+                .and_then(|value| value.as_str())
+            {
+                settings.insert("close_action".into(), Value::String(close_action.to_string()));
+            }
+        }
+    }
+    settings.insert(key, Value::String(value));
+    write_portable_settings(&app, &settings)
+}
+
+#[tauri::command]
+fn portable_setting_delete(app: AppHandle, key: String) -> Result<(), String> {
+    let mut settings = read_portable_settings(&app);
+    settings.remove(&key);
+    write_portable_settings(&app, &settings)
+}
+
+#[tauri::command]
+fn portable_secret_get(app: AppHandle, key: String) -> Result<Option<String>, String> {
+    validate_portable_secret_key(&key)?;
+    Ok(read_portable_secrets(&app)
+        .get(&key)
+        .and_then(|value| value.as_str().map(str::to_owned)))
+}
+
+#[tauri::command]
+fn portable_secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    validate_portable_secret_key(&key)?;
+    let mut secrets = read_portable_secrets(&app);
+    secrets.insert(key, Value::String(value));
+    write_portable_secrets(&app, &secrets)
+}
+
+#[tauri::command]
+fn portable_secret_delete(app: AppHandle, key: String) -> Result<(), String> {
+    validate_portable_secret_key(&key)?;
+    let mut secrets = read_portable_secrets(&app);
+    secrets.remove(&key);
+    write_portable_secrets(&app, &secrets)
+}
 
 #[tauri::command]
 fn get_version(app: AppHandle) -> String {
@@ -677,6 +956,14 @@ pub fn run() {
         .manage(SidecarReadyState::new())
         .manage(DeepLinkState::new())
         .invoke_handler(tauri::generate_handler![
+            get_portable_data_dir,
+            get_portable_disk_space,
+            portable_setting_get,
+            portable_setting_set,
+            portable_setting_delete,
+            portable_secret_get,
+            portable_secret_set,
+            portable_secret_delete,
             get_version,
             get_platform,
             get_sidecar_status,

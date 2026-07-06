@@ -26,7 +26,7 @@ export default defineConfig({
         if (!id.includes('marked')) return
         // Each named group (?<x>...) becomes (...) and \k<x> becomes \1
         // These are self-contained regexes where the named group is group #1
-        let result = code
+        const result = code
           .replaceAll('(?<a>', '(').replaceAll('\\k<a>', '\\1')
           .replaceAll('(?<b>', '(').replaceAll('\\k<b>', '\\1')
         if (result === code) return

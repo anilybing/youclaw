@@ -56,18 +56,6 @@
     ]
   },
   {
-    "slug": "codeconductor",
-    "displayName": "CodeConductor.ai",
-    "summary": "AI-powered platform for rapid full-stack app development, autonomous agents, workflow automation, and scalable product creation with.",
-    "category": "developer-tools",
-    "tags": [
-      "coding",
-      "tooling",
-      "automation",
-      "codeconductor"
-    ]
-  },
-  {
     "slug": "mcporter",
     "displayName": "MCPorter",
     "summary": "Bridge and orchestrate MCP tools with clearer operator control.",
@@ -157,18 +145,6 @@
       "tooling",
       "automation",
       "blogwatcher"
-    ]
-  },
-  {
-    "slug": "moltspeak",
-    "displayName": "Molt Speak",
-    "summary": "Efficient, secure agent-to-agent communication protocol.",
-    "category": "developer-tools",
-    "tags": [
-      "coding",
-      "tooling",
-      "automation",
-      "moltspeak"
     ]
   },
   {

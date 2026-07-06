@@ -56,7 +56,7 @@ src/config/build-constants.ts
 
 # Tauri
 src-tauri/target/
-src-tauri/bin/youclaw-server*
+src-tauri/bin/
 src-tauri/resources/bun-runtime/
 
 # Claude Code — track team commands, ignore local settings and personal commands

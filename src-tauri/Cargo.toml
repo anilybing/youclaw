@@ -1,12 +1,12 @@
 [package]
-name = "youclaw"
+name = "XiaoJuClaw"
 version = "1.0.0"
 description = "Desktop AI assistant powered by a multi-provider coding agent runtime"
 authors = ["CodePhiliaX"]
 edition = "2021"
 
 [lib]
-name = "youclaw_lib"
+name = "XiaoJuClaw_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

@@ -176,18 +176,6 @@
     ]
   },
   {
-    "slug": "a-stock-analysis",
-    "displayName": "A Stock Analysis",
-    "summary": "Analyze market and financial data with A Stock Analysis.",
-    "category": "data-analysis",
-    "tags": [
-      "finance",
-      "data",
-      "analysis",
-      "reporting"
-    ]
-  },
-  {
     "slug": "polymarket-odds",
     "displayName": "Polymarket Odds",
     "summary": "Query Polymarket prediction market odds and events via CLI.",

@@ -94,33 +94,9 @@
     ]
   },
   {
-    "slug": "marketing-skills",
-    "displayName": "Marketing Skills",
-    "summary": "Access 23 marketing modules offering checklists, frameworks, and ready-to-use deliverables for CRO, SEO, copywriting, analytics,.",
-    "category": "content-creation",
-    "tags": [
-      "marketing",
-      "content",
-      "media",
-      "publishing"
-    ]
-  },
-  {
     "slug": "remotion-video-toolkit",
     "displayName": "Remotion Video Toolkit",
     "summary": "Complete toolkit for programmatic video creation with Remotion + React.",
-    "category": "content-creation",
-    "tags": [
-      "video",
-      "content",
-      "media",
-      "publishing"
-    ]
-  },
-  {
-    "slug": "youtube-transcript",
-    "displayName": "YouTube Transcript",
-    "summary": "Fetch and summarize YouTube video transcripts.",
     "category": "content-creation",
     "tags": [
       "video",
@@ -235,18 +211,6 @@
       "content",
       "media",
       "publishing"
-    ]
-  },
-  {
-    "slug": "upload-post",
-    "displayName": "Upload Post",
-    "summary": "Upload content to social media platforms via Upload-Post API.",
-    "category": "content-creation",
-    "tags": [
-      "video",
-      "marketing",
-      "chat",
-      "content"
     ]
   },
   {
