@@ -83,7 +83,7 @@ describe('agents routes', () => {
   })
 
   test('docs endpoint only returns allowed documents, and supports read and update', async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), 'youclaw-agent-docs-'))
+    const workspaceDir = mkdtempSync(join(tmpdir(), 'XiaoJuClaw-agent-docs-'))
     tempWorkspaces.push(workspaceDir)
     writeFileSync(resolve(workspaceDir, 'AGENTS.md'), '# Agents')
     writeFileSync(resolve(workspaceDir, 'USER.md'), '# User')
@@ -146,11 +146,11 @@ describe('agents routes', () => {
     expect(existsSync(resolve(agentDir, 'AGENTS.md'))).toBe(true)
     expect(existsSync(resolve(agentDir, 'SOUL.md'))).toBe(true)
     expect(manager.getAgent(agentId)?.config.name).toBe('Route Create Agent')
-    expect(manager.getAgent(agentId)?.config.browser?.defaultProfile).toBe('youclaw')
+    expect(manager.getAgent(agentId)?.config.browser?.defaultProfile).toBe('XiaoJuClaw')
 
     const yaml = parseYaml(readFileSync(resolve(agentDir, 'agent.yaml'), 'utf-8')) as Record<string, unknown>
     const browser = yaml.browser as Record<string, unknown> | undefined
-    expect(browser?.defaultProfile).toBe('youclaw')
+    expect(browser?.defaultProfile).toBe('XiaoJuClaw')
   })
 
   test('PUT /agents/:id updates agent.yaml but does not change id', async () => {
@@ -437,7 +437,7 @@ describe('agents routes', () => {
     expect(yamlContent.name).toBe('Structure Agent')
     expect(yamlContent.model).toBe('claude-sonnet-4-6')
     expect(yamlContent.skills).toEqual([])
-    expect((yamlContent.browser as Record<string, unknown> | undefined)?.defaultProfile).toBe('youclaw')
+    expect((yamlContent.browser as Record<string, unknown> | undefined)?.defaultProfile).toBe('XiaoJuClaw')
 
     // Verify all workspace docs are created
     expect(existsSync(resolve(agentDir, 'AGENTS.md'))).toBe(true)

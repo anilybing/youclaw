@@ -34,7 +34,7 @@ async function main() {
 
   // 2. Initialize logger
   const logger = initLogger()
-  logger.info('YouClaw starting...')
+  logger.info('XiaoJuClaw starting...')
 
   // 2b. Pre-extract embedded Bun runtime (before any agent code runs)
   try {
@@ -206,7 +206,7 @@ async function main() {
   }
 
   logger.info({ port: env.PORT }, `HTTP server started: http://localhost:${env.PORT}`)
-  logger.info('YouClaw ready')
+  logger.info('XiaoJuClaw ready')
 
   // 18. Graceful shutdown
   const shutdown = async () => {
@@ -237,7 +237,7 @@ function writeStartupCrashLog(errorText: string): void {
   try {
     const baseDir = process.env.DATA_DIR
       ? resolvePathInput(process.env.DATA_DIR)
-      : resolve(tmpdir(), 'youclaw-data')
+      : resolve(tmpdir(), 'XiaoJuClaw-data')
     mkdirSync(baseDir, { recursive: true })
     const logPath = resolve(baseDir, 'startup-crash.log')
     const line = `[${new Date().toISOString()}] ${errorText}\n`

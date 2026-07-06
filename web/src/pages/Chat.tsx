@@ -48,22 +48,30 @@ export function Chat() {
     } else {
       chatCtx.setSearchQuery("");
     }
-  }, [searchOpen]);
+  }, [searchOpen, chatCtx]);
 
   useEffect(() => {
     const wasNewChat = prevIsNewChatRef.current;
     prevIsNewChatRef.current = isNewChat;
 
     if (wasNewChat && !isNewChat) {
-      setIsLeavingNewChat(true);
+      const enterId = window.setTimeout(() => {
+        setIsLeavingNewChat(true);
+      }, 0);
       const timeoutId = window.setTimeout(() => {
         setIsLeavingNewChat(false);
       }, 260);
-      return () => window.clearTimeout(timeoutId);
+      return () => {
+        window.clearTimeout(enterId);
+        window.clearTimeout(timeoutId);
+      };
     }
 
     if (isNewChat) {
-      setIsLeavingNewChat(false);
+      const timeoutId = window.setTimeout(() => {
+        setIsLeavingNewChat(false);
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
   }, [isNewChat]);
 
@@ -303,7 +311,7 @@ export function Chat() {
                   <div className="mb-3 mx-auto w-fit pointer-events-auto">
                     <img
                       src="/icon.svg"
-                      alt="YouClaw"
+                      alt="XiaoJuClaw"
                       className="chat-welcome-mascot h-24 w-24"
                     />
                   </div>

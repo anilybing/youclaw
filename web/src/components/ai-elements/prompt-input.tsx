@@ -875,9 +875,11 @@ export const PromptInput = ({
 
       try {
         // Pass files through as-is (filePath-based for Tauri, blob URL for web)
-        const convertedFiles: FileUIPart[] = files.map(
-          ({ id: _id, ...item }) => item,
-        );
+        const convertedFiles: FileUIPart[] = files.map((file) => {
+          const { id, ...item } = file;
+          void id;
+          return item;
+        });
 
         const result = onSubmit({ files: convertedFiles, text }, event);
 

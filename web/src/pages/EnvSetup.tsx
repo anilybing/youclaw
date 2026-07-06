@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { useI18n } from "@/i18n"
+import type { Translations } from "@/i18n/types"
 import { useAppRuntimeStore } from "@/stores/app"
 import type { DependencyStatus } from "@/api/client"
 import { Download, Loader2, CheckCircle2, AlertTriangle, Terminal, Copy, Check, ChevronRight, ChevronDown } from "lucide-react"
@@ -58,12 +59,12 @@ function CopyableCommand({ command }: { command: string }) {
 }
 
 // Dependency metadata: descriptions and platform-specific install guidance
-function getDependencyInfo(name: string, isWindows: boolean, t: any) {
-  const depI18n = t.envSetup?.[name]
+function getDependencyInfo(name: string, isWindows: boolean, t: Translations) {
   const altLabel = t.envSetup?.orAlternative ?? "Or alternatively:"
 
   switch (name) {
-    case "git":
+    case "git": {
+      const depI18n = t.envSetup.git
       return {
         displayName: depI18n?.name ?? "Git",
         description: depI18n?.description ?? "Required for version control and agent operations.",
@@ -80,7 +81,9 @@ function getDependencyInfo(name: string, isWindows: boolean, t: any) {
               alternative: { label: altLabel, command: depI18n?.macAlt ?? "brew install git" },
             },
       }
-    case "bun":
+    }
+    case "bun": {
+      const depI18n = t.envSetup.bun
       return {
         displayName: depI18n?.name ?? "Bun",
         description: depI18n?.description ?? "Required runtime for AI agent operations.",
@@ -96,7 +99,9 @@ function getDependencyInfo(name: string, isWindows: boolean, t: any) {
               alternative: { label: altLabel, command: depI18n?.macAlt ?? "brew install oven-sh/bun/bun" },
             },
       }
-    case "node":
+    }
+    case "node": {
+      const depI18n = t.envSetup.node
       return {
         displayName: depI18n?.name ?? "Node.js (>=18)",
         description: depI18n?.description ?? "Required on Windows for AI agent SDK compatibility.",
@@ -106,6 +111,7 @@ function getDependencyInfo(name: string, isWindows: boolean, t: any) {
           alternative: { label: altLabel, command: depI18n?.winAlt ?? "Download from https://nodejs.org" },
         },
       }
+    }
     default:
       return {
         displayName: name,
@@ -166,11 +172,11 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
             <div className="inline-block transition-transform hover:scale-105 duration-300">
               <img
                 src={logoUrl}
-                alt="YouClaw Logo"
+                alt="XiaoJuClaw Logo"
                 className="w-20 h-20 p-2 mx-auto rounded-2xl shadow-lg border border-border/50 bg-white"
               />
             </div>
-            <h1 className="mt-5 text-2xl font-bold text-foreground tracking-tight">YouClaw</h1>
+            <h1 className="mt-5 text-2xl font-bold text-foreground tracking-tight">XiaoJuClaw</h1>
           </div>
 
           {/* Header Card */}
@@ -246,7 +252,7 @@ function DependencyCard({
   dep: DependencyStatus
   info: ReturnType<typeof getDependencyInfo>
   isWindows: boolean
-  t: any
+  t: Translations
   recheckEnv: () => Promise<boolean>
 }) {
   const guidance = info.guidance

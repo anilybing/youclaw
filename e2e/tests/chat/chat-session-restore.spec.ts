@@ -24,7 +24,7 @@ test.describe('会话自动恢复（localStorage 持久化）', () => {
     // fixture 已 goto('/') + waitForLoadState('networkidle')
     // 清除 localStorage 确保测试隔离
     await page.evaluate(() => {
-      const keys = Object.keys(localStorage).filter(k => k.startsWith('youclaw-'))
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('XiaoJuClaw-'))
       keys.forEach(k => localStorage.removeItem(k))
     })
   })

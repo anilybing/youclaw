@@ -58,6 +58,22 @@ function loadDotEnv(): void {
   }
 }
 
+function applyBrandEnvCompatibility(): void {
+  const pairs = [
+    ['XiaoJuClaw_WEBSITE_URL', 'YOUCLAW_WEBSITE_URL'],
+    ['XiaoJuClaw_API_URL', 'YOUCLAW_API_URL'],
+    ['XiaoJuClaw_BUILTIN_API_URL', 'YOUCLAW_BUILTIN_API_URL'],
+    ['XiaoJuClaw_BUILTIN_AUTH_TOKEN', 'YOUCLAW_BUILTIN_AUTH_TOKEN'],
+    ['XiaoJuClaw_USE_PREFERRED_PORT', 'YOUCLAW_USE_PREFERRED_PORT'],
+  ] as const
+
+  for (const [currentKey, legacyKey] of pairs) {
+    if (!process.env[currentKey] && process.env[legacyKey]) {
+      process.env[currentKey] = process.env[legacyKey]
+    }
+  }
+}
+
 const envSchema = z.object({
   MODEL_PROVIDER: z.string().default('minimax'),
   MODEL_ID: z.string().default('MiniMax-M2.7-highspeed'),
@@ -79,11 +95,11 @@ const envSchema = z.object({
   DINGTALK_CLIENT_ID: z.string().optional(),
   DINGTALK_SECRET: z.string().optional(),
   // Cloud service URLs (offline mode if not configured)
-  YOUCLAW_WEBSITE_URL: z.string().optional(),
-  YOUCLAW_API_URL: z.string().optional(),
+  XiaoJuClaw_WEBSITE_URL: z.string().optional(),
+  XiaoJuClaw_API_URL: z.string().optional(),
   // Built-in model config (injected at build time)
-  YOUCLAW_BUILTIN_API_URL: z.string().optional(),
-  YOUCLAW_BUILTIN_AUTH_TOKEN: z.string().optional(),
+  XiaoJuClaw_BUILTIN_API_URL: z.string().optional(),
+  XiaoJuClaw_BUILTIN_AUTH_TOKEN: z.string().optional(),
 })
 
 export type EnvConfig = z.infer<typeof envSchema>
@@ -95,20 +111,21 @@ export function loadEnv(): EnvConfig {
 
   // Node.js/tsx does not auto-load .env; load manually
   loadDotEnv()
+  applyBrandEnvCompatibility()
 
   // Desktop release sidecar may override PORT from the persisted preferred_port.
   // Dev runs should only respect .env so local development stays deterministic.
-  if (process.env.YOUCLAW_USE_PREFERRED_PORT === '1') {
+  if (process.env.XiaoJuClaw_USE_PREFERRED_PORT === '1') {
     try {
       const home = process.env.HOME || process.env.USERPROFILE || ''
       const platform = process.platform
       let storeDir: string
       if (platform === 'darwin') {
-        storeDir = resolve(home, 'Library/Application Support/com.youclaw.app')
+        storeDir = resolve(home, 'Library/Application Support/com.XiaoJuClaw.app')
       } else if (platform === 'win32') {
-        storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.youclaw.app')
+        storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.XiaoJuClaw.app')
       } else {
-        storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.youclaw.app')
+        storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.XiaoJuClaw.app')
       }
       const storeFile = resolve(storeDir, 'settings.json')
       const storeContent = JSON.parse(readFileSync(storeFile, 'utf-8'))
@@ -127,6 +144,7 @@ export function loadEnv(): EnvConfig {
       process.env[key] = val
     }
   }
+  applyBrandEnvCompatibility()
 
   const result = envSchema.safeParse(process.env)
   if (!result.success) {
@@ -139,7 +157,7 @@ export function loadEnv(): EnvConfig {
 
   _config = result.data
 
-  if (!_config.YOUCLAW_BUILTIN_AUTH_TOKEN && !_config.MODEL_API_KEY) {
+  if (!_config.XiaoJuClaw_BUILTIN_AUTH_TOKEN && !_config.MODEL_API_KEY) {
     console.warn('MODEL_API_KEY not set. Agent features will be unavailable unless built-in auth is configured.')
   }
 

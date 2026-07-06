@@ -19,7 +19,7 @@ describe('agent context utils', () => {
   })
 
   test('resolveStoredSessionFile prefers stored path and falls back to matching session id', () => {
-    const dir = resolve(tmpdir(), `youclaw-session-${Date.now()}`)
+    const dir = resolve(tmpdir(), `XiaoJuClaw-session-${Date.now()}`)
     mkdirSync(dir, { recursive: true })
 
     const fallbackPath = resolve(dir, '2026-03-19T12-00-00_session-abc.jsonl')

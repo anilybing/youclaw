@@ -22,8 +22,8 @@ import { useAppRuntimeStore } from "@/stores/app"
 // Built-in model definitions
 const BUILTIN_MODELS = [
   {
-    id: "youclaw-pro",
-    name: "YouClaw Pro",
+    id: "XiaoJuClaw-pro",
+    name: "XiaoJuClaw Pro",
     description: "Most capable built-in model",
   },
 ] as const
@@ -127,7 +127,7 @@ const CUSTOM_MODEL_PROVIDER_META: Record<CustomModelDTO['provider'], { label: st
   },
 }
 
-const CUSTOM_MODEL_PROVIDER_OPTIONS: Array<{ value: CustomModelDTO['provider']; label: string }> = [
+const CUSTOM_MODEL_PROVIDER_VALUES: CustomModelDTO['provider'][] = [
   'anthropic',
   'openai',
   'gemini',
@@ -147,14 +147,17 @@ const CUSTOM_MODEL_PROVIDER_OPTIONS: Array<{ value: CustomModelDTO['provider']; 
   'minimax',
   'minimax-cn',
   'custom',
-].map((value) => ({ value, label: CUSTOM_MODEL_PROVIDER_META[value].label }))
+]
+
+const CUSTOM_MODEL_PROVIDER_OPTIONS: Array<{ value: CustomModelDTO['provider']; label: string }> =
+  CUSTOM_MODEL_PROVIDER_VALUES.map((value) => ({ value, label: CUSTOM_MODEL_PROVIDER_META[value].label }))
 
 type ActiveModel = SettingsDTO['activeModel']
 
 export function ModelsPanel() {
   const { t } = useI18n()
   const { cloudEnabled } = useAppRuntimeStore()
-  const [builtinModel, setBuiltinModel] = useState("youclaw-pro")
+  const [builtinModel, setBuiltinModel] = useState("XiaoJuClaw-pro")
   const [builtinModelId, setBuiltinModelId] = useState<string | null>(null)
   const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
   const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: ActiveModelProvider.Builtin })

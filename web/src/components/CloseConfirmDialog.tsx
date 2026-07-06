@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { emit } from '@tauri-apps/api/event'
 import {
   AlertDialog,
@@ -24,11 +24,12 @@ export function CloseConfirmDialog({ open, onOpenChange }: CloseConfirmDialogPro
   const setCloseAction = useAppPreferencesStore((s) => s.setCloseAction)
   const [selectedAction, setSelectedAction] = useState<Exclude<CloseAction, ''>>('minimize')
 
-  useEffect(() => {
-    if (open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
       setSelectedAction('minimize')
     }
-  }, [open])
+    onOpenChange(nextOpen)
+  }
 
   const handleConfirm = async () => {
     await setCloseAction(selectedAction)
@@ -37,7 +38,7 @@ export function CloseConfirmDialog({ open, onOpenChange }: CloseConfirmDialogPro
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{t.closeDialog.title}</AlertDialogTitle>

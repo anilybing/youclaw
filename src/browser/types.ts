@@ -5,8 +5,8 @@ export type BrowserDiscoveryKind = 'chrome' | 'edge' | 'brave' | 'chromium' | 'v
 
 export type BrowserRuntimeStatus = 'starting' | 'running' | 'stopped' | 'error'
 
-export const DEFAULT_BROWSER_PROFILE_ID = 'youclaw'
-export const DEFAULT_BROWSER_PROFILE_NAME = 'YouClaw'
+export const DEFAULT_BROWSER_PROFILE_ID = 'XiaoJuClaw'
+export const DEFAULT_BROWSER_PROFILE_NAME = 'XiaoJuClaw'
 export const DEFAULT_CDP_PORT_START = 18800
 export const DEFAULT_CDP_PORT_END = 18899
 

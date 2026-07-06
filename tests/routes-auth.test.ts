@@ -15,8 +15,8 @@ describe('auth routes', () => {
     expect(getAuthToken()).toBe('token-for-test')
 
     const env = getEnv()
-    const originalApiUrl = env.YOUCLAW_API_URL
-    env.YOUCLAW_API_URL = 'https://api.example.com'
+    const originalApiUrl = env.XiaoJuClaw_API_URL
+    env.XiaoJuClaw_API_URL = 'https://api.example.com'
 
     const originalFetch = globalThis.fetch
     const fetchMock = mock(async () => new Response(null, { status: 200 }))
@@ -33,7 +33,7 @@ describe('auth routes', () => {
       expect(getAuthToken()).toBeNull()
     } finally {
       globalThis.fetch = originalFetch
-      env.YOUCLAW_API_URL = originalApiUrl
+      env.XiaoJuClaw_API_URL = originalApiUrl
     }
   })
 })

@@ -33,7 +33,7 @@ afterEach(() => {
 
 describe('ensureAgentWorkspace', () => {
   test('creates BOOTSTRAP.md for a brand new workspace and records seeded state', () => {
-    const dir = makeTempWorkspace('youclaw-workspace-')
+    const dir = makeTempWorkspace('XiaoJuClaw-workspace-')
 
     const result = ensureAgentWorkspace(dir, { ensureBootstrap: true })
 
@@ -45,7 +45,7 @@ describe('ensureAgentWorkspace', () => {
   })
 
   test('marks setup completed after BOOTSTRAP.md is removed and does not recreate it', () => {
-    const dir = makeTempWorkspace('youclaw-workspace-')
+    const dir = makeTempWorkspace('XiaoJuClaw-workspace-')
     ensureAgentWorkspace(dir, { ensureBootstrap: true })
     unlinkSync(resolve(dir, 'BOOTSTRAP.md'))
 

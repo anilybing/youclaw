@@ -57,8 +57,8 @@ export function Login() {
       await fetchUser()
       await fetchCreditBalance()
       notify.success("登录成功")
-    } catch (err: any) {
-      notify.error(err.message || "登录失败")
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : "登录失败")
     } finally {
       setLoginInProgress(false)
     }
@@ -124,7 +124,7 @@ export function Login() {
           </div>
 
           <footer className="mt-auto flex gap-6 text-xs font-medium text-muted-foreground relative z-10">
-            <span>&copy; 2026 YouClaw</span>
+            <span>&copy; 2026 XiaoJuClaw</span>
           </footer>
         </section>
 
@@ -134,11 +134,11 @@ export function Login() {
             <div className="inline-block transition-transform hover:scale-105 duration-300">
               <img
                 src={logoUrl}
-                alt="YouClaw Logo"
+                alt="XiaoJuClaw Logo"
                 className="w-28 h-28 p-3 mx-auto rounded-3xl shadow-lg border border-border/50 bg-white"
               />
             </div>
-            <h1 className="mt-6 text-2xl font-bold text-foreground tracking-tight">YouClaw</h1>
+            <h1 className="mt-6 text-2xl font-bold text-foreground tracking-tight">XiaoJuClaw</h1>
             <p className="text-muted-foreground text-sm mt-1">{t.login.subtitle}</p>
           </div>
 

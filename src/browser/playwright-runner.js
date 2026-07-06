@@ -1,7 +1,7 @@
 import { stdin, stdout, stderr, exit } from 'node:process'
 import { chromium } from 'playwright-core'
 
-const REF_ATTRIBUTE = 'data-youclaw-ref'
+const REF_ATTRIBUTE = 'data-XiaoJuClaw-ref'
 
 function isLoopback(endpoint) {
   try {

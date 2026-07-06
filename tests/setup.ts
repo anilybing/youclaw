@@ -11,7 +11,7 @@ import { Database } from 'bun:sqlite'
 process.env.MODEL_PROVIDER = 'anthropic'
 process.env.MODEL_ID = 'claude-sonnet-4-6'
 process.env.MODEL_API_KEY = 'test-key'
-process.env.DATA_DIR = '/tmp/youclaw-test-' + Date.now()
+process.env.DATA_DIR = '/tmp/XiaoJuClaw-test-' + Date.now()
 process.env.LOG_LEVEL = 'error'
 
 import { loadEnv } from '../src/config/index.ts'

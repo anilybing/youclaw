@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+﻿import { useEffect } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -43,7 +43,7 @@ export function ChatMessages() {
         {showThinkingState && (
           <div className="flex gap-3 py-3">
             <Avatar className="h-8 w-8 mt-0.5">
-              <AvatarImage src="/icon.svg" alt="YouClaw" />
+              <AvatarImage src="/icon.svg" alt="XiaoJuClaw" />
               <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
                 AI
               </AvatarFallback>
@@ -85,7 +85,7 @@ function StreamingAssistantItem({ content }: { content: string }) {
     <AIMessage from="assistant">
       <div className="group flex gap-3 py-3">
         <Avatar className="h-8 w-8">
-          <AvatarImage src="/icon.svg" alt="YouClaw" />
+          <AvatarImage src="/icon.svg" alt="XiaoJuClaw" />
           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
             AI
           </AvatarFallback>
@@ -108,7 +108,7 @@ function ToolUseTimelineGroup({ items }: { items: Array<{ id: string; name: stri
     <AIMessage from="assistant">
       <div className="flex gap-3 py-2">
         <Avatar className="h-8 w-8 mt-0.5">
-          <AvatarImage src="/icon.svg" alt="YouClaw" />
+          <AvatarImage src="/icon.svg" alt="XiaoJuClaw" />
           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
             AI
           </AvatarFallback>
@@ -126,7 +126,7 @@ function DocumentStatusTimelineItem({ item }: { item: Extract<TimelineItem, { ki
     <AIMessage from="assistant">
       <div className="flex gap-3 py-2">
         <Avatar className="h-8 w-8 mt-0.5">
-          <AvatarImage src="/icon.svg" alt="YouClaw" />
+          <AvatarImage src="/icon.svg" alt="XiaoJuClaw" />
           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
             AI
           </AvatarFallback>

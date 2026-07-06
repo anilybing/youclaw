@@ -354,7 +354,6 @@ function useStreamdownPlugins() {
 
   useEffect(() => {
     if (resolvedCodePlugin) {
-      setPlugins({ cjk, ...resolvedCodePlugin });
       return;
     }
     const listener = () => {
@@ -364,7 +363,7 @@ function useStreamdownPlugins() {
     return () => { codePluginListeners.delete(listener); };
   }, []);
 
-  return plugins;
+  return resolvedCodePlugin ? { cjk, ...resolvedCodePlugin } : plugins;
 }
 const codeLanguagePattern = /language-([^\s]+)/;
 const startLinePattern = /\{(\d+)\}/;

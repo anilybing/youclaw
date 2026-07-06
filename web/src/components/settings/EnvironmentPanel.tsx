@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useI18n } from '@/i18n'
 import { notify } from '@/stores/app'
 import { checkEnv, installTool, type DependencyStatus } from '@/api/client'
@@ -11,13 +11,27 @@ export function EnvironmentPanel() {
   const [loading, setLoading] = useState(true)
   const [installingTool, setInstallingTool] = useState<string | null>(null)
 
-  const refresh = async () => {
-    setLoading(true)
+  const refresh = useCallback(async (showLoading = false) => {
+    if (showLoading) {
+      setLoading(true)
+    }
+    const result = await checkEnv()
+    setDependencies(result.dependencies)
+    setLoading(false)
+  }, [])
+
+  const handleRefresh = () => {
+    void refresh(true)
+  }
+
+  const handleInitialLoad = async () => {
     try {
       const result = await checkEnv()
       setDependencies(result.dependencies)
-    } catch { /* ignore */ }
-    setLoading(false)
+      setLoading(false)
+    } catch {
+      setLoading(false)
+    }
   }
 
   const handleInstall = async (tool: string) => {
@@ -29,14 +43,19 @@ export function EnvironmentPanel() {
       } else {
         notify.error(result.stderr || t.envSetup.installFailed, { durationMs: 6000 })
       }
-    } catch (err: any) {
-      notify.error(err.message || t.envSetup.installFailed, { durationMs: 6000 })
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : t.envSetup.installFailed, { durationMs: 6000 })
     }
     setInstallingTool(null)
     await refresh()
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void handleInitialLoad()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -46,7 +65,7 @@ export function EnvironmentPanel() {
           <h3 className="text-lg font-semibold">{t.envPanel.title}</h3>
           <p className="text-sm text-muted-foreground">{t.envPanel.description}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
           {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           <span className="ml-1.5">{t.envPanel.refresh}</span>
         </Button>

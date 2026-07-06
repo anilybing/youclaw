@@ -7,7 +7,10 @@ export function useLogSSE(
   onEntry: (entry: LogEntry) => void,
 ) {
   const onEntryRef = useRef(onEntry)
-  onEntryRef.current = onEntry
+
+  useEffect(() => {
+    onEntryRef.current = onEntry
+  }, [onEntry])
 
   useEffect(() => {
     if (!enabled) return

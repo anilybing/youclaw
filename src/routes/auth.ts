@@ -32,21 +32,21 @@ export function createAuthRoutes() {
   app.get('/auth/cloud-status', (c) => {
     const env = getEnv()
     return c.json({
-      enabled: !!(env.YOUCLAW_WEBSITE_URL && env.YOUCLAW_API_URL),
+      enabled: !!(env.XiaoJuClaw_WEBSITE_URL && env.XiaoJuClaw_API_URL),
     })
   })
 
   // GET /auth/login — Return login URL (frontend opens in browser)
   app.get('/auth/login', (c) => {
-    const websiteUrl = getEnv().YOUCLAW_WEBSITE_URL
+    const websiteUrl = getEnv().XiaoJuClaw_WEBSITE_URL
     if (!websiteUrl) {
       return c.json({ error: 'Cloud service not configured' }, 501)
     }
     const platform = c.req.query('platform')
     const redirectUri = platform === 'tauri'
-      ? 'youclaw://auth/callback'
+      ? 'XiaoJuClaw://auth/callback'
       : `http://${c.req.header('host') || `localhost:${getEnv().PORT}`}/api/auth/callback`
-    const loginUrl = `${websiteUrl}/login?redirect_uri=${encodeURIComponent(redirectUri)}&app_name=YouClaw`
+    const loginUrl = `${websiteUrl}/login?redirect_uri=${encodeURIComponent(redirectUri)}&app_name=XiaoJuClaw`
     return c.json({ loginUrl })
   })
 
@@ -71,13 +71,13 @@ export function createAuthRoutes() {
     return c.html(`
       <html><body style="font-family:system-ui;text-align:center;padding:60px">
         <h2 style="color:#22c55e">Login Successful</h2>
-        <p>You can close this window and return to YouClaw.</p>
+        <p>You can close this window and return to XiaoJuClaw.</p>
         <script>
           // Trigger deep link to bring app window to foreground
           try {
             var iframe = document.createElement('iframe');
             iframe.style.display = 'none';
-            iframe.src = 'youclaw://auth/focus';
+            iframe.src = 'XiaoJuClaw://auth/focus';
             document.body.appendChild(iframe);
             setTimeout(function() { iframe.remove(); }, 3000);
           } catch(e) {}
@@ -89,7 +89,7 @@ export function createAuthRoutes() {
 
   // GET /auth/user — Fetch user info
   app.get('/auth/user', async (c) => {
-    const apiUrl = getEnv().YOUCLAW_API_URL
+    const apiUrl = getEnv().XiaoJuClaw_API_URL
     if (!apiUrl) {
       return c.json({ error: 'Cloud service not configured' }, 501)
     }
@@ -154,13 +154,13 @@ export function createAuthRoutes() {
 
   // GET /auth/pay-url — Return payment page URL
   app.get('/auth/pay-url', (c) => {
-    const websiteUrl = getEnv().YOUCLAW_WEBSITE_URL
+    const websiteUrl = getEnv().XiaoJuClaw_WEBSITE_URL
     if (!websiteUrl) {
       return c.json({ error: 'Cloud service not configured' }, 501)
     }
     const platform = c.req.query('platform')
     const redirectUri = platform === 'tauri'
-      ? 'youclaw://pay/callback'
+      ? 'XiaoJuClaw://pay/callback'
       : `http://${c.req.header('host') || `localhost:${getEnv().PORT}`}/api/auth/pay-callback`
     const payUrl = `${websiteUrl}/pay?redirect_uri=${encodeURIComponent(redirectUri)}`
     return c.json({ payUrl })
@@ -194,7 +194,7 @@ export function createAuthRoutes() {
 
   // POST /auth/upload — Proxy file upload to ReadmeX
   app.post('/auth/upload', async (c) => {
-    const apiUrl = getEnv().YOUCLAW_API_URL
+    const apiUrl = getEnv().XiaoJuClaw_API_URL
     if (!apiUrl) {
       return c.json({ error: 'Cloud service not configured' }, 501)
     }
@@ -231,7 +231,7 @@ export function createAuthRoutes() {
 
   // POST /auth/update-profile — Update username and avatar
   app.post('/auth/update-profile', async (c) => {
-    const apiUrl = getEnv().YOUCLAW_API_URL
+    const apiUrl = getEnv().XiaoJuClaw_API_URL
     if (!apiUrl) {
       return c.json({ error: 'Cloud service not configured' }, 501)
     }

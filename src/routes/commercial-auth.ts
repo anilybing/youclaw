@@ -5,7 +5,7 @@ import { getEnv } from '../config/index.ts'
 
 /**
  * Commercial auth extension — overrides login flow for MVP.
- * When YOUCLAW_API_URL points to our MVP cloud service, login is handled
+ * When XiaoJuClaw_API_URL points to our MVP cloud service, login is handled
  * via mobile/email instead of website OAuth redirect.
  *
  * This route file is part of the commercial isolation layer.
@@ -17,7 +17,7 @@ export function createCommercialAuthRoutes() {
   // POST /auth/login — MVP login (mobile/email + displayName)
   // This overrides the upstream GET /auth/login (OAuth redirect)
   app.post('/auth/login', async (c) => {
-    const apiUrl = getEnv().YOUCLAW_API_URL
+    const apiUrl = getEnv().XiaoJuClaw_API_URL
     if (!apiUrl) return c.json({ error: 'Cloud service not configured' }, 501)
 
     try {
@@ -26,6 +26,7 @@ export function createCommercialAuthRoutes() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
       })
 
       if (!res.ok) {
@@ -53,7 +54,7 @@ export function createCommercialAuthRoutes() {
 
   // GET /auth/user — proxy to MVP cloud (override upstream to use our API format)
   app.get('/auth/user', async (c) => {
-    const apiUrl = getEnv().YOUCLAW_API_URL
+    const apiUrl = getEnv().XiaoJuClaw_API_URL
     if (!apiUrl) return c.json({ error: 'Cloud service not configured' }, 501)
     const token = getAuthToken()
     if (!token) return c.json({ error: 'Not logged in' }, 401)
@@ -61,6 +62,7 @@ export function createCommercialAuthRoutes() {
     try {
       const res = await fetch(`${apiUrl}/api/auth/user`, {
         headers: { rdxtoken: token },
+        signal: AbortSignal.timeout(15000),
       })
 
       if (!res.ok) {

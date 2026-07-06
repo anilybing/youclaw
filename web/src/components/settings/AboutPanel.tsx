@@ -56,7 +56,7 @@ export function AboutPanel() {
             case "Started":
               contentLength = event.data.contentLength ?? 0
               break
-            case "Progress":
+            case "Progress": {
               downloaded += event.data.chunkLength
               const pct = contentLength > 0 ? Math.round((downloaded / contentLength) * 100) : 0
               setUpdate((prev) => ({
@@ -66,6 +66,7 @@ export function AboutPanel() {
                 progress: pct,
               }))
               break
+            }
             case "Finished":
               setUpdate({
                 status: "ready",
@@ -95,7 +96,9 @@ export function AboutPanel() {
     try {
       const { relaunch } = await import("@tauri-apps/plugin-process")
       await relaunch()
-    } catch {}
+    } catch {
+      return
+    }
   }
 
   const isChecking = update.status === "checking"
@@ -152,18 +155,18 @@ export function AboutPanel() {
 
       {/* Social links */}
       <div className="flex gap-3">
-        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal("https://github.com/CodePhiliaX/youClaw")}>
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal("https://github.com/CodePhiliaX/XiaoJuClaw")}>
           <Github size={14} />
           GitHub
         </Button>
-        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal("https://youclaw.dev")}>
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal("https://XiaoJuClaw.dev")}>
           <Globe size={14} />
           Website
         </Button>
       </div>
 
       <p className="text-[10px] text-muted-foreground uppercase tracking-widest pt-4">
-        &copy; 2026 You Claw AI. All rights reserved.
+        &copy; 2026 XiaoJuClaw AI. All rights reserved.
       </p>
     </div>
   )

@@ -1,5 +1,8 @@
 import { getDatabase } from '../db/index.ts'
 import { getEnv } from '../config/index.ts'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { getPaths } from '../config/paths.ts'
 import {
   ActiveModelProvider,
   RegistrySourceSettingSchema,
@@ -10,6 +13,7 @@ import {
 
 // Key in kv_state table
 const SETTINGS_KEY = 'settings'
+const CUSTOM_MODEL_SECRET_PREFIX = '__portable_secret__:'
 
 function resolveEnvModelRef(env: ReturnType<typeof getEnv>): string {
   if (env.MODEL_PROVIDER === 'builtin') {
@@ -21,17 +25,30 @@ function resolveEnvModelRef(env: ReturnType<typeof getEnv>): string {
 /**
  * Read settings from kv_state, returning defaults if missing.
  */
-export function getSettings(): Settings {
+export function getStoredSettings(): Settings {
   const db = getDatabase()
   const row = db.query("SELECT value FROM kv_state WHERE key = ?").get(SETTINGS_KEY) as { value: string } | null
   if (!row) {
     return normalizeSettings(SettingsSchema.parse({}))
   }
   try {
-    return normalizeSettings(SettingsSchema.parse(JSON.parse(row.value)))
+    const parsed = normalizeSettings(SettingsSchema.parse(JSON.parse(row.value)))
+    const migrated = prepareSettingsForStorage(parsed, parsed)
+    if (JSON.stringify(migrated) !== JSON.stringify(parsed)) {
+      db.run(
+        "INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)",
+        [SETTINGS_KEY, JSON.stringify(migrated)]
+      )
+      return normalizeSettings(migrated)
+    }
+    return parsed
   } catch {
     return normalizeSettings(SettingsSchema.parse({}))
   }
+}
+
+export function getSettings(): Settings {
+  return redactSettings(getStoredSettings())
 }
 
 /**
@@ -39,7 +56,7 @@ export function getSettings(): Settings {
  */
 export function updateSettings(partial: Partial<Settings>): Settings {
   const db = getDatabase()
-  const current = getSettings()
+  const current = getStoredSettings()
   const hasDefaultRegistrySource = Object.prototype.hasOwnProperty.call(partial, 'defaultRegistrySource')
 
   // Deep merge
@@ -60,12 +77,12 @@ export function updateSettings(partial: Partial<Settings>): Settings {
   }
 
   // Validate and write
-  const validated = normalizeSettings(SettingsSchema.parse(merged))
+  const validated = normalizeSettings(SettingsSchema.parse(prepareSettingsForStorage(merged, current)))
   db.run(
     "INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)",
     [SETTINGS_KEY, JSON.stringify(validated)]
   )
-  return validated
+  return redactSettings(validated)
 }
 
 export function isRegistrySourceSetting(value: unknown): value is Settings['defaultRegistrySource'] {
@@ -78,11 +95,12 @@ export function isRegistrySourceSetting(value: unknown): value is Settings['defa
  */
 export function getActiveModelConfig(): { apiKey: string; baseUrl: string; modelId: string; provider: string } | null {
   const settings = getSettings()
+  const storedSettings = getStoredSettings()
   const env = getEnv()
 
   if (settings.activeModel.provider === ActiveModelProvider.Builtin) {
-    const builtinUrl = env.YOUCLAW_BUILTIN_API_URL
-    const builtinToken = env.YOUCLAW_BUILTIN_AUTH_TOKEN
+    const builtinUrl = env.XiaoJuClaw_BUILTIN_API_URL
+    const builtinToken = env.XiaoJuClaw_BUILTIN_AUTH_TOKEN
     if (builtinUrl && builtinToken) {
       return {
         apiKey: builtinToken,
@@ -103,10 +121,10 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
   }
 
   if (settings.activeModel.provider === ActiveModelProvider.Custom && settings.activeModel.id) {
-    const model = settings.customModels.find((m: CustomModel) => m.id === settings.activeModel.id)
+    const model = storedSettings.customModels.find((m: CustomModel) => m.id === settings.activeModel.id)
     if (model) {
       return {
-        apiKey: model.apiKey,
+        apiKey: resolveCustomModelApiKey(model),
         baseUrl: model.baseUrl,
         modelId: model.modelId,
         provider: model.provider,
@@ -116,6 +134,88 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
 
   // Custom model not found, returning null to fall back to env vars
   return null
+}
+
+function getSecretsPath(): string {
+  return resolve(getPaths().data, 'secrets.json')
+}
+
+function readSecrets(): Record<string, string> {
+  const path = getSecretsPath()
+  if (!existsSync(path)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSecrets(secrets: Record<string, string>): void {
+  const path = getSecretsPath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify(secrets, null, 2))
+}
+
+function customModelSecretKey(modelId: string): string {
+  return `custom_model_${modelId}_api_key`
+}
+
+function isSecretRef(value: string): boolean {
+  return value.startsWith(CUSTOM_MODEL_SECRET_PREFIX)
+}
+
+function secretRef(modelId: string): string {
+  return `${CUSTOM_MODEL_SECRET_PREFIX}${customModelSecretKey(modelId)}`
+}
+
+export function resolveCustomModelApiKey(model: CustomModel): string {
+  if (!isSecretRef(model.apiKey)) return model.apiKey
+  const key = model.apiKey.slice(CUSTOM_MODEL_SECRET_PREFIX.length)
+  return readSecrets()[key] || ''
+}
+
+function prepareSettingsForStorage(settings: Settings, current: Settings): Settings {
+  const secrets = readSecrets()
+  const currentById = new Map(current.customModels.map((model) => [model.id, model]))
+  const nextIds = new Set(settings.customModels.map((model) => model.id))
+  const customModels = settings.customModels.map((model) => {
+    const apiKey = model.apiKey.trim()
+    if (apiKey && !isSecretRef(apiKey)) {
+      secrets[customModelSecretKey(model.id)] = apiKey
+      return { ...model, apiKey: secretRef(model.id) }
+    }
+
+    const currentModel = currentById.get(model.id)
+    if (apiKey && isSecretRef(apiKey)) {
+      return model
+    }
+    if (!apiKey && currentModel?.apiKey && isSecretRef(currentModel.apiKey)) {
+      return { ...model, apiKey: currentModel.apiKey }
+    }
+
+    return model
+  })
+
+  for (const key of Object.keys(secrets)) {
+    if (!key.startsWith('custom_model_') || !key.endsWith('_api_key')) continue
+    const modelId = key.slice('custom_model_'.length, -'_api_key'.length)
+    if (!nextIds.has(modelId)) {
+      delete secrets[key]
+    }
+  }
+  writeSecrets(secrets)
+  return { ...settings, customModels }
+}
+
+function redactSettings(settings: Settings): Settings {
+  return {
+    ...settings,
+    customModels: settings.customModels.map((model) => ({
+      ...model,
+      apiKey: isSecretRef(model.apiKey) ? '' : model.apiKey,
+    })),
+  }
 }
 
 function normalizeSettings(settings: Settings): Settings {
@@ -207,7 +307,7 @@ function inferCustomModelProvider(model: CustomModel): CustomModel['provider'] {
  */
 export function getBuiltinModelId(): string | null {
   const env = getEnv()
-  if (env.YOUCLAW_BUILTIN_API_URL && env.YOUCLAW_BUILTIN_AUTH_TOKEN) {
+  if (env.XiaoJuClaw_BUILTIN_API_URL && env.XiaoJuClaw_BUILTIN_AUTH_TOKEN) {
     return resolveEnvModelRef(env)
   }
   if (env.MODEL_API_KEY) {

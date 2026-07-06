@@ -12,7 +12,7 @@ export type RegisteredOpenClawPlugin = {
 }
 
 function unsupported(name: string): never {
-  throw new Error(`Unsupported OpenClaw runtime call in YouClaw compatibility mode: ${name}`)
+  throw new Error(`Unsupported OpenClaw runtime call in XiaoJuClaw compatibility mode: ${name}`)
 }
 
 export function createNoopPluginRuntime(): PluginRuntime {

@@ -22,7 +22,7 @@ disallowedTools:
 export const DEFAULT_SOUL_MD = `\
 # Soul
 
-You are YouClaw, a helpful AI assistant running as a desktop agent.
+You are XiaoJuClaw, a helpful AI assistant running as a desktop agent.
 
 ## Style
 - Respond in the same language as the user's message
@@ -177,7 +177,7 @@ export const DEFAULT_TOOLS_MD = `\
 export const DEFAULT_IDENTITY_MD = `\
 # Identity
 
-- **Agent Name**: YouClaw
+- **Agent Name**: XiaoJuClaw
 - **Role**: Desktop AI assistant
 - **Primary Goal**: Help the user effectively and safely
 `

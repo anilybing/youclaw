@@ -1,4 +1,4 @@
-import { openExternal } from "@/api/transport";
+﻿import { openExternal } from "@/api/transport";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,8 +27,6 @@ import {
   Bot,
   Brain,
   CalendarClock,
-  ChevronRight,
-  Gift,
   Github,
   LogIn,
   LogOut,
@@ -164,9 +162,9 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
             </button>
           ) : (
             <div className="flex items-center gap-1.5 ml-1.5 mr-1">
-              <img src="/icon.svg" alt="YouClaw" className="h-5 w-5" />
+              <img src="/icon.svg" alt="XiaoJuClaw" className="h-5 w-5" />
               <span className="text-md font-semibold tracking-tight whitespace-nowrap text-primary">
-                YouClaw
+                XiaoJuClaw
               </span>
             </div>
           )}
@@ -203,11 +201,11 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
               <div className="flex items-center gap-1.5 ml-1.5 mr-1 min-w-0">
                 <img
                   src="/icon.svg"
-                  alt="YouClaw"
+                  alt="XiaoJuClaw"
                   className="h-5 w-5 shrink-0"
                 />
                 <span className="text-md font-semibold tracking-tight whitespace-nowrap text-primary truncate">
-                  YouClaw
+                  XiaoJuClaw
                 </span>
               </div>
               <div className="flex-1 min-w-0" />
@@ -265,61 +263,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
       {/* Bottom actions */}
       <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
         <div className="border-t border-[var(--subtle-border)] py-2 px-1.5 space-y-2">
-          <button
-            type="button"
-            onClick={() => onOpenSettings("invitation")}
-            className={cn(
-              "relative flex w-full items-center overflow-hidden text-left",
-              "transition-[background-color,border-color] duration-300 ease-[var(--ease-soft)]",
-              isCollapsed
-                ? "h-10 justify-center rounded-[10px] border border-transparent bg-transparent px-0.5 text-primary hover:bg-[var(--surface-hover)]"
-                : "sidebar-invitation-card h-14 justify-start rounded-[14px] border border-primary/15 bg-gradient-to-br from-primary/10 via-background to-amber-500/8 px-3",
-            )}
-            aria-label={t.sidebar.invitationReward}
-            title={t.sidebar.invitationReward}
-          >
-            <div
-              className={cn(
-                "relative z-[1] flex w-full items-center",
-                isCollapsed ? "justify-center" : "justify-start",
-              )}
-            >
-              <Gift
-                className={cn(
-                  "shrink-0",
-                  isCollapsed
-                    ? "h-[18px] w-[18px]"
-                    : "h-[18px] w-[18px] text-primary",
-                )}
-              />
-              <div
-                className={cn(
-                  "min-w-0 overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-[var(--ease-soft)]",
-                  isCollapsed
-                    ? "ml-0 max-w-0 translate-x-1.5 opacity-0"
-                    : "ml-2.5 max-w-[134px] translate-x-0 opacity-100",
-                )}
-              >
-                <p className="truncate text-[12px] font-medium leading-[1.1] text-foreground">
-                  {t.sidebar.invitationTitle}
-                </p>
-                <p className="mt-1 truncate text-[11px] font-medium leading-none text-muted-foreground">
-                  {t.sidebar.invitationSubtitle}
-                </p>
-              </div>
-              <div
-                className={cn(
-                  "overflow-hidden transition-[max-width,opacity,transform,margin] duration-300 ease-[var(--ease-soft)]",
-                  isCollapsed
-                    ? "ml-0 max-w-0 translate-x-1 opacity-0"
-                    : "ml-auto max-w-4 translate-x-0 opacity-70",
-                )}
-              >
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-          </button>
-
           <DropdownMenu>
             <div
               className={cn(
@@ -436,7 +379,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
 
               <DropdownMenuItem
                 onClick={() =>
-                  openExternal("https://github.com/CodePhiliaX/youClaw")
+                  openExternal("https://github.com/CodePhiliaX/XiaoJuClaw")
                 }
                 className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer"
               >

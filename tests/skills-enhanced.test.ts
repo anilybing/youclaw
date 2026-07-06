@@ -127,7 +127,7 @@ describe('SkillsInstaller.checkCompatibility', () => {
 describe('SkillsInstaller local metadata', () => {
   test('writes fixed install metadata for imported skills', async () => {
     const installer = new SkillsInstaller()
-    const root = mkdtempSync(resolve(tmpdir(), 'youclaw-installer-'))
+    const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-installer-'))
     const sourceDir = resolve(root, 'source-skill')
     const targetDir = resolve(root, 'target')
 
@@ -138,7 +138,7 @@ describe('SkillsInstaller local metadata', () => {
 
       await installer.installFromLocal(sourceDir, targetDir)
 
-      const metaPath = resolve(targetDir, 'source-skill', '.youclaw-skill.json')
+      const metaPath = resolve(targetDir, 'source-skill', '.XiaoJuClaw-skill.json')
       expect(existsSync(metaPath)).toBe(true)
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { managed: boolean; origin: string }
       expect(meta.managed).toBe(false)
@@ -164,7 +164,7 @@ describe('SkillsLoader.getAgentSkillsView', () => {
 
     mkdirSync(skillDir, { recursive: true })
     writeFileSync(resolve(skillDir, 'SKILL.md'), `---\nname: ${skillName}\ndescription: Runtime source test\n---\nbody\n`)
-    writeFileSync(resolve(skillDir, '.youclaw-skill.json'), JSON.stringify({
+    writeFileSync(resolve(skillDir, '.XiaoJuClaw-skill.json'), JSON.stringify({
       schemaVersion: 1,
       managed: false,
       origin: 'imported',

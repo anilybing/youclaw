@@ -4,12 +4,12 @@ import type { McpServerConfig } from './schema.ts'
 /**
  * SecretsManager: Agent-level secrets management
  *
- * Naming convention: YOUCLAW_SECRET_<AGENTID>_<KEY>
+ * Naming convention: XiaoJuClaw_SECRET_<AGENTID>_<KEY>
  * Referenced in agent.yaml via ${SECRET:key}
  *
  * Example:
  * .env:
- *   YOUCLAW_SECRET_MYAGENT_API_TOKEN=sk-xxx
+ *   XiaoJuClaw_SECRET_MYAGENT_API_TOKEN=sk-xxx
  *
  * agent.yaml:
  *   mcpServers:
@@ -26,18 +26,18 @@ export class SecretsManager {
    */
   loadFromEnv(): void {
     const logger = getLogger()
-    const prefix = 'YOUCLAW_SECRET_'
+    const prefix = 'XiaoJuClaw_SECRET_'
     let count = 0
 
     for (const [key, value] of Object.entries(process.env)) {
       if (!key.startsWith(prefix) || !value) continue
 
-      // YOUCLAW_SECRET_<AGENTID>_<KEY>
+      // XiaoJuClaw_SECRET_<AGENTID>_<KEY>
       const rest = key.slice(prefix.length)
       const firstUnderscore = rest.indexOf('_')
 
       if (firstUnderscore === -1) {
-        logger.warn({ key }, 'Invalid secret naming format, expected YOUCLAW_SECRET_<AGENTID>_<KEY>')
+        logger.warn({ key }, 'Invalid secret naming format, expected XiaoJuClaw_SECRET_<AGENTID>_<KEY>')
         continue
       }
 

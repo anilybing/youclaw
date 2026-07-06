@@ -52,25 +52,25 @@ export function resolvePathInput(input: string, baseDir = process.cwd()): string
 
 export function getProductionDataDir(): string {
   const home = getHomeDir()
-  if (!home) return resolve(tmpdir(), 'youclaw-data')
-  return resolve(home, '.youclaw')
+  if (!home) return resolve(tmpdir(), 'XiaoJuClaw-data')
+  return resolve(home, '.XiaoJuClaw')
 }
 
 export function getLegacyProductionDataDir(): string {
   const home = getHomeDir()
-  if (!home) return resolve(tmpdir(), 'youclaw-data')
+  if (!home) return resolve(tmpdir(), 'XiaoJuClaw-data')
 
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA || resolve(home, 'AppData', 'Roaming')
-    return resolve(appData, 'com.youclaw.app')
+    return resolve(appData, 'com.XiaoJuClaw.app')
   }
 
   if (process.platform === 'darwin') {
-    return resolve(home, 'Library', 'Application Support', 'com.youclaw.app')
+    return resolve(home, 'Library', 'Application Support', 'com.XiaoJuClaw.app')
   }
 
   const xdgDataHome = process.env.XDG_DATA_HOME || resolve(home, '.local', 'share')
-  return resolve(xdgDataHome, 'com.youclaw.app')
+  return resolve(xdgDataHome, 'com.XiaoJuClaw.app')
 }
 
 function hasInitializedDataDir(dir: string): boolean {
@@ -83,7 +83,7 @@ function hasInitializedDataDir(dir: string): boolean {
     // A directory with only leftover subdirectories (workspace/, skills/) from
     // older versions should NOT be considered initialized — otherwise the
     // migration from the legacy data dir would be incorrectly skipped.
-    return existsSync(resolve(dir, 'youclaw.db'))
+    return existsSync(resolve(dir, 'XiaoJuClaw.db'))
   } catch {
     return false
   }
@@ -122,10 +122,39 @@ export function resolveProductionDataDir(): string {
   }
 }
 
+function resolveExplicitDataDir(targetDir: string): string {
+  if (hasInitializedDataDir(targetDir)) {
+    return targetDir
+  }
+
+  const sources = [
+    resolveProductionDataDir(),
+    getLegacyProductionDataDir(),
+  ]
+  const visited = new Set<string>()
+
+  for (const sourceDir of sources) {
+    if (sourceDir === targetDir || visited.has(sourceDir)) continue
+    visited.add(sourceDir)
+    if (!hasInitializedDataDir(sourceDir)) continue
+
+    try {
+      copyDir(sourceDir, targetDir)
+      console.info(`[DATA_DIR] Migrated existing data directory to ${targetDir}`)
+      return targetDir
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[DATA_DIR] Failed to migrate existing data directory to ${targetDir}: ${message}`)
+    }
+  }
+
+  return targetDir
+}
+
 function isWritableDir(dir: string): boolean {
   try {
     mkdirSync(dir, { recursive: true })
-    const probe = resolve(dir, `.youclaw-write-test-${process.pid}-${Date.now()}`)
+    const probe = resolve(dir, `.XiaoJuClaw-write-test-${process.pid}-${Date.now()}`)
     writeFileSync(probe, 'ok')
     unlinkSync(probe)
     return true
@@ -140,13 +169,13 @@ function resolveDataDir(envDataDir: string): string {
   const explicitDataDir = process.env.DATA_DIR?.trim()
   const candidates: string[] = []
   if (explicitDataDir) {
-    candidates.push(resolvePathInput(explicitDataDir))
+    candidates.push(resolveExplicitDataDir(resolvePathInput(explicitDataDir)))
   }
   if (isBunCompiled && !explicitDataDir) {
     candidates.push(resolveProductionDataDir())
   }
   candidates.push(resolvePathInput(envDataDir, ROOT_DIR))
-  candidates.push(resolve(tmpdir(), 'youclaw-data'))
+  candidates.push(resolve(tmpdir(), 'XiaoJuClaw-data'))
 
   const visited = new Set<string>()
   for (const candidate of candidates) {
@@ -158,7 +187,7 @@ function resolveDataDir(envDataDir: string): string {
     }
   }
 
-  const fallback = resolve(tmpdir(), 'youclaw-data')
+  const fallback = resolve(tmpdir(), 'XiaoJuClaw-data')
   _resolvedDataDir = fallback
   return fallback
 }
@@ -212,7 +241,7 @@ export function getPaths() {
     root: ROOT_DIR,
     data: dataDir,
     workspace: workspaceRoot,
-    db: resolve(dataDir, 'youclaw.db'),
+    db: resolve(dataDir, 'XiaoJuClaw.db'),
     agents: agentsDir,
     skills: resolveResourceSubdir(resourcesDir, isBunCompiled, 'skills'),
     prompts: resolveResourceSubdir(resourcesDir, isBunCompiled, 'prompts'),

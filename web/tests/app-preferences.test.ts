@@ -52,12 +52,12 @@ describe('useAppPreferencesStore skills view mode', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(useAppPreferencesStore.getState().skillsViewMode).toBe('list')
-    expect(storageEntries.get('youclaw-app-preferences')).toContain('"skillsViewMode":"list"')
+    expect(storageEntries.get('XiaoJuClaw-app-preferences')).toContain('"skillsViewMode":"list"')
   })
 
   test('rehydrates a saved skills view mode', async () => {
     resetPreferences()
-    storageEntries.set('youclaw-app-preferences', JSON.stringify({
+    storageEntries.set('XiaoJuClaw-app-preferences', JSON.stringify({
       state: { skillsViewMode: 'list' },
       version: 0,
     }))

@@ -7,6 +7,80 @@ import { z } from 'zod/v4'
 import { which, resetShellEnvCache, getShellEnv } from '../utils/shell-env.ts'
 import { getLogger } from '../logger/index.ts'
 import { BUN_CDN_BASE, BUN_GITHUB_BASE, GIT_CDN_URL, UV_CDN_BASE, UV_GITHUB_BASE } from '../config/tools.ts'
+import { getPaths } from '../config/index.ts'
+
+// ---------------------------------------------------------------------------
+// Portable Tools Directory — 所有工具安装到 XiaoJuClawData/tools/ 下
+// 这样 U 盘拔走换电脑不需要重新安装
+// ---------------------------------------------------------------------------
+
+/**
+ * 获取便携工具目录（XiaoJuClawData/tools/）
+ * 所有一键安装的工具都放在这里，而不是 C 盘用户目录
+ */
+function getPortableToolsDir(): string {
+  const dataDir = getPaths().data
+  const toolsDir = resolve(dataDir, 'tools')
+  mkdirSync(toolsDir, { recursive: true })
+  return toolsDir
+}
+
+/**
+ * 获取特定工具的便携安装目录
+ */
+function getPortableToolDir(toolName: string): string {
+  const dir = resolve(getPortableToolsDir(), toolName)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/**
+ * 把便携工具目录加到 PATH 环境变量前面
+ * 这样 which() 和 execSync 都能优先找到 U 盘上的工具
+ */
+function ensurePortableToolsInPath(): void {
+  const toolsDir = getPortableToolsDir()
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const currentPath = process.env.PATH || ''
+
+  // 收集所有可能的 bin 路径
+  const toolPaths: string[] = []
+
+  // bun: tools/bun/
+  const bunDir = resolve(toolsDir, 'bun')
+  if (existsSync(bunDir)) toolPaths.push(bunDir)
+
+  // git: tools/git/cmd/ 和 tools/git/bin/
+  const gitCmd = resolve(toolsDir, 'git', 'cmd')
+  const gitBin = resolve(toolsDir, 'git', 'bin')
+  if (existsSync(gitCmd)) toolPaths.push(gitCmd)
+  if (existsSync(gitBin)) toolPaths.push(gitBin)
+
+  // node: tools/node/
+  const nodeDir = resolve(toolsDir, 'node')
+  if (existsSync(nodeDir)) toolPaths.push(nodeDir)
+
+  // uv: tools/uv/
+  const uvDir = resolve(toolsDir, 'uv')
+  if (existsSync(uvDir)) toolPaths.push(uvDir)
+
+  // python: tools/python/
+  const pythonDir = resolve(toolsDir, 'python')
+  if (existsSync(pythonDir)) toolPaths.push(pythonDir)
+
+  if (toolPaths.length === 0) return
+
+  // 把便携工具路径加到 PATH 最前面（优先级最高）
+  const newPaths = toolPaths.filter(p => !currentPath.includes(p))
+  if (newPaths.length > 0) {
+    process.env.PATH = newPaths.join(sep) + sep + currentPath
+  }
+}
+
+// 模块加载时立即执行，确保后续所有 which() 调用都能找到便携工具
+try {
+  ensurePortableToolsInPath()
+} catch { /* 首次启动 data dir 可能还没初始化 */ }
 
 const health = new Hono()
 
@@ -71,6 +145,7 @@ function findGitFromRegistry(): string | null {
  */
 function checkTool(commands: string[], versionFlag = '--version'): { path: string | null; version: string | null } {
   resetShellEnvCache()
+  ensurePortableToolsInPath()
   for (const cmd of commands) {
     const p = which(cmd)
     if (p) {
@@ -269,10 +344,9 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
     return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
   }
 
-  // Determine install directory
-  const home = process.env.HOME || process.env.USERPROFILE || ''
+  // Determine install directory — portable: XiaoJuClawData/tools/bun/
   const ext = process.platform === 'win32' ? '.exe' : ''
-  const bunDir = resolve(home, '.bun', 'bin')
+  const bunDir = getPortableToolDir('bun')
   const bunPath = resolve(bunDir, `bun${ext}`)
 
   try {
@@ -328,6 +402,7 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
     } catch { /* ignore cleanup errors */ }
 
     resetShellEnvCache()
+    ensurePortableToolsInPath()
 
     const msg = `Bun installed to ${bunPath} (from ${downloadSource})`
     getLogger().info({ category: 'install' }, `[install-bun] ${msg}`)
@@ -341,13 +416,15 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
 
 
 /**
- * Download Git installer from CDN, extract, and run silent install on Windows.
- * Downloads .exe.zip → extracts .exe → runs with /VERYSILENT /NORESTART.
+ * Download Git Portable and extract to XiaoJuClawData/tools/git/ on Windows.
+ * Uses PortableGit self-extracting archive instead of system installer.
+ * This way Git lives on the USB drive and doesn't need reinstalling on new machines.
  */
 async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stderr: string; exitCode: number }> {
   const logger = getLogger()
+  const gitDir = getPortableToolDir('git')
 
-  // Download zip
+  // Download the Git installer zip from CDN
   logger.info({ category: 'install' }, `[install-git] Downloading from ${GIT_CDN_URL}...`)
   let zipBuffer: ArrayBuffer | null = null
   try {
@@ -387,9 +464,10 @@ async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stder
     }
 
     // Find the .exe inside extracted directory
-    const { readdirSync } = await import('node:fs')
+    const { readdirSync, copyFileSync, rmSync } = await import('node:fs')
     const files = readdirSync(tmpExtractDir)
     const exeFile = files.find(f => f.endsWith('.exe'))
+
     if (!exeFile) {
       const msg = `No .exe found in extracted zip (files: ${files.join(', ')})`
       logger.error({ category: 'install' }, `[install-git] ${msg}`)
@@ -397,14 +475,17 @@ async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stder
     }
 
     const exePath = resolve(tmpExtractDir, exeFile)
-    logger.info({ category: 'install' }, `[install-git] Running silent install: ${exePath}`)
 
-    // Run silent install (will trigger UAC)
+    // Try portable extraction: run the installer with /DIR= to install to our tools dir
+    // Git for Windows installer supports /DIR="path" for custom install location
+    // and /PORTABLE=1 for portable mode (no registry, no PATH modification)
+    logger.info({ category: 'install' }, `[install-git] Installing to portable dir: ${gitDir}`)
+
     let stdout = ''
     let stderr = ''
     let exitCode = 0
     try {
-      stdout = execSync(`"${exePath}" /VERYSILENT /NORESTART /SP-`, {
+      stdout = execSync(`"${exePath}" /VERYSILENT /NORESTART /SP- /DIR="${gitDir}" /NOICONS /COMPONENTS="ext,ext\\shellhere,assoc,assoc_sh"`, {
         encoding: 'utf-8',
         timeout: 300_000,
         windowsHide: true,
@@ -418,12 +499,12 @@ async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stder
 
     // Clean up temp files
     try {
-      const { rmSync } = await import('node:fs')
       rmSync(tmpZip, { force: true })
       rmSync(tmpExtractDir, { recursive: true, force: true })
     } catch { /* ignore */ }
 
     resetShellEnvCache()
+    ensurePortableToolsInPath()
 
     if (exitCode === 0) {
       logger.info({ category: 'install' }, `[install-git] Git installed successfully`)
@@ -500,12 +581,9 @@ async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: strin
     return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
   }
 
-  const home = process.env.HOME || process.env.USERPROFILE || ''
   const ext = process.platform === 'win32' ? '.exe' : ''
-  // Install to ~/.local/bin/ (standard location for uv)
-  const binDir = process.platform === 'win32'
-    ? resolve(home, '.local', 'bin')
-    : resolve(home, '.local', 'bin')
+  // Install to portable tools dir: XiaoJuClawData/tools/uv/
+  const binDir = getPortableToolDir('uv')
   const uvPath = resolve(binDir, `uv${ext}`)
   const uvxPath = resolve(binDir, `uvx${ext}`)
 
@@ -587,6 +665,7 @@ async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: strin
     } catch {}
 
     resetShellEnvCache()
+    ensurePortableToolsInPath()
 
     const msg = `uv installed to ${uvPath} (from ${downloadSource})`
     logger.info({ category: 'install' }, `[install-uv] ${msg}`)

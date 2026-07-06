@@ -44,7 +44,7 @@ describe('system routes', () => {
     expect(body.nodeVersion.startsWith('bun ')).toBe(true)
     // mock router returns empty channels, so telegram.connected is false
     expect(body.telegram.connected).toBe(false)
-    expect(body.database.path.endsWith('youclaw.db')).toBe(true)
+    expect(body.database.path.endsWith('XiaoJuClaw.db')).toBe(true)
     expect(body.database.sizeBytes).toBeGreaterThanOrEqual(0)
     expect(typeof body.startedAt).toBe('string')
     expect(body.uptime).toBeGreaterThanOrEqual(0)

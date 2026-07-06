@@ -182,7 +182,7 @@ describe('ImportManager', () => {
 
     await manager.import('github', {
       repoUrl: 'https://github.com/acme/tools/tree/main/skills/github-ops',
-      targetDir: resolve(tmpdir(), 'youclaw-import-target'),
+      targetDir: resolve(tmpdir(), 'XiaoJuClaw-import-target'),
     })
 
     expect(installed).toHaveLength(1)

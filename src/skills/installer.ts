@@ -16,7 +16,7 @@ import type {
   ZipUploadSkillRegistryMeta,
 } from './types.ts'
 
-const PROJECT_META_FILENAME = '.youclaw-skill.json'
+const PROJECT_META_FILENAME = '.XiaoJuClaw-skill.json'
 const SCHEMA_VERSION = 1
 
 export interface InstallMetadata {
@@ -88,7 +88,7 @@ export class SkillsInstaller {
    */
   async installFromUrl(url: string, targetDir: string, metadata?: InstallMetadata): Promise<void> {
     const logger = getLogger()
-    const tmpRoot = mkdtempSync(resolve(tmpdir(), 'youclaw-skill-url-'))
+    const tmpRoot = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-skill-url-'))
 
     try {
       const response = await fetch(url)

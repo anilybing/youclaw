@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react'
 import { getLogDates, getLogEntries } from '../api/client'
 import { getSystemStatus } from '../api/system'
@@ -85,7 +85,7 @@ export function Logs() {
     if (isTauri) {
       getSystemStatus().then((s) => setLogsDir(s.logsDir ?? '')).catch(() => {})
     }
-  }, [])
+  }, [selectedDate])
 
   // Debounce search
   useEffect(() => {

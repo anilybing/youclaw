@@ -624,7 +624,7 @@ export class AgentRuntime {
   }
 
   /**
-   * Handle a pi-mono session event and map to YouClaw EventBus events.
+   * Handle a pi-mono session event and map to XiaoJuClaw EventBus events.
    */
   private handleSessionEvent(
     event: AgentSessionEvent,

@@ -13,7 +13,7 @@ function MacTitleBar() {
       className="h-[30px] shrink-0 flex items-center justify-center bg-muted/30 border-b border-[var(--subtle-border)]"
       {...drag}
     >
-      <span className="text-xs font-semibold text-foreground/60">YouClaw</span>
+      <span className="text-xs font-semibold text-foreground/60">XiaoJuClaw</span>
     </div>
   )
 }

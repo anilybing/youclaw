@@ -147,7 +147,7 @@ describe('PromptBuilder channel context', () => {
 
 describe('PromptBuilder bootstrap snapshots', () => {
   test('reuses injected bootstrap docs within the same chat until snapshot is cleared', () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), 'youclaw-bootstrap-snapshot-'))
+    const workspaceDir = mkdtempSync(join(tmpdir(), 'XiaoJuClaw-bootstrap-snapshot-'))
     try {
       writeFileSync(resolve(workspaceDir, 'AGENTS.md'), '# Agents\n')
       writeFileSync(resolve(workspaceDir, 'SOUL.md'), '# Soul\n')

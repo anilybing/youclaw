@@ -18,7 +18,7 @@ export function maskToken(token?: string | null): string | null {
 export function sanitizeDeepLink(rawUrl?: string | null): string | null {
   if (!rawUrl) return null
 
-  const start = rawUrl.indexOf('youclaw://')
+  const start = rawUrl.indexOf('XiaoJuClaw://')
   const normalized = (start === -1 ? rawUrl : rawUrl.slice(start))
     .trim()
     .replace(/^['"]+/, '')

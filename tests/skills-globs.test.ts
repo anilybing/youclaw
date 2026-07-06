@@ -33,7 +33,7 @@ function createSkill(globs?: string[]): Skill {
 
 describe('scanWorkspaceFiles', () => {
   beforeEach(() => {
-    workspaceDir = mkdtempSync(join(tmpdir(), 'youclaw-skill-globs-'))
+    workspaceDir = mkdtempSync(join(tmpdir(), 'XiaoJuClaw-skill-globs-'))
   })
 
   afterEach(() => {

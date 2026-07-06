@@ -123,7 +123,7 @@ function routeErrorStatus(err: unknown): 400 | 401 | 404 | 500 {
   return 500
 }
 
-function extensionCorsHeaders(): HeadersInit {
+function extensionCorsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -151,9 +151,11 @@ export function createBrowserRoutes(browserManager: BrowserManager, _agentManage
   app.get('/browser/main-bridge/extension-download', (c) => {
     try {
       const bundle = buildBrowserExtensionZip()
+      const responseBody = new Uint8Array(bundle.byteLength)
+      responseBody.set(bundle)
       c.header('Content-Type', 'application/zip')
-      c.header('Content-Disposition', 'attachment; filename="youclaw-main-browser-chromium.zip"')
-      return c.body(bundle)
+      c.header('Content-Disposition', 'attachment; filename="XiaoJuClaw-main-browser-chromium.zip"')
+      return c.body(responseBody.buffer)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       return c.json({ error: message }, 500)

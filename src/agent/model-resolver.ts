@@ -38,7 +38,7 @@ export interface ModelConfig {
 }
 
 /**
- * Resolve a YouClaw model config to a pi-ai Model object.
+ * Resolve a XiaoJuClaw model config to a pi-ai Model object.
  *
  * Strategy:
  * 1. Try to resolve via pi-ai's built-in model registry (getModel)

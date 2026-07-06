@@ -62,7 +62,7 @@ describe('browser runtime wiring', () => {
     expect(mcp).toContain("'act'")
     expect(mcp).toContain('createBrowserActionRouter')
     expect(mcp).toContain('Prefer this over raw CSS selectors')
-    expect(runner).toContain('data-youclaw-ref')
+    expect(runner).toContain('data-XiaoJuClaw-ref')
     expect(runner).toContain('Ref ${input.ref} is not available. Capture a fresh snapshot first.')
     expect(router).toContain('Browser target "${target}" is not implemented yet')
   })

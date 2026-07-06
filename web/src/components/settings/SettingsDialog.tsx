@@ -5,20 +5,20 @@ import { MarketplacePanel } from "./MarketplacePanel"
 import { ModelsPanel } from "./ModelsPanel"
 import { AccountPanel } from "./AccountPanel"
 import { AboutPanel } from "./AboutPanel"
-import { InvitationPanel } from "./InvitationPanel"
+// InvitationPanel removed — not applicable for USB activation model
 import { EnvironmentPanel } from "./EnvironmentPanel"
 import { Channels } from "@/pages/Channels"
 import { BrowserProfiles } from "@/pages/BrowserProfiles"
-import { X, User, Palette, Cpu, Radio, Globe, Info, UserPlus, Store, Terminal } from "lucide-react"
+import { X, User, Palette, Cpu, Radio, Globe, Info, Store, Terminal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n"
 import { useAppRuntimeStore } from "@/stores/app"
 
-type Tab = "account" | "general" | "marketplace" | "models" | "channels" | "browser" | "environment" | "invitation" | "about"
+type Tab = "account" | "general" | "marketplace" | "models" | "channels" | "browser" | "environment" | "about"
 
 export type SettingsTab = Tab
 
-const CONTENT_PADDING_TABS: Tab[] = ["account", "general", "marketplace", "models", "environment", "invitation", "about"]
+const CONTENT_PADDING_TABS: Tab[] = ["account", "general", "marketplace", "models", "environment", "about"]
 
 interface SettingsDialogProps {
   open: boolean
@@ -39,7 +39,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
     { id: "channels", label: t.nav.channels, icon: Radio },
     { id: "browser", label: t.nav.browser, icon: Globe },
     { id: "environment", label: t.settings.environment, icon: Terminal },
-    { id: "invitation", label: t.invitation.title, icon: UserPlus, cloud: true },
+    // Invitation/referral tab hidden — not applicable for USB activation model
     { id: "about", label: t.settings.about, icon: Info },
   ]
 
@@ -94,7 +94,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
           {activeTab === "channels" && <Channels />}
           {activeTab === "browser" && <BrowserProfiles />}
           {activeTab === "environment" && <EnvironmentPanel />}
-          {activeTab === "invitation" && <InvitationPanel />}
           {activeTab === "about" && <AboutPanel />}
         </div>
       </DialogContent>

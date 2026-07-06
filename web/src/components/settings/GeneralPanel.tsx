@@ -6,7 +6,7 @@ import { Sun, Moon, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getTauriInvoke, isTauri, updateCachedBaseUrl, savePreferredPort } from '@/api/transport'
+import { getPortableSetting, getTauriInvoke, isTauri, updateCachedBaseUrl, savePreferredPort } from '@/api/transport'
 
 const themeOptions: { value: Theme; labelKey: 'dark' | 'light' | 'system'; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { value: 'light', labelKey: 'light', icon: Sun },
@@ -40,12 +40,9 @@ export function GeneralPanel() {
 
   useEffect(() => {
     if (!isTauri) return
-    import('@tauri-apps/plugin-store').then(({ load }) => {
-      load('settings.json').then(async (store) => {
-        const preferred = await store.get<string>('preferred_port')
-        if (preferred) setPortValue(preferred)
-      })
-    }).catch(() => {})
+    getPortableSetting('preferred_port').then((preferred) => {
+      if (preferred) setPortValue(preferred)
+    })
   }, [])
 
   const savePortToStore = useCallback(async (port: number) => {

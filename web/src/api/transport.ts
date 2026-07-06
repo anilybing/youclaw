@@ -8,11 +8,25 @@ type TauriWindow = Window & {
   __TAURI_INTERNALS__?: TauriInternals
 }
 
+export type PortableDiskSpace = {
+  data_dir: string
+  total_bytes: number
+  free_bytes: number
+  used_bytes: number
+  free_percent: number
+  warning_level: 'ok' | 'low' | 'critical'
+}
+
 function getTauriInternals(): TauriInternals | undefined {
   return (window as TauriWindow).__TAURI_INTERNALS__
 }
 
-export const isTauri = typeof window !== "undefined" && !!getTauriInternals()
+// Check multiple signals to handle edge cases where __TAURI_INTERNALS__ hasn't been injected yet
+export const isTauri =
+  typeof window !== "undefined" &&
+  (!!getTauriInternals() ||
+    window.location.hostname === "tauri.localhost" ||
+    window.location.protocol === "tauri:")
 
 /**
  * Convert a local file path to a URL loadable by the webview.
@@ -41,16 +55,56 @@ export function updateCachedBaseUrl(url: string): void {
   _cachedBaseUrl = url
 }
 
+export async function getPortableSetting(key: string): Promise<string | null> {
+  if (!isTauri) return null
+  try {
+    const value = await getTauriInvoke()('portable_setting_get', { key })
+    return typeof value === 'string' ? value : null
+  } catch {
+    return null
+  }
+}
+
+export async function savePortableSetting(key: string, value: string): Promise<void> {
+  if (!isTauri) return
+  await getTauriInvoke()('portable_setting_set', { key, value })
+}
+
+export async function deletePortableSetting(key: string): Promise<void> {
+  if (!isTauri) return
+  await getTauriInvoke()('portable_setting_delete', { key })
+}
+
+export async function getPortableSecret(key: string): Promise<string | null> {
+  if (!isTauri) return null
+  const value = await getTauriInvoke()('portable_secret_get', { key })
+  return typeof value === 'string' ? value : null
+}
+
+export async function savePortableSecret(key: string, value: string): Promise<void> {
+  if (!isTauri) return
+  await getTauriInvoke()('portable_secret_set', { key, value })
+}
+
+export async function deletePortableSecret(key: string): Promise<void> {
+  if (!isTauri) return
+  await getTauriInvoke()('portable_secret_delete', { key })
+}
+
+export async function getPortableDiskSpace(): Promise<PortableDiskSpace | null> {
+  if (!isTauri) return null
+  const value = await getTauriInvoke()('get_portable_disk_space')
+  if (!value || typeof value !== 'object') return null
+  return value as PortableDiskSpace
+}
+
 /**
  * Persist preferred port to Tauri Store (JS instance only).
  * Must not go through the Rust app.store() to avoid cache divergence.
  */
 export async function savePreferredPort(port: number): Promise<void> {
   if (port < 1024 || port > 65535) throw new Error('Port must be between 1024 and 65535')
-  const { load } = await import('@tauri-apps/plugin-store')
-  const store = await load('settings.json')
-  await store.set('preferred_port', String(port))
-  await store.save()
+  await savePortableSetting('preferred_port', String(port))
 }
 
 /**
@@ -63,9 +117,7 @@ export async function getBackendBaseUrl(): Promise<string> {
   if (_cachedBaseUrl !== null) return _cachedBaseUrl
 
   try {
-    const { load } = await import('@tauri-apps/plugin-store')
-    const store = await load('settings.json')
-    const port = (await store.get<string>('preferred_port')) || '62601'
+    const port = await getPortableSetting('preferred_port') || '62601'
     _cachedBaseUrl = `http://localhost:${port}`
   } catch {
     _cachedBaseUrl = 'http://localhost:62601'

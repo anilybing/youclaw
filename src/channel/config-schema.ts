@@ -3,7 +3,7 @@ import { BUILD_CONSTANTS } from '../config/build-constants.ts'
 
 // ===== Config schema for each channel type =====
 
-const WEBSITE_URL = (BUILD_CONSTANTS['YOUCLAW_WEBSITE_URL'] || 'https://youclaw.dev').replace(/\/+$/, '')
+const WEBSITE_URL = (BUILD_CONSTANTS['XiaoJuClaw_WEBSITE_URL'] || 'https://XiaoJuClaw.dev').replace(/\/+$/, '')
 const DOCS_BASE_URL = `${WEBSITE_URL}/docs/channels`
 
 export const TelegramConfigSchema = z.object({

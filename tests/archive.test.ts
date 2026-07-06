@@ -28,15 +28,15 @@ describe('unpackZipArchive', () => {
 describe('assertPathInsideRoot', () => {
   test('accepts nested Windows paths inside the target directory', () => {
     expect(() => assertPathInsideRoot(
-      'C:\\youclaw-test\\skills\\tmp',
-      'C:\\youclaw-test\\skills\\tmp\\github-ops\\SKILL.md',
+      'C:\\XiaoJuClaw-test\\skills\\tmp',
+      'C:\\XiaoJuClaw-test\\skills\\tmp\\github-ops\\SKILL.md',
     )).not.toThrow()
   })
 
   test('rejects Windows paths outside the target directory', () => {
     expect(() => assertPathInsideRoot(
-      'C:\\youclaw-test\\skills\\tmp',
-      'C:\\youclaw-test\\skills\\other\\SKILL.md',
+      'C:\\XiaoJuClaw-test\\skills\\tmp',
+      'C:\\XiaoJuClaw-test\\skills\\other\\SKILL.md',
     )).toThrow('Archive entry escapes target directory')
   })
 })

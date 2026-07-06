@@ -1,5 +1,6 @@
-import { getBackendBaseUrl } from './transport'
+import { getBackendBaseUrl, getPortableSetting, isTauri, savePortableSetting } from './transport'
 import type { Attachment } from '../types/attachment'
+import { ApiError } from '../lib/api-error'
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const base = await getBackendBaseUrl()
@@ -9,13 +10,31 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     headers.set('Content-Type', 'application/json')
   }
 
-  const res = await fetch(`${base}${path}`, {
-    ...options,
-    headers,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${base}${path}`, {
+      ...options,
+      headers,
+    })
+  } catch (err) {
+    throw new ApiError({
+      message: err instanceof Error ? err.message : 'Network error',
+      errorCode: 'NETWORK_ERROR',
+      status: 0,
+      raw: err,
+    })
+  }
+
   if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(body?.error || `API error: ${res.status}`)
+    const body = await res.json().catch(() => null) as
+      | { error?: string; errorCode?: string; errorMessage?: string }
+      | null
+    throw new ApiError({
+      message: body?.error || body?.errorMessage || `API error: ${res.status}`,
+      errorCode: body?.errorCode || '',
+      status: res.status,
+      raw: body,
+    })
   }
   return res.json() as Promise<T>
 }
@@ -1095,7 +1114,7 @@ export async function downloadBrowserMainBridgeExtensionBundle() {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'youclaw-main-browser-chromium.zip'
+  link.download = 'XiaoJuClaw-main-browser-chromium.zip'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -1275,43 +1294,52 @@ export async function updateProfile(params: { displayName?: string; avatar?: str
   })
 }
 
-export async function redeemInvitationCode(code: string) {
-  return apiFetch<{ ok: boolean }>('/api/invitation/redeem', {
+export interface DeviceActivationPayload {
+  code: string
+  deviceName: string
+  deviceFingerprint: string
+  osName: string
+  clientVersion: string
+}
+
+async function getDeviceFingerprint(): Promise<string> {
+  const storageKey = 'XiaoJuClaw_commercial_device_fingerprint'
+  if (isTauri) {
+    const portableFingerprint = await getPortableSetting(storageKey)
+    if (portableFingerprint) return portableFingerprint
+    const nextFingerprint = `desktop-${crypto.randomUUID()}`
+    await savePortableSetting(storageKey, nextFingerprint)
+    return nextFingerprint
+  }
+
+  const existingFingerprint = localStorage.getItem(storageKey)
+  if (existingFingerprint) return existingFingerprint
+  const nextFingerprint = `desktop-${crypto.randomUUID()}`
+  localStorage.setItem(storageKey, nextFingerprint)
+  return nextFingerprint
+}
+
+export async function getDefaultDeviceActivationPayload(code: string): Promise<DeviceActivationPayload> {
+  const deviceFingerprint = await getDeviceFingerprint()
+  const platform = navigator.platform || 'Desktop'
+  return {
+    code,
+    deviceName: `${platform} 设备`,
+    deviceFingerprint,
+    osName: platform,
+    clientVersion: 'XiaoJuClaw-desktop',
+  }
+}
+
+export async function redeemInvitationCode(payload: string | DeviceActivationPayload) {
+  const body = typeof payload === 'string' ? await getDefaultDeviceActivationPayload(payload) : payload
+  return apiFetch<{ ok: boolean; activated?: boolean; planName?: string; creditGranted?: number; deviceLimit?: number; deviceId?: string }>('/api/invitation/redeem', {
     method: 'POST',
-    body: JSON.stringify({ code }),
+    body: JSON.stringify(body),
   })
 }
 
-// Referral API
-
-export interface ReferralCode {
-  id: number
-  code: string
-  credits: number
-  maxUses: number | null
-  usedCount: number
-  expiredAt: string | null
-  enabled: boolean
-  type: string
-  userId: number
-  createdAt: number
-  updatedAt: number
-}
-
-export interface ReferralStats {
-  invitedCount: number
-  totalCredits: number
-  code: string
-  maxCredits: number
-}
-
-export async function getReferralCode() {
-  return apiFetch<ReferralCode>('/api/invitation/referral_code')
-}
-
-export async function getReferralStats() {
-  return apiFetch<ReferralStats>('/api/invitation/referral_stats')
-}
+// Referral API removed — not applicable for USB activation model
 
 // ===== Credit API =====
 
@@ -1607,7 +1635,7 @@ export interface TemplateDetail {
   templateName: string
   description: string
   creditCost: number
-  inputSchema: { fields: Array<{ key: string; label: string; placeholder: string; required: boolean; maxLength?: number }> }
+  inputSchema: { fields: Array<{ key: string; label: string; placeholder: string; required: boolean; maxLength?: number; type?: 'input' | 'textarea' | 'select'; options?: string[] }> }
   outputType: string
 }
 
@@ -1617,6 +1645,13 @@ export interface TemplateRunResult {
   creditCost: number
   outputContent: string
   balanceAfter: number
+}
+
+export interface TemplateRunDetail extends TemplateRunResult {
+  templateKey?: string
+  inputPayload?: Record<string, string>
+  createdAt?: string
+  finishedAt?: string
 }
 
 export interface DeviceItem {
@@ -1661,7 +1696,7 @@ export async function runTemplate(params: { templateKey: string; inputPayload: R
 }
 
 export async function getTemplateRunDetail(runId: string) {
-  return apiFetch<any>(`/api/templates/run-detail?runId=${encodeURIComponent(runId)}`)
+  return apiFetch<TemplateRunDetail>(`/api/templates/run-detail?runId=${encodeURIComponent(runId)}`)
 }
 
 export async function getDeviceList() {
@@ -1680,4 +1715,73 @@ export async function runChat(params: { message: string; deviceId: string }) {
     method: 'POST',
     body: JSON.stringify(params),
   })
+}
+
+// ─── 商业化诊断包 ─────────────────────────────────────────────
+
+export interface DiagnosticReport {
+  generatedAt: string
+  sidecar: {
+    name: string
+    version: string
+    startedAt: string
+    uptimeSeconds: number
+    platform: string
+    arch: string
+    nodeVersion: string
+  }
+  cloud: {
+    apiUrl: string
+    websiteUrl: string
+    apiUrlConfigured: boolean
+  }
+  paths: {
+    dataDir: string
+    workspaceRoot: string
+    dbPath: string
+    logsDir: string
+    skillsDir: string
+    userSkillsDir: string
+  }
+  recentErrors: Array<{
+    time: number
+    level: number
+    msg: string
+    category: string
+  }>
+  notes: string[]
+}
+
+export async function getDiagnosticReport() {
+  return apiFetch<DiagnosticReport>('/api/commercial/diagnostic')
+}
+
+// ─── 用户自带 Key 通道（P1-1） ────────────────────────────────
+
+export interface UserKeyConfigStatus {
+  baseUrlConfigured: boolean
+  modelConfigured: boolean
+  apiKeyConfigured: boolean
+}
+
+export interface AiPreference {
+  aiMode: 'platform' | 'user_key'
+  userKeyEnabled: boolean
+  updatedAt?: string
+  userKeyConfigStatus?: UserKeyConfigStatus
+}
+
+export async function getAiPreference() {
+  return apiFetch<AiPreference>('/api/ai/preferences')
+}
+
+export async function updateAiPreference(params: { aiMode: 'platform' | 'user_key'; userKeyEnabled?: boolean }) {
+  return apiFetch<AiPreference>('/api/ai/preferences', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function getUserKeyConfigStatus() {
+  return apiFetch<UserKeyConfigStatus>('/api/ai/user-key/status')
 }

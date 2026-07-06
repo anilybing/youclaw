@@ -65,7 +65,7 @@ export function getBrowserExtensionPackageInfo(): BrowserExtensionPackageInfo {
   }
 
   return {
-    name: manifest.name ?? 'YouClaw Main Browser Bridge',
+    name: manifest.name ?? 'XiaoJuClaw Main Browser Bridge',
     version: manifest.version ?? '0.0.0',
     directoryPath,
     installMode: 'unpacked',

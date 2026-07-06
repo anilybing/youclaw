@@ -41,7 +41,7 @@ export class TelegramChannel implements Channel {
 
     // /ping — health check
     this.bot.command('ping', (ctx) => {
-      ctx.reply('YouClaw is online.')
+      ctx.reply('XiaoJuClaw is online.')
     })
 
     // Text message handler
@@ -66,7 +66,7 @@ export class TelegramChannel implements Channel {
       const msgId = ctx.message.message_id.toString()
       const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup'
 
-      // Handle @mention: if bot is mentioned, replace @bot_username with @YouClaw
+      // Handle @mention: if bot is mentioned, replace @bot_username with @XiaoJuClaw
       const botUsername = ctx.me?.username?.toLowerCase()
       if (botUsername) {
         const entities = ctx.message.entities || []
@@ -80,9 +80,9 @@ export class TelegramChannel implements Channel {
           return false
         })
         if (isBotMentioned) {
-          // Replace @bot_username with @YouClaw for unified trigger format
+          // Replace @bot_username with @XiaoJuClaw for unified trigger format
           const regex = new RegExp(`@${botUsername}`, 'gi')
-          content = content.replace(regex, '@YouClaw')
+          content = content.replace(regex, '@XiaoJuClaw')
         }
       }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { CheckCircle2, ChevronDown, FileWarning } from 'lucide-react'
 import {
   AlertDialog,
@@ -125,16 +125,14 @@ export function PublishReviewPanel({
   onRunValidation,
   children,
 }: PublishReviewPanelProps) {
-  const [expanded, setExpanded] = useState(true)
+  const messagesKey = messages.map((item) => `${item.kind}:${item.field ?? ''}:${item.message}`).join('\n')
+  const [collapsedMessagesKey, setCollapsedMessagesKey] = useState<string | null>(null)
+  const expanded = hasValidation && messages.length > 0 && collapsedMessagesKey !== messagesKey
   const validationTone = !hasValidation
     ? 'border-border bg-background/70'
     : messages.length === 0
       ? 'border-green-500/30 bg-green-500/10'
       : 'border-red-500/30 bg-red-500/10'
-
-  useEffect(() => {
-    setExpanded(messages.length > 0)
-  }, [messages.length])
 
   return (
     <SectionCard title={title} description={description}>
@@ -146,7 +144,7 @@ export function PublishReviewPanel({
               className="flex min-w-0 flex-1 items-center gap-3 text-left"
               onClick={() => {
                 if (!hasValidation || messages.length === 0) return
-                setExpanded((current) => !current)
+                setCollapsedMessagesKey(expanded ? messagesKey : null)
               }}
             >
               {!hasValidation ? (

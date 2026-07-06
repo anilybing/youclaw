@@ -18,7 +18,7 @@ import {
   type RegistrySelectableSource,
   type RegistrySourceInfo,
 } from '@/api/client'
-import { isTauri, openExternal } from '@/api/transport'
+import { getPortableDiskSpace, isTauri, openExternal } from '@/api/transport'
 import { resolvePreferredRegistrySource } from '@/lib/registry-source'
 import { getErrorMessage, logAuthClientEvent } from '@/lib/auth-debug'
 import { applyThemeToDOM } from '@/hooks/useTheme'
@@ -87,6 +87,7 @@ interface AppRuntimeState {
 
 let authPollInterval: ReturnType<typeof setInterval> | null = null
 let authPollTimeout: ReturnType<typeof setTimeout> | null = null
+let portableDiskSpaceInterval: ReturnType<typeof setInterval> | null = null
 
 function clearAuthPolling() {
   if (authPollInterval) {
@@ -155,22 +156,51 @@ async function ensureWindowsDeepLinkRegistration(): Promise<void> {
   try {
     await logAuthClientEvent('info', 'Checking Windows deep-link registration', {
       platform: 'windows',
-      scheme: 'youclaw',
+      scheme: 'XiaoJuClaw',
     })
     const { register } = await import('@tauri-apps/plugin-deep-link')
     // Always re-register to ensure the registry points to the current exe,
     // not a stale path from a previous installation or dev build.
-    await register('youclaw')
+    await register('XiaoJuClaw')
     await logAuthClientEvent('info', 'Windows deep-link protocol registered', {
-      scheme: 'youclaw',
+      scheme: 'XiaoJuClaw',
     })
   } catch (err) {
     await logAuthClientEvent('error', 'Failed to verify/register Windows deep-link protocol', {
       error: getErrorMessage(err),
-      scheme: 'youclaw',
+      scheme: 'XiaoJuClaw',
     })
     console.error('Failed to verify/register deep-link protocol:', err)
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+  if (bytes >= 1024 * 1024) return `${Math.round(bytes / 1024 / 1024)} MB`
+  return `${Math.max(0, Math.round(bytes / 1024))} KB`
+}
+
+async function notifyPortableDiskSpace(): Promise<void> {
+  if (!isTauri) return
+  try {
+    const disk = await getPortableDiskSpace()
+    if (!disk || disk.warning_level === 'ok') return
+    const isCritical = disk.warning_level === 'critical'
+    notify.warning(isCritical ? 'U盘容量严重不足' : 'U盘容量不足', {
+      id: 'portable-disk-space-warning',
+      durationMs: isCritical ? 12000 : 8000,
+      description: `当前便携数据目录剩余 ${formatBytes(disk.free_bytes)}（${disk.free_percent.toFixed(1)}%）：${disk.data_dir}`,
+    })
+  } catch {
+    return
+  }
+}
+
+function startPortableDiskSpaceMonitor() {
+  if (!isTauri || portableDiskSpaceInterval) return
+  portableDiskSpaceInterval = setInterval(() => {
+    void notifyPortableDiskSpace()
+  }, 10 * 60 * 1000)
 }
 
 export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
@@ -375,6 +405,8 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
   hydrate: async () => {
     await useAppPreferencesStore.persist.rehydrate()
     applyThemeToDOM(useAppPreferencesStore.getState().theme)
+    void notifyPortableDiskSpace()
+    startPortableDiskSpaceMonitor()
 
     await get().recheckEnv()
 

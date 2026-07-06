@@ -1,15 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppRuntimeStore } from '@/stores/app'
 import { redeemInvitationCode, getDeviceList, unbindDevice, type DeviceItem } from '@/api/client'
 import { notify } from '@/stores/app-runtime'
+import { formatApiError } from '@/lib/api-error'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Loader2, KeyRound, Monitor, Smartphone, Unplug, Coins, Gift } from 'lucide-react'
+import { Loader2, KeyRound, Monitor, Smartphone, Unplug, Coins, Gift, ShieldCheck } from 'lucide-react'
 
 export function Activation() {
   const { user, isLoggedIn, creditBalance, fetchUser, fetchCreditBalance } = useAppRuntimeStore()
@@ -19,6 +19,11 @@ export function Activation() {
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [unbindTarget, setUnbindTarget] = useState<DeviceItem | null>(null)
   const [unbindLoading, setUnbindLoading] = useState(false)
+  const [lastRedeem, setLastRedeem] = useState<{ planName?: string; creditGranted?: number; deviceLimit?: number } | null>(null)
+
+  useEffect(() => {
+    loadDevices()
+  }, [])
 
   async function loadDevices() {
     setDevicesLoading(true)
@@ -39,12 +44,14 @@ export function Activation() {
     }
     setRedeemLoading(true)
     try {
-      await redeemInvitationCode(code.trim())
-      notify.success('激活成功！积分已到账')
+      const result = await redeemInvitationCode(code.trim())
+      setLastRedeem(result)
+      notify.success(`激活成功，到账 ${result.creditGranted ?? 0} 积分`)
       setCode('')
       await Promise.all([fetchUser(), fetchCreditBalance(), loadDevices()])
-    } catch (err: any) {
-      notify.error(err.message || '激活失败')
+    } catch (err) {
+      const formatted = formatApiError(err, '激活失败')
+      notify.error(formatted.title, { description: formatted.suggestion })
     } finally {
       setRedeemLoading(false)
     }
@@ -58,14 +65,15 @@ export function Activation() {
       notify.success('设备已解绑')
       setUnbindTarget(null)
       await loadDevices()
-    } catch (err: any) {
-      notify.error(err.message || '解绑失败')
+    } catch (err) {
+      const formatted = formatApiError(err, '解绑失败')
+      notify.error(formatted.title, { description: formatted.suggestion })
     } finally {
       setUnbindLoading(false)
     }
   }
 
-  const activated = isLoggedIn && user && (user as any).activated
+  const activated = isLoggedIn && Boolean((user as { activated?: boolean } | null)?.activated)
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -84,9 +92,30 @@ export function Activation() {
         </CardHeader>
         <CardContent className="space-y-4">
           {activated ? (
-            <div className="flex items-center gap-3 p-4 bg-green-500/10 rounded-lg">
-              <Badge variant="default" className="bg-green-500">已激活</Badge>
-              <span className="text-sm text-muted-foreground">您的账号已成功激活</span>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-4 bg-green-500/10 rounded-lg">
+                <Badge variant="default" className="bg-green-500 gap-1">
+                  <ShieldCheck className="h-3 w-3" />
+                  已激活
+                </Badge>
+                <span className="text-sm text-muted-foreground">您的账号已成功激活，可直接使用模板和聊天服务</span>
+              </div>
+              {lastRedeem && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">套餐</p>
+                    <p className="text-sm font-medium mt-1">{lastRedeem.planName || 'MVP 套餐'}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">到账积分</p>
+                    <p className="text-sm font-medium mt-1">{lastRedeem.creditGranted ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">设备上限</p>
+                    <p className="text-sm font-medium mt-1">{lastRedeem.deviceLimit ?? 1} 台</p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -112,6 +141,9 @@ export function Activation() {
               <p className="text-xs text-muted-foreground">
                 激活码在 U 盘包装内，兑换后将自动绑定当前设备并充值积分
               </p>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                未激活账号无法执行模板。若激活码遗失，请联系销售获取补发码。
+              </div>
             </>
           )}
         </CardContent>
@@ -145,8 +177,17 @@ export function Activation() {
           </div>
         </CardHeader>
         <CardContent>
-          {devices.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无绑定设备，兑换激活码后自动绑定</p>
+          {devicesLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在加载设备...
+            </div>
+          ) : devices.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center">
+              <Monitor className="h-8 w-8 text-muted-foreground mx-auto" />
+              <p className="text-sm font-medium mt-3">暂无绑定设备</p>
+              <p className="text-xs text-muted-foreground mt-1">兑换激活码后会自动绑定当前设备</p>
+            </div>
           ) : (
             <div className="space-y-3">
               {devices.map(device => (

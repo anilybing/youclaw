@@ -175,7 +175,7 @@ const createRawTokens = (code: string): TokenizedCode => ({
 });
 
 // Synchronous highlight with callback for async results
-export const highlightCode = (
+const highlightCode = (
   code: string,
   language: BundledLanguage,
   // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-callbacks)
@@ -400,29 +400,38 @@ export const CodeBlockContent = ({
 }) => {
   // Memoized raw tokens for immediate display
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
+  const tokensCacheKey = useMemo(() => getTokensCacheKey(code, language), [code, language]);
 
   // Try to get cached result synchronously, otherwise use raw tokens
-  const [tokenized, setTokenized] = useState<TokenizedCode>(
-    () => highlightCode(code, language) ?? rawTokens
+  const [tokenizedState, setTokenizedState] = useState<{ key: string; value: TokenizedCode }>(
+    () => ({ key: tokensCacheKey, value: highlightCode(code, language) ?? rawTokens })
   );
+  const tokenized = tokenizedState.key === tokensCacheKey ? tokenizedState.value : rawTokens;
 
   useEffect(() => {
     let cancelled = false;
 
     // Reset to raw tokens when code changes (shows current code, not stale tokens)
-    setTokenized(highlightCode(code, language) ?? rawTokens);
+    const cached = highlightCode(code, language);
+    if (cached) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setTokenizedState({ key: tokensCacheKey, value: cached });
+        }
+      });
+    }
 
     // Subscribe to async highlighting result
     highlightCode(code, language, (result) => {
       if (!cancelled) {
-        setTokenized(result);
+        setTokenizedState({ key: tokensCacheKey, value: result });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [code, language, rawTokens]);
+  }, [code, language, tokensCacheKey]);
 
   return (
     <div className="relative overflow-auto">

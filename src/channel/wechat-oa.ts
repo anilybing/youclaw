@@ -164,9 +164,9 @@ export class WechatOAChannel implements Channel {
 
   private getBaseUrl(): string {
     const env = getEnv()
-    const url = env.YOUCLAW_API_URL
+    const url = env.XiaoJuClaw_API_URL
     if (!url) {
-      throw new Error('YOUCLAW_API_URL is not configured, required for WeChat OA channel')
+      throw new Error('XiaoJuClaw_API_URL is not configured, required for WeChat OA channel')
     }
     return url.replace(/\/+$/, '')
   }

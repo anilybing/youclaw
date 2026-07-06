@@ -17,7 +17,7 @@ import type {
 } from './types.ts'
 import type { SkillsLoader } from './loader.ts'
 
-const META_FILENAME = '.youclaw-skill.json'
+const META_FILENAME = '.XiaoJuClaw-skill.json'
 const DRAFT_DIRNAME = '.draft'
 const DRAFT_FILENAME = 'SKILL.md'
 const DRAFT_META_FILENAME = 'meta.json'

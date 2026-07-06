@@ -6,7 +6,7 @@ import { getLogger } from '../logger/index.ts'
 import { BUILD_CONSTANTS } from '../config/build-constants.ts'
 import { getAuthToken } from '../routes/auth.ts'
 
-const VLM_HOST = BUILD_CONSTANTS['YOUCLAW_API_URL'] || 'https://readmex.com'
+const VLM_HOST = BUILD_CONSTANTS['XiaoJuClaw_API_URL'] || 'https://readmex.com'
 const VLM_ENDPOINT = '/v1/coding_plan/vlm'
 
 const UnderstandImageParams = Type.Object({
@@ -43,7 +43,7 @@ async function callVlmApi(prompt: string, imageUrl: string): Promise<string> {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${authToken}`,
-      'MM-API-Source': 'YouClaw',
+      'MM-API-Source': 'XiaoJuClaw',
     },
     body: JSON.stringify({ prompt, image_url: imageUrl }),
   })

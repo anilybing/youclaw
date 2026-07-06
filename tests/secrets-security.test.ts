@@ -32,10 +32,10 @@ describe('SecretsManager', () => {
     Object.keys(savedEnv).forEach((k) => delete savedEnv[k])
   })
 
-  test('loadFromEnv correctly parses YOUCLAW_SECRET_<AGENTID>_<KEY>', () => {
-    setEnv('YOUCLAW_SECRET_MYAGENT_API_TOKEN', 'sk-test-123')
-    setEnv('YOUCLAW_SECRET_MYAGENT_DB_PASSWORD', 'pass-456')
-    setEnv('YOUCLAW_SECRET_OTHER_KEY', 'other-val')
+  test('loadFromEnv correctly parses XiaoJuClaw_SECRET_<AGENTID>_<KEY>', () => {
+    setEnv('XiaoJuClaw_SECRET_MYAGENT_API_TOKEN', 'sk-test-123')
+    setEnv('XiaoJuClaw_SECRET_MYAGENT_DB_PASSWORD', 'pass-456')
+    setEnv('XiaoJuClaw_SECRET_OTHER_KEY', 'other-val')
 
     secrets.loadFromEnv()
 
@@ -45,7 +45,7 @@ describe('SecretsManager', () => {
   })
 
   test('resolve replaces ${SECRET:key} references', () => {
-    setEnv('YOUCLAW_SECRET_AGENT1_TOKEN', 'my-secret-token')
+    setEnv('XiaoJuClaw_SECRET_AGENT1_TOKEN', 'my-secret-token')
     secrets.loadFromEnv()
 
     const result = secrets.resolve('agent1', 'Bearer ${SECRET:token}')
@@ -53,7 +53,7 @@ describe('SecretsManager', () => {
   })
 
   test('resolve returns empty string for non-existent secret', () => {
-    setEnv('YOUCLAW_SECRET_AGENT1_EXISTING', 'value')
+    setEnv('XiaoJuClaw_SECRET_AGENT1_EXISTING', 'value')
     secrets.loadFromEnv()
     // agent1 has a secrets mapping, but nonexistent is not in it -> replaced with empty string
     const result = secrets.resolve('agent1', '${SECRET:nonexistent}')
@@ -68,7 +68,7 @@ describe('SecretsManager', () => {
   })
 
   test('resolve is case-insensitive (normalized to lowercase)', () => {
-    setEnv('YOUCLAW_SECRET_MYAGENT_API_KEY', 'test-key')
+    setEnv('XiaoJuClaw_SECRET_MYAGENT_API_KEY', 'test-key')
     secrets.loadFromEnv()
 
     expect(secrets.resolve('myagent', '${SECRET:api_key}')).toBe('test-key')
@@ -76,7 +76,7 @@ describe('SecretsManager', () => {
   })
 
   test('injectToMcpEnv replaces secrets in MCP server environment variables', () => {
-    setEnv('YOUCLAW_SECRET_AGENT1_SERVER_TOKEN', 'injected-token')
+    setEnv('XiaoJuClaw_SECRET_AGENT1_SERVER_TOKEN', 'injected-token')
     secrets.loadFromEnv()
 
     const servers = {
@@ -107,7 +107,7 @@ describe('SecretsManager', () => {
   })
 
   test('injectToMcpEnv passes through servers without env directly', () => {
-    setEnv('YOUCLAW_SECRET_AGENT1_KEY', 'val')
+    setEnv('XiaoJuClaw_SECRET_AGENT1_KEY', 'val')
     secrets.loadFromEnv()
 
     const servers = {
@@ -118,7 +118,7 @@ describe('SecretsManager', () => {
   })
 
   test('getSecretKeys does not expose values', () => {
-    setEnv('YOUCLAW_SECRET_SAFE_TOKEN', 'sensitive-value')
+    setEnv('XiaoJuClaw_SECRET_SAFE_TOKEN', 'sensitive-value')
     secrets.loadFromEnv()
 
     const keys = secrets.getSecretKeys('safe')
@@ -128,7 +128,7 @@ describe('SecretsManager', () => {
   })
 
   test('invalid naming format is ignored', () => {
-    setEnv('YOUCLAW_SECRET_NOKEY', 'bad-format')
+    setEnv('XiaoJuClaw_SECRET_NOKEY', 'bad-format')
     secrets.loadFromEnv()
 
     // NOKEY has no underscore separating agentId and key, should be ignored

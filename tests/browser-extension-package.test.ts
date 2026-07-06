@@ -7,7 +7,7 @@ describe('browser extension package', () => {
   test('reads extension metadata from the bundled chromium extension directory', () => {
     const info = getBrowserExtensionPackageInfo()
 
-    expect(info.name).toBe('YouClaw Main Browser Bridge')
+    expect(info.name).toBe('XiaoJuClaw Main Browser Bridge')
     expect(info.version).toBe('0.2.0')
     expect(info.installMode).toBe('unpacked')
     expect(info.files).toContain('manifest.json')

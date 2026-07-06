@@ -83,7 +83,7 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
   const { t, locale } = useI18n()
   const [detail, setDetail] = useState<ManagedSkillDetail | null>(null)
   const [draft, setDraft] = useState<SkillAuthoringDraft>(createEmptyDraft(locale))
-  const [validation, setValidation] = useState<SkillValidationResult | null>(null)
+  const [, setValidation] = useState<SkillValidationResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -376,11 +376,13 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
     getOperationErrorMessage,
     handleSaveDraft,
     loadSkill,
+    formatSkillMessage,
     onSkillSelected,
     onSkillsChanged,
     selectedBindingIds,
     t.skills.publishBeforeBind,
     t.skills.skillPublishFailed,
+    t.skills.skillPublishSuccess,
   ])
 
   const handleDiscardDraft = useCallback(async () => {
@@ -412,7 +414,7 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
       setError(message)
       notify.error(message)
     }
-  }, [activeSkillName, getOperationErrorMessage, initializeDraft, locale, onSkillsChanged, t.skills.draftDiscardFailed])
+  }, [activeSkillName, getOperationErrorMessage, initializeDraft, locale, onSkillsChanged, t.skills.draftDiscardFailed, t.skills.draftDiscardSuccess])
 
   const handleDelete = useCallback(async () => {
     if (!activeSkillName) {
@@ -439,7 +441,7 @@ export function SkillEditor({ mode, skillName, onBack, onSkillSelected, onSkills
     } finally {
       setDeleting(false)
     }
-  }, [activeSkillName, formatSkillMessage, getOperationErrorMessage, onBack, onSkillSelected, onSkillsChanged, t.skills.skillDeleteFailed])
+  }, [activeSkillName, formatSkillMessage, getOperationErrorMessage, onBack, onSkillSelected, onSkillsChanged, t.skills.skillDeleteFailed, t.skills.skillDeleteSuccess])
 
   const handleDraftBindingToggle = useCallback((agentId: string, checked: boolean) => {
     setSelectedBindingIds((current) => {

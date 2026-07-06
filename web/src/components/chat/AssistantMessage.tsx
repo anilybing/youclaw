@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { Copy, Check, Coins } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -56,7 +56,8 @@ export function AssistantMessage({ message }: { message: Message }) {
     <AIMessage from="assistant" data-testid="message-assistant">
       <div className="group flex gap-3 py-3">
         <Avatar className="h-8 w-8">
-          <AvatarImage src="/icon.svg" alt="YouClaw" />
+          <AvatarImage src="/icon.svg" alt="XiaoJuClaw" />
+
           <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
             AI
           </AvatarFallback>

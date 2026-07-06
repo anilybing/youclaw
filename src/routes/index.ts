@@ -19,6 +19,7 @@ import { createProxyRoutes } from './proxy.ts'
 import { createRealtimeRoutes } from './realtime.ts'
 import { createCommercialRoutes } from './commercial.ts'
 import { createCommercialAuthRoutes } from './commercial-auth.ts'
+import { createDiagnosticRoutes } from './diagnostic.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
 import type { MessageRouter, ChannelManager } from '../channel/index.ts'
@@ -85,6 +86,8 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createProxyRoutes())
   // Commercial isolation layer — device, templates, chat proxy
   app.route('/api', createCommercialRoutes())
+  // Commercial diagnostic — for after-sales support
+  app.route('/api', createDiagnosticRoutes())
 
   return app
 }

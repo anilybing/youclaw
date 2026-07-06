@@ -29,8 +29,8 @@ function makeTempDir(prefix: string): string {
 }
 
 function configurePathEnv(): { dataDir: string; homeDir: string } {
-  const homeDir = makeTempDir('youclaw-home-')
-  const dataDir = resolve(makeTempDir('youclaw-data-'), 'com.youclaw.app')
+  const homeDir = makeTempDir('XiaoJuClaw-home-')
+  const dataDir = resolve(makeTempDir('XiaoJuClaw-data-'), 'com.XiaoJuClaw.app')
   process.env.HOME = homeDir
   delete process.env.USERPROFILE
   process.env.DATA_DIR = dataDir
@@ -71,27 +71,27 @@ describe('storage paths', () => {
   })
 
   test('expands ~ in an explicit DATA_DIR', () => {
-    const homeDir = makeTempDir('youclaw-home-')
+    const homeDir = makeTempDir('XiaoJuClaw-home-')
     process.env.HOME = homeDir
     delete process.env.USERPROFILE
-    process.env.DATA_DIR = '~/.youclaw-dev'
+    process.env.DATA_DIR = '~/.XiaoJuClaw-dev'
     resetPathsCache()
 
     const paths = getPaths()
 
-    expect(paths.data).toBe(resolve(homeDir, '.youclaw-dev'))
+    expect(paths.data).toBe(resolve(homeDir, '.XiaoJuClaw-dev'))
   })
 
-  test('uses ~/.youclaw as the production data directory', () => {
-    const homeDir = makeTempDir('youclaw-home-')
+  test('uses ~/.XiaoJuClaw as the production data directory', () => {
+    const homeDir = makeTempDir('XiaoJuClaw-home-')
     process.env.HOME = homeDir
     delete process.env.USERPROFILE
 
-    expect(getProductionDataDir()).toBe(resolve(homeDir, '.youclaw'))
+    expect(getProductionDataDir()).toBe(resolve(homeDir, '.XiaoJuClaw'))
   })
 
-  test('migrates the legacy production data directory into ~/.youclaw', () => {
-    const homeDir = makeTempDir('youclaw-home-')
+  test('migrates the legacy production data directory into ~/.XiaoJuClaw', () => {
+    const homeDir = makeTempDir('XiaoJuClaw-home-')
     process.env.HOME = homeDir
     delete process.env.USERPROFILE
     delete process.env.DATA_DIR

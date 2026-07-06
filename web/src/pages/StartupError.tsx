@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { AlertTriangle, Loader2, Mail, Github } from "lucide-react"
 import logoUrl from "@/assets/logo.png"
 
-const GITHUB_URL = "https://github.com/CodePhiliaX/youClaw"
+const GITHUB_URL = "https://github.com/CodePhiliaX/XiaoJuClaw"
 const SUPPORT_EMAIL = "support@chat2db-ai.com"
 
 interface StartupErrorProps {
@@ -29,11 +29,11 @@ export function StartupError({ onRetry }: StartupErrorProps) {
             <div className="inline-block transition-transform hover:scale-105 duration-300">
               <img
                 src={logoUrl}
-                alt="YouClaw Logo"
+                alt="XiaoJuClaw Logo"
                 className="w-20 h-20 p-2 mx-auto rounded-2xl shadow-lg border border-border/50 bg-white"
               />
             </div>
-            <h1 className="mt-5 text-2xl font-bold text-foreground tracking-tight">YouClaw</h1>
+            <h1 className="mt-5 text-2xl font-bold text-foreground tracking-tight">XiaoJuClaw</h1>
           </div>
 
           {/* Error Card */}

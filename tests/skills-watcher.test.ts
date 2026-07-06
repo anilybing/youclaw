@@ -42,7 +42,7 @@ describe('SkillsWatcher', () => {
   })
 
   test('creates writable roots before watching so later-added skills are observable', () => {
-    const root = makeTempDir('youclaw-skills-watcher-')
+    const root = makeTempDir('XiaoJuClaw-skills-watcher-')
     process.env.DATA_DIR = resolve(root, 'data')
     process.env.WORKSPACE_DIR = resolve(root, 'workspace')
     process.env.RESOURCES_DIR = resolve(root, 'resources')

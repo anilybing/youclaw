@@ -118,7 +118,7 @@ const defaultFormatMessage = (message: ConversationMessage): string => {
   return `**${roleLabel}:** ${message.content}`;
 };
 
-export const messagesToMarkdown = (
+const messagesToMarkdown = (
   messages: ConversationMessage[],
   formatMessage: (
     message: ConversationMessage,

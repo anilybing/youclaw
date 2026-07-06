@@ -214,7 +214,7 @@ export function resolvePreferredOpenClawTmpDir(): string {
     const dataDir = process.env.DATA_DIR?.trim()
     preferred = dataDir
       ? path.resolve(resolvePathInput(dataDir), 'tmp', 'openclaw')
-      : path.resolve(tmpdir(), 'youclaw-openclaw-tmp')
+      : path.resolve(tmpdir(), 'XiaoJuClaw-openclaw-tmp')
   }
   mkdirSync(preferred, { recursive: true })
   return preferred

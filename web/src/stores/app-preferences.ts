@@ -7,7 +7,7 @@ import type { Locale } from '@/i18n/context'
 export type CloseAction = '' | 'minimize' | 'quit'
 export type SkillsViewMode = 'grid' | 'list'
 
-const APP_PREFERENCES_STORAGE_KEY = 'youclaw-app-preferences'
+const APP_PREFERENCES_STORAGE_KEY = 'XiaoJuClaw-app-preferences'
 
 function detectDefaultLocale(): Locale {
   return navigator.language.startsWith('zh') ? 'zh' : 'en'

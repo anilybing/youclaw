@@ -22,7 +22,7 @@ initLogger()
 const apiBaseUrl = 'https://clawhub.ai/api/v1'
 const downloadUrl = `${apiBaseUrl}/download`
 const convexQueryUrl = 'https://wry-manatee-359.convex.cloud/api/query'
-const testUserSkillsDir = resolve('/tmp', `youclaw-registry-test-${process.pid}`)
+const testUserSkillsDir = resolve('/tmp', `XiaoJuClaw-registry-test-${process.pid}`)
 const builtinProjectSkillNames = new Set(
   readdirSync(resolve(process.cwd(), 'skills'))
     .filter((entry) => existsSync(resolve(process.cwd(), 'skills', entry, 'SKILL.md'))),

@@ -29,7 +29,7 @@ import type { SkillProjectDetail } from '../skills/project-service.ts'
 import { parseFrontmatter } from '../skills/frontmatter.ts'
 import { MAX_ARCHIVE_BYTES, unpackZipArchive, writeArchiveEntries } from '../skills/archive.ts'
 
-const PROJECT_META_FILENAME = '.youclaw-skill.json'
+const PROJECT_META_FILENAME = '.XiaoJuClaw-skill.json'
 const configureEnvSchema = z.object({
   key: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   value: z.string(),
@@ -474,7 +474,7 @@ export function createSkillsRoutes(
     }
 
     const { sourcePath, targetDir } = parsed.data
-    const dest = targetDir ?? resolve(homedir(), '.youclaw', 'skills')
+    const dest = targetDir ?? resolve(homedir(), '.XiaoJuClaw', 'skills')
 
     try {
       await installer.installFromLocal(sourcePath, dest, {
@@ -512,10 +512,10 @@ export function createSkillsRoutes(
 
     const dest = typeof rawTargetDir === 'string' && rawTargetDir.trim()
       ? rawTargetDir.trim()
-      : resolve(homedir(), '.youclaw', 'skills')
+      : resolve(homedir(), '.XiaoJuClaw', 'skills')
 
     const archive = new Uint8Array(await rawFile.arrayBuffer())
-    const stageRoot = mkdtempSync(resolve(tmpdir(), 'youclaw-skill-upload-'))
+    const stageRoot = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-skill-upload-'))
 
     try {
       const entries = unpackZipArchive(archive)
@@ -557,7 +557,7 @@ export function createSkillsRoutes(
     }
 
     const { url, targetDir } = parsed.data
-    const dest = targetDir ?? resolve(homedir(), '.youclaw', 'skills')
+    const dest = targetDir ?? resolve(homedir(), '.XiaoJuClaw', 'skills')
 
     try {
       await installer.installFromUrl(url, dest, {

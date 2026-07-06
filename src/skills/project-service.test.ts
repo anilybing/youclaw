@@ -64,7 +64,7 @@ describe('SkillProjectService', () => {
     expect(detail.project.editable).toBe(true)
     expect(detail.project.origin).toBe('user')
     expect(detail.project.hasDraft).toBe(true)
-    expect(existsSync(resolve(fixture.skillsDir, 'release-helper', '.youclaw-skill.json'))).toBe(true)
+    expect(existsSync(resolve(fixture.skillsDir, 'release-helper', '.XiaoJuClaw-skill.json'))).toBe(true)
     expect(existsSync(resolve(fixture.skillsDir, 'release-helper', '.draft', 'SKILL.md'))).toBe(true)
   })
 
@@ -208,7 +208,7 @@ describe('SkillProjectService', () => {
     })
 
     expect(detail.project.name).toBe('alpha-omega-ü-01')
-    expect(existsSync(resolve(fixture.skillsDir, 'alpha-omega-ü-01', '.youclaw-skill.json'))).toBe(true)
+    expect(existsSync(resolve(fixture.skillsDir, 'alpha-omega-ü-01', '.XiaoJuClaw-skill.json'))).toBe(true)
   })
 
   test('keeps imported origin for readonly project skills loaded outside the managed user directory', () => {
@@ -216,7 +216,7 @@ describe('SkillProjectService', () => {
     const importedRoot = resolve(fixture.root, 'project-imports', 'gradio')
     mkdirSync(importedRoot, { recursive: true })
     writeFileSync(resolve(importedRoot, 'SKILL.md'), '---\nname: gradio\ndescription: Imported skill\n---\nbody\n')
-    writeFileSync(resolve(importedRoot, '.youclaw-skill.json'), JSON.stringify({
+    writeFileSync(resolve(importedRoot, '.XiaoJuClaw-skill.json'), JSON.stringify({
       schemaVersion: 1,
       managed: false,
       origin: 'imported',
@@ -259,7 +259,7 @@ describe('SkillProjectService', () => {
 function createFixture(options?: {
   agents?: Array<{ id: string; name: string; skills?: string[] }>
 }) {
-  const root = mkdtempSync(resolve(tmpdir(), 'youclaw-skill-project-'))
+  const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-skill-project-'))
   tempDirs.push(root)
   const skillsDir = resolve(root, 'skills')
   mkdirSync(skillsDir, { recursive: true })

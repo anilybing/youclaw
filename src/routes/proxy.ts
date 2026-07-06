@@ -13,7 +13,7 @@ export function createProxyRoutes() {
 
   // ALL /proxy/v1/messages — forward to cloud service
   app.all('/proxy/v1/messages', async (c) => {
-    const apiUrl = getEnv().YOUCLAW_API_URL
+    const apiUrl = getEnv().XiaoJuClaw_API_URL
     const logger = getLogger()
 
     if (!apiUrl) {
@@ -47,7 +47,7 @@ export function createProxyRoutes() {
       const anthropicBeta = c.req.header('anthropic-beta')
       if (anthropicBeta) headers['anthropic-beta'] = anthropicBeta
 
-      // Do not forward x-api-key (SDK sends 'youclaw'; readmex uses rdxtoken for auth)
+      // Do not forward x-api-key (SDK sends 'XiaoJuClaw'; readmex uses rdxtoken for auth)
 
       const body = c.req.method !== 'GET' ? await c.req.raw.clone().text() : undefined
 

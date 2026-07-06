@@ -244,7 +244,7 @@ describe('skills routes', () => {
 
   test('POST /skills/install-from-path installs the folder and writes folder-import metadata', async () => {
     let refreshCount = 0
-    const root = mkdtempSync(resolve(tmpdir(), 'youclaw-route-folder-'))
+    const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-route-folder-'))
     tempDirs.push(root)
     const sourcePath = resolve(root, 'folder-skill')
     const targetDir = resolve(root, 'skills')
@@ -275,7 +275,7 @@ describe('skills routes', () => {
     })
     const body = await res.json() as { ok: boolean }
     const installedSkillDir = resolve(targetDir, 'folder-skill')
-    const projectMetaPath = resolve(installedSkillDir, '.youclaw-skill.json')
+    const projectMetaPath = resolve(installedSkillDir, '.XiaoJuClaw-skill.json')
     const registryMetaPath = resolve(installedSkillDir, '.registry.json')
 
     expect(res.status).toBe(200)
@@ -324,7 +324,7 @@ describe('skills routes', () => {
     })
 
     expect(res.status).toBe(200)
-    expect(capturedTargetDir).toBe(resolve(homedir(), '.youclaw', 'skills'))
+    expect(capturedTargetDir).toBe(resolve(homedir(), '.XiaoJuClaw', 'skills'))
   })
 
   test('POST /skills/install-from-url with invalid body returns 400', async () => {
@@ -374,12 +374,12 @@ describe('skills routes', () => {
     })
 
     expect(res.status).toBe(200)
-    expect(capturedTargetDir).toBe(resolve(homedir(), '.youclaw', 'skills'))
+    expect(capturedTargetDir).toBe(resolve(homedir(), '.XiaoJuClaw', 'skills'))
   })
 
   test('POST /skills/install-from-archive installs uploaded zip and refreshes the loader', async () => {
     let refreshCount = 0
-    const root = mkdtempSync(resolve(tmpdir(), 'youclaw-route-archive-'))
+    const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-route-archive-'))
     tempDirs.push(root)
     const targetDir = resolve(root, 'skills')
     const app = createSkillsRoutes(
@@ -411,7 +411,7 @@ describe('skills routes', () => {
     })
     const body = await res.json() as { ok: boolean }
     const installedSkillDir = resolve(targetDir, 'archive-skill')
-    const projectMetaPath = resolve(installedSkillDir, '.youclaw-skill.json')
+    const projectMetaPath = resolve(installedSkillDir, '.XiaoJuClaw-skill.json')
     const registryMetaPath = resolve(installedSkillDir, '.registry.json')
 
     expect(res.status).toBe(200)
@@ -467,7 +467,7 @@ describe('skills routes', () => {
     })
 
     expect(res.status).toBe(200)
-    expect(capturedTargetDir).toBe(resolve(homedir(), '.youclaw', 'skills'))
+    expect(capturedTargetDir).toBe(resolve(homedir(), '.XiaoJuClaw', 'skills'))
   })
 
   test('POST /skills/install-from-archive rejects archives without a root SKILL.md', async () => {
@@ -499,7 +499,7 @@ describe('skills routes', () => {
   })
 
   test('POST /skills/install-from-archive rejects skill names that escape the staging directory', async () => {
-    const root = mkdtempSync(resolve(tmpdir(), 'youclaw-route-archive-unsafe-'))
+    const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-route-archive-unsafe-'))
     tempDirs.push(root)
     const targetDir = resolve(root, 'skills')
     const app = createSkillsRoutes(
@@ -764,12 +764,12 @@ describe('skills routes', () => {
   })
 
   test('GET /skills keeps project-scoped skills in the builtin catalog', async () => {
-    const root = mkdtempSync(resolve(tmpdir(), 'youclaw-route-skill-'))
+    const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-route-skill-'))
     tempDirs.push(root)
 
     const skillDir = resolve(root, 'gradio')
     mkdirSync(skillDir, { recursive: true })
-    writeFileSync(resolve(skillDir, '.youclaw-skill.json'), JSON.stringify({
+    writeFileSync(resolve(skillDir, '.XiaoJuClaw-skill.json'), JSON.stringify({
       schemaVersion: 1,
       managed: false,
       origin: 'imported',
@@ -940,7 +940,7 @@ describe('managed skill serialization', () => {
 })
 
 function createRoutesFixture() {
-  const root = mkdtempSync(resolve(tmpdir(), 'youclaw-routes-template-'))
+  const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-routes-template-'))
   tempDirs.push(root)
   const skillsDir = resolve(root, 'skills')
   const agentDir = resolve(root, 'agents', 'default')

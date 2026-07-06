@@ -134,7 +134,7 @@ export async function createExternalMcpToolRuntime(params: {
         stderr: 'pipe',
       })
       const client = new Client(
-        { name: 'youclaw-mcp', version: '0.0.0' },
+        { name: 'XiaoJuClaw-mcp', version: '0.0.0' },
         {},
       )
       const session: McpSession = {

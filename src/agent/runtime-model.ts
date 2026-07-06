@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import { getEnv } from '../config/env.ts'
-import { getSettings } from '../settings/manager.ts'
+import { resolveCustomModelApiKey, getStoredSettings } from '../settings/manager.ts'
 import { ActiveModelProvider, type CustomModel } from '../settings/schema.ts'
 
 export interface RuntimeModelConfig {
@@ -42,11 +42,11 @@ function resolveBuiltinRuntimeModel(modelIdOverride?: string): RuntimeModelResol
   const env = getEnv()
   const modelId = modelIdOverride?.trim() || resolveEnvModelRef(env)
 
-  if (env.YOUCLAW_BUILTIN_API_URL && env.YOUCLAW_BUILTIN_AUTH_TOKEN) {
+  if (env.XiaoJuClaw_BUILTIN_API_URL && env.XiaoJuClaw_BUILTIN_AUTH_TOKEN) {
     return {
       config: {
-        apiKey: env.YOUCLAW_BUILTIN_AUTH_TOKEN,
-        baseUrl: env.YOUCLAW_BUILTIN_API_URL,
+        apiKey: env.XiaoJuClaw_BUILTIN_AUTH_TOKEN,
+        baseUrl: env.XiaoJuClaw_BUILTIN_API_URL,
         modelId,
         provider: 'builtin',
         source: 'builtin',
@@ -101,7 +101,7 @@ function normalizeCandidateKeys(model: CustomModel): string[] {
 }
 
 function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolution {
-  const settings = getSettings()
+  const settings = getStoredSettings()  // Use stored (non-redacted) settings to access secret refs
   const target = explicitModelId?.trim()
   const models = settings.customModels
 
@@ -111,7 +111,7 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
       if (active) {
         return {
           config: {
-            apiKey: active.apiKey,
+            apiKey: resolveCustomModelApiKey(active),
             baseUrl: active.baseUrl,
             modelId: active.modelId,
             provider: active.provider,
@@ -139,7 +139,7 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
   if (exactMatch) {
     return {
       config: {
-        apiKey: exactMatch.apiKey,
+        apiKey: resolveCustomModelApiKey(exactMatch),
         baseUrl: exactMatch.baseUrl,
         modelId: exactMatch.modelId,
         provider: exactMatch.provider,
@@ -154,7 +154,7 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
       const match = sameModelId[0]!
       return {
         config: {
-          apiKey: match.apiKey,
+          apiKey: resolveCustomModelApiKey(match),
           baseUrl: match.baseUrl,
           modelId: match.modelId,
           provider: match.provider,
@@ -173,7 +173,7 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
 export function resolveRuntimeModelConfig(params?: {
   agentModel?: string | null
 }): RuntimeModelResolution {
-  const settings = getSettings()
+  const settings = getStoredSettings()
   const explicitAgentModel = normalizeAgentModelOverride(params?.agentModel)
 
   if (explicitAgentModel) {

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { DEFAULT_MEMORY_MD, DEFAULT_WORKSPACE_DOCS } from './templates.ts'
 
-const WORKSPACE_STATE_DIRNAME = '.youclaw'
+const WORKSPACE_STATE_DIRNAME = '.XiaoJuClaw'
 const WORKSPACE_STATE_FILENAME = 'workspace-state.json'
 const WORKSPACE_STATE_VERSION = 1
 const DEFAULT_BOOTSTRAP_FILENAME = 'BOOTSTRAP.md'

@@ -180,7 +180,7 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
     const probe = await this.probe(input)
 
     if (target.kind === 'skill-file') {
-      const stageRoot = mkdtempSync(resolve(tmpdir(), 'youclaw-github-import-'))
+      const stageRoot = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-github-import-'))
       const skillDirName = probe.suggestedName || basename(target.skillRootPath ?? target.repo)
       const skillRoot = resolve(stageRoot, skillDirName)
       mkdirSync(skillRoot, { recursive: true })
@@ -213,7 +213,7 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
       throw new Error('Selected GitHub location is not a skill directory')
     }
 
-    const stageRoot = mkdtempSync(resolve(tmpdir(), 'youclaw-github-import-'))
+    const stageRoot = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-github-import-'))
     const skillDirName = probe.suggestedName || basename(target.skillRootPath ?? target.repo)
     const skillRoot = resolve(stageRoot, skillDirName)
     mkdirSync(skillRoot, { recursive: true })
@@ -539,13 +539,13 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
     return {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'youclaw-importer',
+      'User-Agent': 'XiaoJuClaw-importer',
     }
   }
 
   private githubDownloadHeaders() {
     return {
-      'User-Agent': 'youclaw-importer',
+      'User-Agent': 'XiaoJuClaw-importer',
     }
   }
 }

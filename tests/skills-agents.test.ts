@@ -128,7 +128,7 @@ describe('GET /api/skills/:name/agents', () => {
 // ---------- DELETE /api/skills/:name — cleanup behavior ----------
 
 describe('DELETE /api/skills/:name cleanup', () => {
-  const tmpBase = `/tmp/youclaw-skills-agents-test-${Date.now()}`
+  const tmpBase = `/tmp/XiaoJuClaw-skills-agents-test-${Date.now()}`
 
   beforeEach(() => {
     mkdirSync(tmpBase, { recursive: true })
@@ -145,7 +145,7 @@ describe('DELETE /api/skills/:name cleanup', () => {
     mkdirSync(skillDir, { recursive: true })
     writeFileSync(resolve(skillDir, 'SKILL.md'), 'body', 'utf-8')
     if (projectMeta) {
-      writeFileSync(resolve(skillDir, '.youclaw-skill.json'), JSON.stringify(projectMeta, null, 2), 'utf-8')
+      writeFileSync(resolve(skillDir, '.XiaoJuClaw-skill.json'), JSON.stringify(projectMeta, null, 2), 'utf-8')
     }
     return resolve(skillDir, 'SKILL.md')
   }

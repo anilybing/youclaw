@@ -64,7 +64,7 @@ describe('SkillsLoader source precedence', () => {
   })
 
   test('keeps agent workspace skills out of global skill listing and applies precedence per agent', () => {
-    const root = makeTempDir('youclaw-skills-loader-')
+    const root = makeTempDir('XiaoJuClaw-skills-loader-')
     const resourcesDir = resolve(root, 'resources')
     const dataDir = resolve(root, 'data')
     const workspaceDir = resolve(root, 'workspace')
@@ -95,7 +95,7 @@ describe('SkillsLoader source precedence', () => {
   })
 
   test('builds versioned snapshots for agent runtime', () => {
-    const root = makeTempDir('youclaw-skills-snapshot-')
+    const root = makeTempDir('XiaoJuClaw-skills-snapshot-')
     const resourcesDir = resolve(root, 'resources')
     const dataDir = resolve(root, 'data')
     const workspaceDir = resolve(root, 'workspace')
