@@ -1,0 +1,23 @@
+{
+  "name": "xiaojuclaw-skills-dev",
+  "private": true,
+  "type": "module",
+  "description": "XiaoJuClaw 内置办公技能开发工作区：源码与测试不进 Tauri 资源，构建产物输出到 ../skills/<slug>/scripts/",
+  "scripts": {
+    "build:office-ppt": "bun build src/office-ppt/cli.ts --target=bun --outfile ../skills/office-ppt/scripts/render.mjs",
+    "build:office-doc": "bun build src/office-doc/cli.ts --target=bun --outfile ../skills/office-doc/scripts/render.mjs",
+    "build:office-excel": "bun build src/office-excel/cli.ts --target=bun --outfile ../skills/office-excel/scripts/excel.mjs",
+    "build:office-pdf": "bun build src/office-pdf/cli.ts --target=bun --outfile ../skills/office-pdf/scripts/pdf.mjs",
+    "build:all": "bun run build:office-ppt && bun run build:office-doc && bun run build:office-excel && bun run build:office-pdf",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "exceljs": "^4.4.0",
+    "pdf-lib": "^1.17.1",
+    "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  }
+}
