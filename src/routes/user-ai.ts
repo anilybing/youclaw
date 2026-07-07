@@ -13,6 +13,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getPaths } from '../config/paths.ts'
 import { getLogger } from '../logger/index.ts'
+import { resolveRoutedModel, type ModelHint } from '../agent/model-hints.ts'
+import { getStoredSettings, resolveCustomModelApiKey } from '../settings/manager.ts'
 
 export interface UserAiConfig {
   baseUrl: string
@@ -68,6 +70,45 @@ export function userAiConfigStatus() {
 const USER_AI_TIMEOUT_MS = 60_000
 const USER_AI_MAX_OUTPUT_TOKENS = 2048
 
+/**
+ * T-G3：user_key 通道按 hint 选模型（一期）。
+ *
+ * 用户自带 Key 是「三件套单模型」；若 settings 里配置了多个自定义模型
+ * （customModels），则按远程配置缓存（remote-config-cache.json）的
+ * ai.model_routing 路由表解析 hint → 目标 model id，匹配到自定义模型
+ * （modelId / id / provider+modelId）就用它的三件套；任何一步读不到或
+ * 不匹配 → 返回 null，调用方沿用现状配置。全程防御，绝不抛错。
+ */
+export function resolveUserKeyModelForHint(hint: ModelHint | undefined): UserAiConfig | null {
+  if (!hint) return null
+  try {
+    const cache = readJsonObject(resolve(getPaths().data, 'remote-config-cache.json'))
+    const configs = cache?.configs
+    if (!configs || typeof configs !== 'object' || Array.isArray(configs)) return null
+    const routing = (configs as Record<string, unknown>)['ai.model_routing']
+    const target = resolveRoutedModel(routing, hint)
+    if (!target?.model) return null
+
+    const settings = getStoredSettings()
+    const wantedModel = target.model.trim()
+    const wantedProvider = target.provider.trim().toLowerCase()
+    const match = settings.customModels.find((model) => {
+      const idMatched = model.modelId.trim() === wantedModel || model.id.trim() === wantedModel
+      if (!idMatched) return false
+      return !wantedProvider || model.provider.trim().toLowerCase() === wantedProvider
+    })
+    if (!match) return null
+
+    const apiKey = resolveCustomModelApiKey(match).trim()
+    const baseUrl = match.baseUrl.trim().replace(/\/+$/, '')
+    const modelId = match.modelId.trim()
+    if (!apiKey || !baseUrl || !modelId) return null
+    return { baseUrl, apiKey, model: modelId }
+  } catch {
+    return null
+  }
+}
+
 export interface UserAiChatResult {
   outputContent: string
   modelName: string
@@ -88,7 +129,19 @@ interface OpenAiCompletionResponse {
   }
 }
 
-export async function generateUserKeyChat(message: string, config: UserAiConfig): Promise<UserAiChatResult> {
+export async function generateUserKeyChat(
+  message: string,
+  config: UserAiConfig,
+  hint?: ModelHint,
+): Promise<UserAiChatResult> {
+  const routed = resolveUserKeyModelForHint(hint)
+  if (routed) {
+    getLogger().info(
+      { category: 'user-ai', hint, model: routed.model },
+      'User-key chat routed by hint',
+    )
+    config = routed
+  }
   const url = `${config.baseUrl}/chat/completions`
   const response = await fetch(url, {
     method: 'POST',

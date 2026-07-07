@@ -13,6 +13,7 @@ import {
   readUserAiConfig,
   userAiConfigStatus,
 } from './user-ai.ts'
+import { isModelHint, type ModelHint } from '../agent/model-hints.ts'
 
 // ─── 远程配置（T-C5）───────────────────────────────────────────────
 // 离线默认值与 MVP remote_configs 种子保持一致；拉取成功缓存到数据目录，
@@ -384,12 +385,16 @@ export function createCommercialRoutes() {
     const token = getAuthToken()
     if (!token) return c.json({ error: 'Not logged in' }, 401)
 
-    let body: { message?: string; deviceId?: string }
+    let body: { message?: string; deviceId?: string; hint?: string }
     try {
       body = await c.req.json()
     } catch {
       return c.json({ error: 'Invalid request body' }, 400)
     }
+
+    // T-G3：可选路由 hint（chat/reasoning/memory/fast/vision），非法值静默忽略
+    const hint: ModelHint | undefined = isModelHint(body.hint) ? body.hint : undefined
+    if (body.hint !== undefined && !hint) delete body.hint
 
     // 读取用户 AI 模式偏好（容错：失败时按 platform 处理）
     let aiMode = 'platform'
@@ -418,7 +423,7 @@ export function createCommercialRoutes() {
       if (!message) return c.json({ error: '请输入聊天内容', errorCode: 'CHAT_INPUT_INVALID' }, 400)
 
       try {
-        const result = await generateUserKeyChat(message, userConfig)
+        const result = await generateUserKeyChat(message, userConfig, hint)
         return c.json({
           runId: '',
           runStatus: 'success',
