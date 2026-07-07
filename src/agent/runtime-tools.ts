@@ -8,6 +8,7 @@ import type { BrowserManager, BrowserTarget } from '../browser/index.ts'
 import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
 import type { SecretsManager } from './secrets.ts'
 import { createExternalMcpToolRuntime } from './mcp-tools.ts'
+import { wrapToolsWithSqueeze } from './output-squeeze.ts'
 import type { AgentConfig } from './types.ts'
 
 export function normalizeToolName(name: string): string {
@@ -82,7 +83,8 @@ export async function buildRuntimeCustomTools(params: {
   }
 
   return {
-    tools: customTools,
+    // [XJC-PATCH] T-G2 输出压缩层：结果进上下文前超阈值截断+原文落盘（顺序与名称不变）
+    tools: wrapToolsWithSqueeze(customTools),
     dispose: async () => {
       await externalMcpDispose?.()
     },
