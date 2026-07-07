@@ -2,13 +2,24 @@
 import { Hono } from 'hono'
 import { existsSync, mkdirSync, chmodSync, writeFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { z } from 'zod/v4'
 import { which, resetShellEnvCache, getShellEnv } from '../utils/shell-env.ts'
 import { getLogger } from '../logger/index.ts'
-import { BUN_CDN_BASE, BUN_GITHUB_BASE, GIT_CDN_URL, UV_CDN_BASE, UV_GITHUB_BASE } from '../config/tools.ts'
-import { ensurePortableToolsInPath, getPortableToolDir } from '../config/portable-tools.ts'
+import {
+  BUN_CDN_BASE, BUN_GITHUB_BASE, BUN_VERSION,
+  GIT_CDN_URL, GIT_VERSION,
+  UV_CDN_BASE, UV_GITHUB_BASE, UV_VERSION,
+} from '../config/tools.ts'
+import {
+  ensurePortableToolsInPath,
+  getPortableToolInstallDir,
+  isPathInPortableTools,
+  upsertToolsManifestEntry,
+} from '../config/portable-tools.ts'
+import { isPortableMode } from '../config/paths.ts'
 
 // ---------------------------------------------------------------------------
 // Portable Tools Directory — 实现已迁至 src/config/portable-tools.ts（T-E2）
@@ -18,19 +29,85 @@ export {
   getPlatformKey,
   getPortableToolsDir,
   getPortableToolDir,
+  getPortableToolInstallDir,
   resolvePortableToolDir,
   ensurePortableToolsInPath,
   readToolsManifest,
+  writeToolsManifest,
+  upsertToolsManifestEntry,
+  isPathInPortableTools,
   checkManifestVersions,
   getExpectedToolVersions,
 } from '../config/portable-tools.ts'
 
 // 模块加载时立即执行，确保后续所有 which() 调用都能找到便携工具
+// （dev 下此刻 loadEnv() 可能未执行导致静默失败，src/index.ts 启动序列会兜底再调一次并打日志）
 try {
   ensurePortableToolsInPath()
 } catch { /* 首次启动 data dir 可能还没初始化 */ }
 
 const health = new Hono()
+
+/** 安装结果统一结构；installedTo 为安装目录绝对路径（系统级安装如 winget/xcode-select 为 null） */
+interface InstallResult {
+  ok: boolean
+  stdout: string
+  stderr: string
+  exitCode: number
+  installedTo: string | null
+}
+
+function sha256Hex(buffer: ArrayBuffer): string {
+  return createHash('sha256').update(Buffer.from(buffer)).digest('hex')
+}
+
+/** 安装成功后写入 tools/manifest.json；失败仅告警，不影响安装结果 */
+function recordToolInManifest(entry: { name: string; version: string; dir: string; sha256?: string }): void {
+  try {
+    upsertToolsManifestEntry(entry)
+    getLogger().info({ category: 'install', tool: entry.name }, `[manifest] Recorded ${entry.name}@${entry.version} -> ${entry.dir}`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    getLogger().warn({ category: 'install', tool: entry.name }, `[manifest] Failed to update manifest: ${msg}`)
+  }
+}
+
+/**
+ * 下载 URL 到内存缓冲（流式读取 + 整体超时）。
+ * 不用 resp.arrayBuffer()：部分环境下 Bun 对重定向后的大响应调用 arrayBuffer()
+ * 异常缓慢（同一文件流式读取数秒完成，arrayBuffer 需分钟级），导致下载超时。
+ * 非 2xx 或超时均抛错，由调用方按"CDN 优先 GitHub 兜底"逐个 URL 重试。
+ */
+async function downloadToBuffer(url: string, timeoutMs: number): Promise<ArrayBuffer> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const resp = await fetch(url, { signal: controller.signal })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    if (!resp.body) return await resp.arrayBuffer()
+
+    const reader = resp.body.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        chunks.push(value)
+        total += value.byteLength
+      }
+    }
+    const merged = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      merged.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return merged.buffer
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 health.get('/health', (c) => {
   return c.json({
@@ -167,7 +244,14 @@ health.get('/env-check', (c) => {
     path: string | null
     version: string | null
     required: boolean
+    source: 'portable' | 'system' | null
   }> = []
+
+  // 来源标注：path 位于便携 tools 目录 → 'portable'；其他 → 'system'；缺失 → null
+  const sourceOf = (path: string | null): 'portable' | 'system' | null => {
+    if (!path) return null
+    return isPathInPortableTools(path) ? 'portable' : 'system'
+  }
 
   // 1. Git (required on all platforms)
   const git = checkGit()
@@ -177,6 +261,7 @@ health.get('/env-check', (c) => {
     path: git.path,
     version: git.version,
     required: true,
+    source: sourceOf(git.path),
   })
 
   // 2. Bun (required on all platforms)
@@ -187,6 +272,7 @@ health.get('/env-check', (c) => {
     path: bun.path,
     version: bun.version,
     required: true,
+    source: sourceOf(bun.path),
   })
 
   // 3. Node.js (optional — fallback runtime on Windows if Bun compat is insufficient)
@@ -203,6 +289,7 @@ health.get('/env-check', (c) => {
     path: node.path,
     version: node.version,
     required: false,
+    source: sourceOf(node.path),
   })
 
   // 4. Python (optional, all platforms)
@@ -214,6 +301,7 @@ health.get('/env-check', (c) => {
     path: python.path,
     version: python.version,
     required: false,
+    source: sourceOf(python.path),
   })
 
   // 5. uv (optional, all platforms)
@@ -224,6 +312,7 @@ health.get('/env-check', (c) => {
     path: uv.path,
     version: uv.version,
     required: false,
+    source: sourceOf(uv.path),
   })
 
   return c.json({ platform, dependencies })
@@ -253,15 +342,16 @@ function getBunZipTarget(): string | null {
 }
 
 /**
- * Download Bun from CDN (with GitHub fallback), extract to ~/.bun/bin/.
+ * Download Bun from CDN (with GitHub fallback), extract to the tools dir
+ * (portable mode: tools/<platformKey>/bun/ on the USB drive; otherwise tools/bun/).
  * Pure JS implementation using Bun built-in fetch + unzip.
  */
-async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: string; exitCode: number }> {
+async function installBun(): Promise<InstallResult> {
   const zipName = getBunZipTarget()
   if (!zipName) {
     const msg = `Unsupported platform: ${process.platform} ${process.arch}`
     getLogger().error({ category: 'install' }, `[install-bun] ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 
   const cdnUrl = `${BUN_CDN_BASE}/${zipName}`
@@ -273,14 +363,10 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
   for (const url of [cdnUrl, githubUrl]) {
     try {
       getLogger().info({ category: 'install' }, `[install-bun] Downloading from ${url}...`)
-      const resp = await fetch(url, { signal: AbortSignal.timeout(120_000) })
-      if (resp.ok) {
-        zipBuffer = await resp.arrayBuffer()
-        downloadSource = url
-        getLogger().info({ category: 'install' }, `[install-bun] Downloaded ${(zipBuffer.byteLength / 1024 / 1024).toFixed(1)}MB from ${url}`)
-        break
-      }
-      getLogger().warn({ category: 'install' }, `[install-bun] HTTP ${resp.status} from ${url}, trying next...`)
+      zipBuffer = await downloadToBuffer(url, 120_000)
+      downloadSource = url
+      getLogger().info({ category: 'install' }, `[install-bun] Downloaded ${(zipBuffer.byteLength / 1024 / 1024).toFixed(1)}MB from ${url}`)
+      break
     } catch (err: any) {
       getLogger().warn({ category: 'install' }, `[install-bun] Failed to download from ${url}: ${err.message}`)
     }
@@ -289,12 +375,14 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
   if (!zipBuffer) {
     const msg = 'Failed to download Bun from CDN and GitHub'
     getLogger().error({ category: 'install' }, `[install-bun] ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 
-  // Determine install directory — portable: XiaoJuClawData/tools/bun/
+  const zipSha256 = sha256Hex(zipBuffer)
+
+  // Install directory — portable mode: tools/<platformKey>/bun/; otherwise tools/bun/
   const ext = process.platform === 'win32' ? '.exe' : ''
-  const bunDir = getPortableToolDir('bun')
+  const bunDir = getPortableToolInstallDir('bun')
   const bunPath = resolve(bunDir, `bun${ext}`)
 
   try {
@@ -327,12 +415,12 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
       })
     }
 
-    // Copy binary to ~/.bun/bin/
+    // Copy binary into the tools dir
     const extractedBun = resolve(tmpExtractDir, folderName, `bun${ext}`)
     if (!existsSync(extractedBun)) {
       const msg = `Extracted binary not found at ${extractedBun}`
       getLogger().error({ category: 'install' }, `[install-bun] ${msg}`)
-      return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+      return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
     }
 
     const { copyFileSync } = await import('node:fs')
@@ -349,16 +437,17 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
       rmSync(tmpExtractDir, { recursive: true, force: true })
     } catch { /* ignore cleanup errors */ }
 
+    recordToolInManifest({ name: 'bun', version: BUN_VERSION, dir: bunDir, sha256: zipSha256 })
     resetShellEnvCache()
     ensurePortableToolsInPath()
 
     const msg = `Bun installed to ${bunPath} (from ${downloadSource})`
     getLogger().info({ category: 'install' }, `[install-bun] ${msg}`)
-    return { ok: true, stdout: msg, stderr: '', exitCode: 0 }
+    return { ok: true, stdout: msg, stderr: '', exitCode: 0, installedTo: bunDir }
   } catch (err: any) {
     const msg = err.message ?? String(err)
     getLogger().error({ category: 'install' }, `[install-bun] Install failed: ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 }
 
@@ -368,27 +457,24 @@ async function installBun(): Promise<{ ok: boolean; stdout: string; stderr: stri
  * Uses PortableGit self-extracting archive instead of system installer.
  * This way Git lives on the USB drive and doesn't need reinstalling on new machines.
  */
-async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stderr: string; exitCode: number }> {
+async function installGitWindows(): Promise<InstallResult> {
   const logger = getLogger()
-  const gitDir = getPortableToolDir('git')
+  // Portable mode: tools/<platformKey>/git/ (installer lays out cmd/ bin/ inside); otherwise tools/git/
+  const gitDir = getPortableToolInstallDir('git')
 
   // Download the Git installer zip from CDN
   logger.info({ category: 'install' }, `[install-git] Downloading from ${GIT_CDN_URL}...`)
   let zipBuffer: ArrayBuffer | null = null
   try {
-    const resp = await fetch(GIT_CDN_URL, { signal: AbortSignal.timeout(180_000) })
-    if (!resp.ok) {
-      const msg = `HTTP ${resp.status} from ${GIT_CDN_URL}`
-      logger.error({ category: 'install' }, `[install-git] ${msg}`)
-      return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
-    }
-    zipBuffer = await resp.arrayBuffer()
+    zipBuffer = await downloadToBuffer(GIT_CDN_URL, 180_000)
     logger.info({ category: 'install' }, `[install-git] Downloaded ${(zipBuffer.byteLength / 1024 / 1024).toFixed(1)}MB`)
   } catch (err: any) {
     const msg = `Download failed: ${err.message}`
     logger.error({ category: 'install' }, `[install-git] ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
+
+  const zipSha256 = sha256Hex(zipBuffer)
 
   try {
     // Write zip to temp
@@ -419,7 +505,7 @@ async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stder
     if (!exeFile) {
       const msg = `No .exe found in extracted zip (files: ${files.join(', ')})`
       logger.error({ category: 'install' }, `[install-git] ${msg}`)
-      return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+      return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
     }
 
     const exePath = resolve(tmpExtractDir, exeFile)
@@ -451,20 +537,21 @@ async function installGitWindows(): Promise<{ ok: boolean; stdout: string; stder
       rmSync(tmpExtractDir, { recursive: true, force: true })
     } catch { /* ignore */ }
 
-    resetShellEnvCache()
-    ensurePortableToolsInPath()
-
     if (exitCode === 0) {
+      recordToolInManifest({ name: 'git', version: GIT_VERSION, dir: gitDir, sha256: zipSha256 })
       logger.info({ category: 'install' }, `[install-git] Git installed successfully`)
     } else {
       logger.error({ category: 'install', exitCode, stderr }, `[install-git] Install failed`)
     }
 
-    return { ok: exitCode === 0, stdout, stderr, exitCode }
+    resetShellEnvCache()
+    ensurePortableToolsInPath()
+
+    return { ok: exitCode === 0, stdout, stderr, exitCode, installedTo: exitCode === 0 ? gitDir : null }
   } catch (err: any) {
     const msg = err.message ?? String(err)
     logger.error({ category: 'install' }, `[install-git] ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 }
 
@@ -490,15 +577,16 @@ function getUvArchiveTarget(): { name: string; format: 'tar.gz' | 'zip' } | null
 }
 
 /**
- * Download uv from CDN (with GitHub fallback), extract to ~/.local/bin/.
+ * Download uv from CDN (with GitHub fallback), extract to the tools dir
+ * (portable mode: tools/<platformKey>/uv/ on the USB drive; otherwise tools/uv/).
  */
-async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: string; exitCode: number }> {
+async function installUv(): Promise<InstallResult> {
   const logger = getLogger()
   const target = getUvArchiveTarget()
   if (!target) {
     const msg = `Unsupported platform: ${process.platform} ${process.arch}`
     logger.error({ category: 'install' }, `[install-uv] ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 
   const cdnUrl = `${UV_CDN_BASE}/${target.name}`
@@ -510,14 +598,10 @@ async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: strin
   for (const url of [cdnUrl, githubUrl]) {
     try {
       logger.info({ category: 'install' }, `[install-uv] Downloading from ${url}...`)
-      const resp = await fetch(url, { signal: AbortSignal.timeout(120_000) })
-      if (resp.ok) {
-        archiveBuffer = await resp.arrayBuffer()
-        downloadSource = url
-        logger.info({ category: 'install' }, `[install-uv] Downloaded ${(archiveBuffer.byteLength / 1024 / 1024).toFixed(1)}MB from ${url}`)
-        break
-      }
-      logger.warn({ category: 'install' }, `[install-uv] HTTP ${resp.status} from ${url}, trying next...`)
+      archiveBuffer = await downloadToBuffer(url, 120_000)
+      downloadSource = url
+      logger.info({ category: 'install' }, `[install-uv] Downloaded ${(archiveBuffer.byteLength / 1024 / 1024).toFixed(1)}MB from ${url}`)
+      break
     } catch (err: any) {
       logger.warn({ category: 'install' }, `[install-uv] Failed to download from ${url}: ${err.message}`)
     }
@@ -526,12 +610,14 @@ async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: strin
   if (!archiveBuffer) {
     const msg = 'Failed to download uv from CDN and GitHub'
     logger.error({ category: 'install' }, `[install-uv] ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 
+  const archiveSha256 = sha256Hex(archiveBuffer)
+
   const ext = process.platform === 'win32' ? '.exe' : ''
-  // Install to portable tools dir: XiaoJuClawData/tools/uv/
-  const binDir = getPortableToolDir('uv')
+  // Install directory — portable mode: tools/<platformKey>/uv/; otherwise tools/uv/
+  const binDir = getPortableToolInstallDir('uv')
   const uvPath = resolve(binDir, `uv${ext}`)
   const uvxPath = resolve(binDir, `uvx${ext}`)
 
@@ -585,7 +671,7 @@ async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: strin
     if (!extractedUv) {
       const msg = `uv binary not found in extracted archive`
       logger.error({ category: 'install' }, `[install-uv] ${msg}`)
-      return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+      return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
     }
 
     // Copy uv binary
@@ -612,16 +698,17 @@ async function installUv(): Promise<{ ok: boolean; stdout: string; stderr: strin
       rmSync(tmpExtractDir, { recursive: true, force: true })
     } catch {}
 
+    recordToolInManifest({ name: 'uv', version: UV_VERSION, dir: binDir, sha256: archiveSha256 })
     resetShellEnvCache()
     ensurePortableToolsInPath()
 
     const msg = `uv installed to ${uvPath} (from ${downloadSource})`
     logger.info({ category: 'install' }, `[install-uv] ${msg}`)
-    return { ok: true, stdout: msg, stderr: '', exitCode: 0 }
+    return { ok: true, stdout: msg, stderr: '', exitCode: 0, installedTo: binDir }
   } catch (err: any) {
     const msg = err.message ?? String(err)
     logger.error({ category: 'install' }, `[install-uv] Install failed: ${msg}`)
-    return { ok: false, stdout: '', stderr: msg, exitCode: 1 }
+    return { ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null }
   }
 }
 
@@ -655,9 +742,12 @@ health.post('/install-tool', async (c) => {
     if (!uvPath) {
       const msg = 'uv is not installed. Please install uv first, then install Python.'
       logger.warn({ category: 'install' }, `[install-python] ${msg}`)
-      return c.json({ ok: false, stdout: '', stderr: msg, exitCode: 1 })
+      return c.json({ ok: false, stdout: '', stderr: msg, exitCode: 1, installedTo: null })
     }
-    logger.info({ category: 'install' }, `[install-python] Installing Python via uv...`)
+    // Portable mode: direct uv-managed Python into tools/<platformKey>/python/ on the USB drive
+    const portable = isPortableMode()
+    const pythonDir = portable ? getPortableToolInstallDir('python') : null
+    logger.info({ category: 'install' }, `[install-python] Installing Python via uv${pythonDir ? ` into ${pythonDir}` : ''}...`)
     let stdout = ''
     let stderr = ''
     let exitCode = 0
@@ -666,10 +756,15 @@ health.post('/install-tool', async (c) => {
         encoding: 'utf-8',
         timeout: 300_000,
         windowsHide: true,
-        env: getShellEnv(),
+        env: pythonDir ? { ...getShellEnv(), UV_PYTHON_INSTALL_DIR: pythonDir } : getShellEnv(),
         stdio: ['pipe', 'pipe', 'pipe'],
       })
       logger.info({ category: 'install' }, `[install-python] Python installed successfully via uv`)
+      if (pythonDir) {
+        // uv 输出形如 "Installed Python 3.13.1 ..." 或 "cpython-3.13.1-..."；解析失败记 unknown
+        const version = /(?:cpython-|Python )(\d+\.\d+\.\d+)/.exec(stdout)?.[1] ?? 'unknown'
+        recordToolInManifest({ name: 'python', version, dir: pythonDir })
+      }
     } catch (err: any) {
       stdout = err.stdout ?? ''
       stderr = err.stderr ?? ''
@@ -677,7 +772,8 @@ health.post('/install-tool', async (c) => {
       logger.error({ category: 'install', exitCode, stderr }, `[install-python] Failed`)
     }
     resetShellEnvCache()
-    return c.json({ ok: exitCode === 0, stdout, stderr, exitCode })
+    ensurePortableToolsInPath()
+    return c.json({ ok: exitCode === 0, stdout, stderr, exitCode, installedTo: exitCode === 0 ? pythonDir : null })
   }
 
   // Git on Windows: download from CDN and run silent install
@@ -739,7 +835,8 @@ health.post('/install-tool', async (c) => {
   resetShellEnvCache()
 
   logger.info({ category: 'install', tool, ok: exitCode === 0 }, `[install-${tool}] Done (exitCode=${exitCode})`)
-  return c.json({ ok: exitCode === 0, stdout, stderr, exitCode })
+  // winget/xcode-select 属系统级安装，无法指向便携目录，installedTo 为 null
+  return c.json({ ok: exitCode === 0, stdout, stderr, exitCode, installedTo: null })
 })
 
 export { health }

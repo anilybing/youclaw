@@ -278,6 +278,34 @@ export function getPaths() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// [XJC-PATCH] T-E3 便携模式判定（仅新增导出，不改动上方既有解析逻辑）
+// ---------------------------------------------------------------------------
+
+/**
+ * 是否运行在便携（U 盘）模式：数据目录位于 EXE 同级的 XiaoJuClawData 目录。
+ * 判定口径与 src-tauri 的 resolve_portable_data_dir 一致——Tauri 便携启动时把
+ * EXE 同级 XiaoJuClawData 作为 DATA_DIR 传给 Sidecar；此处只比对已解析的数据目录，
+ * 不重复做可写探测。
+ *
+ * XJC_FORCE_PORTABLE=1 为测试后门：dev/测试环境无法模拟"EXE 同级数据目录"，
+ * 冒烟与单测用它强制走便携分支（生产构建不会设置该变量）。
+ */
+export function isPortableMode(): boolean {
+  if (process.env.XJC_FORCE_PORTABLE === '1') return true
+  try {
+    const dataDir = getPaths().data
+    const exeSiblingDataDir = resolve(dirname(process.execPath), 'XiaoJuClawData')
+    if (process.platform === 'win32') {
+      return dataDir.toLowerCase() === exeSiblingDataDir.toLowerCase()
+    }
+    return dataDir === exeSiblingDataDir
+  } catch {
+    // getPaths() 依赖 loadEnv()；启动极早期未初始化时按非便携处理
+    return false
+  }
+}
+
 /**
  * Resolve a resource subdirectory with fallback for Tauri bundled paths.
  * Tauri 2 converts ../ to _up_/ when bundling resources.

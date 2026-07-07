@@ -8,10 +8,10 @@
  *   tools/<tool>/                 ← 回退：旧扁平布局（兼容存量 U 盘）
  *   tools/manifest.json           ← 工具清单与版本记录
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { isAbsolute, relative, resolve } from 'node:path'
 import appConfig from '../../app.config.ts'
-import { getPaths } from './paths.ts'
+import { getPaths, isPortableMode } from './paths.ts'
 import { getLogger } from '../logger/index.ts'
 
 // ---------------------------------------------------------------------------
@@ -56,14 +56,41 @@ export function getPortableToolsDir(toolsDirOverride?: string): string {
 }
 
 /**
- * 获取特定工具的便携【安装目标】目录。
- * 注意：当前仍指向旧扁平布局 tools/<tool>（与既有 install-tool 行为一致），
- * 安装目标切换到平台子目录属后续 T-E3 范围。
+ * 获取特定工具的旧扁平布局目录 tools/<tool>（非便携模式的安装目标，维持既有行为）。
+ * 便携模式的安装目标请用 getPortableToolInstallDir（T-E3 起切换到平台子目录）。
  */
 export function getPortableToolDir(toolName: string, toolsDirOverride?: string): string {
   const dir = resolve(getPortableToolsDir(toolsDirOverride), toolName)
   mkdirSync(dir, { recursive: true })
   return dir
+}
+
+/**
+ * 获取特定工具的【安装目标】目录（T-E3）：
+ * - 便携模式（isPortableMode()）→ tools/<platformKey>/<tool>（U 盘平台子目录，多平台共用一个 U 盘）
+ * - 非便携模式 → 维持既有扁平 tools/<tool>（主机数据目录安装）
+ * 目录不存在时自动创建。
+ */
+export function getPortableToolInstallDir(toolName: string, toolsDirOverride?: string): string {
+  if (!isPortableMode()) return getPortableToolDir(toolName, toolsDirOverride)
+  const dir = resolve(getPortableToolsDir(toolsDirOverride), getPlatformKey(), toolName)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/**
+ * 判断某个可执行文件路径是否位于便携 tools 目录内（env-check 的 source 标注用）。
+ * Windows 下 path.relative 已做大小写不敏感比较；跨盘符时 relative 返回绝对路径，判为 false。
+ */
+export function isPathInPortableTools(filePath: string | null | undefined, toolsDirOverride?: string): boolean {
+  if (!filePath) return false
+  try {
+    const toolsDir = getPortableToolsDir(toolsDirOverride)
+    const rel = relative(toolsDir, resolve(filePath))
+    return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -94,6 +121,14 @@ export interface EnsurePortableToolsInPathOptions {
 function normalizePathEntry(entry: string): string {
   const trimmed = entry.replace(/[\\/]+$/, '')
   return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed
+}
+
+/** 进程内累计注入到真实 process.env.PATH 的便携路径（测试用 env 覆盖不计入），供启动日志汇报 */
+const injectedIntoProcessEnv: string[] = []
+
+/** 返回本进程迄今为止注入到 process.env.PATH 的便携工具路径（按注入顺序） */
+export function getInjectedPortablePaths(): string[] {
+  return [...injectedIntoProcessEnv]
 }
 
 /**
@@ -134,6 +169,9 @@ export function ensurePortableToolsInPath(options: EnsurePortableToolsInPathOpti
 
   if (injected.length > 0) {
     env.PATH = currentPath ? injected.join(sep) + sep + currentPath : injected.join(sep)
+    if (env === (process.env as Record<string, string | undefined>)) {
+      injectedIntoProcessEnv.push(...injected)
+    }
   }
 
   // manifest 版本校验：低于期望版本的工具逐条告警（manifest 缺失/损坏时静默跳过）
@@ -184,6 +222,41 @@ export function readToolsManifest(toolsDirOverride?: string): ToolsManifest | nu
   } catch {
     return null
   }
+}
+
+/** 写入 tools/manifest.json（覆盖写，pretty JSON，与 make-usb-payload.ps1 产物格式一致） */
+export function writeToolsManifest(manifest: ToolsManifest, toolsDirOverride?: string): void {
+  const manifestPath = resolve(getPortableToolsDir(toolsDirOverride), 'manifest.json')
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8')
+}
+
+/**
+ * 合并写入单个工具条目（T-E3 安装成功后调用）：
+ * 读旧 manifest（缺失/损坏时新建骨架），按 name 覆盖或追加该条目后写回。
+ * entry.dir 可传绝对安装路径，会归一化为相对 tools/ 的正斜杠路径（与 U 盘 payload 脚本一致）。
+ */
+export function upsertToolsManifestEntry(entry: ToolsManifestEntry, toolsDirOverride?: string): ToolsManifest {
+  const toolsDir = getPortableToolsDir(toolsDirOverride)
+  const normalized: ToolsManifestEntry = { ...entry, dir: normalizeManifestDir(entry.dir, toolsDir) }
+  const manifest: ToolsManifest = readToolsManifest(toolsDirOverride) ?? {
+    schemaVersion: 1,
+    platform: getPlatformKey(),
+    tools: [],
+    createdAt: new Date().toISOString(),
+  }
+  const index = manifest.tools.findIndex((tool) => tool.name === normalized.name)
+  if (index >= 0) manifest.tools[index] = normalized
+  else manifest.tools.push(normalized)
+  writeToolsManifest(manifest, toolsDirOverride)
+  return manifest
+}
+
+/** manifest 的 dir 统一为相对 tools/ 的正斜杠路径；tools/ 之外的绝对路径原样保留（仅换正斜杠） */
+function normalizeManifestDir(dir: string, toolsDir: string): string {
+  if (!isAbsolute(dir)) return dir.replaceAll('\\', '/')
+  const rel = relative(toolsDir, dir)
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return dir.replaceAll('\\', '/')
+  return rel.replaceAll('\\', '/')
 }
 
 function isToolsManifest(value: unknown): value is ToolsManifest {
