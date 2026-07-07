@@ -16,6 +16,7 @@ import { registerChannelOutboundService } from './channel/outbound-service.ts'
 import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
 import { MemoryManager, MemoryIndexer } from './memory/index.ts'
 import { ensureDistillTasks } from './memory/distill-scheduler.ts'
+import { ensureIngestTask } from './ingest/ingest-scheduler.ts'
 import { Scheduler } from './scheduler/index.ts'
 import { BrowserManager } from './browser/index.ts'
 import { createApp } from './routes/index.ts'
@@ -196,6 +197,8 @@ async function main() {
 
   // [XJC-PATCH] T-G1 记忆自动蒸馏：幂等种子日纪要/周蒸馏系统任务（src/memory/distill-scheduler.ts）
   ensureDistillTasks({ hasAgent: (id) => Boolean(agentManager.getAgent(id)) })
+
+  ensureIngestTask({ hasAgent: (id) => Boolean(agentManager.getAgent(id)) }) // [XJC-PATCH] T-G6 本地文档摄取轮询（src/ingest/）
 
   // 16. Startup memory maintenance: log cleanup + snapshot restore
   for (const agentConfig of agentManager.getAgents()) {

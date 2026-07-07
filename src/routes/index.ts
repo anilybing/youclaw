@@ -14,6 +14,7 @@ import { createChannelsRoutes } from './channels.ts'
 import { createRegistryRoutes } from './registry.ts'
 import { createWebhooksRoutes } from './webhooks.ts'
 import { createSettingsRoutes } from './settings.ts'
+import { createIngestRoutes } from './ingest.ts'
 import { createAuthRoutes } from './auth.ts'
 import { createCreditRoutes } from './credit.ts'
 import { createProxyRoutes } from './proxy.ts'
@@ -80,6 +81,7 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createLogsRoutes())
   app.route('/api', createWebhooksRoutes(channelManager))
   app.route('/api', createSettingsRoutes())
+  app.route('/api', createIngestRoutes()) // [XJC-PATCH] T-G6 本地文档摄取配置
   // Commercial auth must mount BEFORE upstream auth to override POST /auth/login and GET /auth/user
   app.route('/api', createCommercialAuthRoutes())
   app.route('/api', createAuthRoutes())

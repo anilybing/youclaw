@@ -3,11 +3,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { useI18n } from '@/i18n'
 import { useAppPreferencesStore, type CloseAction } from '@/stores/app'
 import type { Theme } from '@/hooks/useTheme'
-import { Sun, Moon, Monitor } from 'lucide-react'
+import { Sun, Moon, Monitor, FolderOpen, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getPortableSetting, getTauriInvoke, isTauri, updateCachedBaseUrl, savePreferredPort } from '@/api/transport'
+import { apiFetch } from '@/api/client'
+
+// [XJC-PATCH] T-G6 本地文档摄取配置（后端 /api/ingest/config，存 kv_state）
+interface IngestConfigDTO {
+  ingestEnabled: boolean
+  ingestFolders: string[]
+}
 
 const themeOptions: { value: Theme; labelKey: 'dark' | 'light' | 'system'; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { value: 'light', labelKey: 'light', icon: Sun },
@@ -38,6 +45,9 @@ export function GeneralPanel() {
   const [portSaved, setPortSaved] = useState(false)
   const [portRestarting, setPortRestarting] = useState(false)
   const [portMessage, setPortMessage] = useState('')
+  const [ingestConfig, setIngestConfig] = useState<IngestConfigDTO | null>(null)
+  const [ingestFolderInput, setIngestFolderInput] = useState('')
+  const [ingestSaveFailed, setIngestSaveFailed] = useState(false)
 
   useEffect(() => {
     if (!isTauri) return
@@ -45,6 +55,33 @@ export function GeneralPanel() {
       if (preferred) setPortValue(preferred)
     })
   }, [])
+
+  useEffect(() => {
+    apiFetch<IngestConfigDTO>('/api/ingest/config')
+      .then(setIngestConfig)
+      .catch(() => setIngestConfig(null))
+  }, [])
+
+  const saveIngestConfig = useCallback(async (partial: Partial<IngestConfigDTO>) => {
+    setIngestSaveFailed(false)
+    try {
+      const updated = await apiFetch<IngestConfigDTO>('/api/ingest/config', {
+        method: 'POST',
+        body: JSON.stringify(partial),
+      })
+      setIngestConfig(updated)
+    } catch (err) {
+      console.error('Failed to save ingest config:', err)
+      setIngestSaveFailed(true)
+    }
+  }, [])
+
+  const handleAddIngestFolder = useCallback(() => {
+    const folder = ingestFolderInput.trim()
+    if (!folder || !ingestConfig) return
+    setIngestFolderInput('')
+    void saveIngestConfig({ ingestFolders: [...ingestConfig.ingestFolders, folder] })
+  }, [ingestFolderInput, ingestConfig, saveIngestConfig])
 
   const savePortToStore = useCallback(async (port: number) => {
     await savePreferredPort(port)
@@ -139,6 +176,77 @@ export function GeneralPanel() {
           ))}
         </div>
       </div>
+
+      {ingestConfig && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
+            {t.settings.ingestTitle}
+          </h4>
+          <p className="text-xs text-muted-foreground mb-3">{t.settings.ingestHint}</p>
+          <div className="flex items-center justify-between gap-4 rounded-2xl border-2 border-border p-4 mb-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-foreground">{t.settings.ingestEnable}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{t.settings.ingestEnableDesc}</div>
+            </div>
+            <button
+              role="switch"
+              aria-checked={ingestConfig.ingestEnabled}
+              onClick={() => void saveIngestConfig({ ingestEnabled: !ingestConfig.ingestEnabled })}
+              className={cn(
+                'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                ingestConfig.ingestEnabled ? 'bg-primary' : 'bg-muted',
+              )}
+            >
+              <span
+                className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
+                  ingestConfig.ingestEnabled ? 'translate-x-6' : 'translate-x-1',
+                )}
+              />
+            </button>
+          </div>
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">{t.settings.ingestFoldersLabel}</div>
+            {ingestConfig.ingestFolders.length === 0 && (
+              <p className="text-xs text-muted-foreground">{t.settings.ingestNoFolders}</p>
+            )}
+            {ingestConfig.ingestFolders.map((folder) => (
+              <div key={folder} className="flex items-center gap-2 rounded-xl border border-border px-3 py-2">
+                <FolderOpen size={14} className="shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-xs" title={folder}>{folder}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 rounded-lg px-2 text-muted-foreground hover:text-destructive"
+                  onClick={() => void saveIngestConfig({ ingestFolders: ingestConfig.ingestFolders.filter((f) => f !== folder) })}
+                >
+                  <Trash2 size={14} />
+                  <span className="sr-only">{t.settings.ingestRemoveFolder}</span>
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <Input
+                value={ingestFolderInput}
+                onChange={(e) => setIngestFolderInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddIngestFolder() }}
+                placeholder={t.settings.ingestFolderPlaceholder}
+                className="flex-1 rounded-xl text-xs"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl"
+                onClick={handleAddIngestFolder}
+                disabled={!ingestFolderInput.trim()}
+              >
+                {t.settings.ingestAddFolder}
+              </Button>
+            </div>
+            {ingestSaveFailed && <p className="text-xs text-destructive">{t.settings.ingestSaveFailed}</p>}
+          </div>
+        </div>
+      )}
 
       {isTauri && (
         <div>
