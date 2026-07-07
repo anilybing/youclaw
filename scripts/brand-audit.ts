@@ -98,7 +98,8 @@ const EXTERNAL_IDENT_ALLOW = [
 // ---- 扫描实现 ---------------------------------------------------------------
 
 const SCAN_EXT = /\.(ts|tsx|rs|json|html|md|bat|mjs|ps1|ya?ml)$/
-const SKIP_FILES = /^(bun\.lock|web\/bun\.lock|skills-dev\/bun\.lock|src-tauri\/Cargo\.lock|src-tauri\/gen\/)/
+// 规则定义文件自身必然包含全部关键字，排除自己
+const SKIP_FILES = /^(scripts\/brand-audit\.ts$|bun\.lock|web\/bun\.lock|skills-dev\/bun\.lock|src-tauri\/Cargo\.lock|src-tauri\/gen\/)/
 
 interface Violation { file: string; line: number; detail: string }
 
