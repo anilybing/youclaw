@@ -13,6 +13,7 @@ import { EnvSetup } from './pages/EnvSetup'
 import { Templates } from './pages/commercial/Templates'
 import { Activation } from './pages/commercial/Activation'
 import { Profile } from './pages/commercial/Profile'
+import { Workbench } from './pages/commercial/Workbench'
 import { PortConflictDialog } from './components/PortConflictDialog'
 import { AppToaster } from './components/AppToaster'
 import { CloseConfirmDialog } from './components/CloseConfirmDialog'
@@ -304,7 +305,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={canPass ? <Navigate to="/" replace /> : <Login />} />
+        {/* 登录后默认落地数字员工工作台（商业版主入口） */}
+        <Route path="/login" element={canPass ? <Navigate to="/workbench" replace /> : <Login />} />
         <Route element={<AuthGuard />}>
           <Route path="/" element={<Chat />} />
           <Route path="/agents" element={<Agents />} />
@@ -315,6 +317,7 @@ export default function App() {
           <Route path="/templates" element={<Templates />} />
           <Route path="/activation" element={<Activation />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/workbench" element={<Workbench />} />
         </Route>
         <Route path="*" element={<Navigate to={canPass ? "/" : "/login"} replace />} />
       </Routes>

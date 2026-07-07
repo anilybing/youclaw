@@ -27,6 +27,7 @@ import {
   BookOpen,
   Bot,
   Brain,
+  BriefcaseBusiness,
   CalendarClock,
   Github,
   LogIn,
@@ -116,6 +117,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
       : FEEDBACK_URL_EN;
 
   const navItems = [
+    { to: "/workbench", icon: BriefcaseBusiness, label: t.nav.workbench },
     { to: "/", icon: SquarePen, label: t.nav.chat },
     { to: "/agents", icon: Bot, label: t.nav.agents },
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },

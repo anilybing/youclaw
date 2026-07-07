@@ -24,6 +24,7 @@ export const zh: Translations = {
     remember: '记住我的选择',
   },
   nav: {
+    workbench: '数字员工',
     chat: '聊天',
     agents: 'Agents',
     tasks: '定时任务',

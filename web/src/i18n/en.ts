@@ -22,6 +22,7 @@ export const en = {
     remember: 'Remember my choice',
   },
   nav: {
+    workbench: 'Digital Staff',
     chat: 'Chat',
     agents: 'Agents',
     tasks: 'Cron Jobs',
