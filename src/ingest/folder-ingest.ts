@@ -112,7 +112,8 @@ export function pruneIngestStateToFolders(folders: string[]): number {
   return pruned
 }
 
-function resolveIngestAgentId(hasAgent?: (agentId: string) => boolean): string {
+/** 摄取类任务共用的 agent 归属决策（folder-ingest / channel-ingest 同款） */
+export function resolveIngestAgentId(hasAgent?: (agentId: string) => boolean): string {
   if (hasAgent) {
     return hasAgent(PREFERRED_AGENT_ID) ? PREFERRED_AGENT_ID : FALLBACK_AGENT_ID
   }
@@ -151,7 +152,7 @@ export function buildExcerpt(text: string, maxChars: number = EXCERPT_MAX_CHARS)
 }
 
 /** 当日记忆文件用本地日期——与 G1 每日蒸馏（23:50 本地时区读 memory/<日期>.md）对齐 */
-function localDateStr(now: Date): string {
+export function localDateStr(now: Date): string {
   const y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const d = String(now.getDate()).padStart(2, '0')
@@ -163,29 +164,34 @@ export function getDailyMemoryPath(agentId: string, now: Date): string {
 }
 
 /**
- * 把本轮摄取条目追加到当日记忆的「文档摄取」段。
+ * 把一个摘要段落追加到当日记忆文件（「## <sectionTitle>」+ 正文块）。
  * 只追加不改写既有内容（G1 蒸馏的幂等标记在文件头部，不能动）。
- * [G1-HANDOFF] 此处写入的摘要即日蒸馏的素材来源之一。
+ * [G1-HANDOFF] 写入的段落即日蒸馏（23:50 读 memory/<日期>.md）的素材来源。
+ * folder-ingest（文档摄取）与 channel-ingest（渠道消息）共用。
  */
+export function appendDailyMemorySection(agentId: string, sectionTitle: string, body: string, now: Date): void {
+  if (!body.trim()) return
+  const filePath = getDailyMemoryPath(agentId, now)
+  mkdirSync(dirname(filePath), { recursive: true })
+  const existing = existsSync(filePath) ? readFileSync(filePath, 'utf8') : `# ${localDateStr(now)}\n`
+  const block = `\n## ${sectionTitle}\n${body}\n`
+  writeFileSync(filePath, existing + block, 'utf8')
+}
+
+/** 把本轮摄取条目追加到当日记忆的「文档摄取」段 */
 function appendIngestEntries(
   agentId: string,
   entries: Array<{ filename: string; folder: string; kind: 'new' | 'changed'; excerpt: string }>,
   now: Date,
 ): void {
   if (entries.length === 0) return
-
-  const filePath = getDailyMemoryPath(agentId, now)
-  mkdirSync(dirname(filePath), { recursive: true })
-  const existing = existsSync(filePath) ? readFileSync(filePath, 'utf8') : `# ${localDateStr(now)}\n`
   const time = now.toTimeString().slice(0, 5)
-
   const lines = entries.map((entry) => {
     const verb = entry.kind === 'new' ? '新增文档' : '更新文档'
     // 隐私红线：仅存摘要，不复制原文副本
     return `- [${time}] ${verb}《${entry.filename}》（来源：本地文件夹 ${entry.folder}，仅存摘要不复制原文）：${entry.excerpt}`
   })
-  const block = `\n## 文档摄取\n${lines.join('\n')}\n`
-  writeFileSync(filePath, existing + block, 'utf8')
+  appendDailyMemorySection(agentId, '文档摄取', lines.join('\n'), now)
 }
 
 interface ScanCandidate {

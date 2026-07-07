@@ -14,6 +14,8 @@ import { apiFetch } from '@/api/client'
 interface IngestConfigDTO {
   ingestEnabled: boolean
   ingestFolders: string[]
+  /** [G6.2] 渠道消息日摘要开关 */
+  channelDigestEnabled: boolean
 }
 
 const themeOptions: { value: Theme; labelKey: 'dark' | 'light' | 'system'; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
@@ -244,6 +246,29 @@ export function GeneralPanel() {
               </Button>
             </div>
             {ingestSaveFailed && <p className="text-xs text-destructive">{t.settings.ingestSaveFailed}</p>}
+          </div>
+          {/* [G6.2] 渠道消息日摘要开关（与文件夹摄取独立） */}
+          <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border-2 border-border p-4">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-foreground">{t.settings.channelDigestEnable}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{t.settings.channelDigestEnableDesc}</div>
+            </div>
+            <button
+              role="switch"
+              aria-checked={ingestConfig.channelDigestEnabled}
+              onClick={() => void saveIngestConfig({ channelDigestEnabled: !ingestConfig.channelDigestEnabled })}
+              className={cn(
+                'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                ingestConfig.channelDigestEnabled ? 'bg-primary' : 'bg-muted',
+              )}
+            >
+              <span
+                className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
+                  ingestConfig.channelDigestEnabled ? 'translate-x-6' : 'translate-x-1',
+                )}
+              />
+            </button>
           </div>
         </div>
       )}

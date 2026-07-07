@@ -679,6 +679,8 @@ export const zh: Translations = {
     ingestRemoveFolder: '移除',
     ingestNoFolders: '尚未添加监听目录',
     ingestSaveFailed: '保存失败，请重试',
+    channelDigestEnable: '渠道消息日摘要',
+    channelDigestEnableDesc: '每天 23:40 把钉钉/飞书等渠道当日会话折叠成摘要写入当日记忆，随每日蒸馏归纳提及的人/事/待办。素材全部来自本机已有会话记录，仅存摘要片段。',
   },
   startupError: {
     title: '启动失败',

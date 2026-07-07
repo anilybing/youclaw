@@ -19,6 +19,11 @@ export const IngestSettingsSchema = z.object({
   ingestEnabled: z.boolean().default(false),
   /** 监听目录白名单（绝对路径；只扫第一层，不递归） */
   ingestFolders: z.array(z.string()).default([]),
+  /**
+   * [G6.2] 渠道消息日摘要开关。与文件夹摄取不同默认开启：素材（渠道对话）
+   * 本就落在本地 DB 与 memory/logs，本功能只做聚合摘要，不新增数据采集面。
+   */
+  channelDigestEnabled: z.boolean().default(true),
 })
 
 export type IngestSettings = z.infer<typeof IngestSettingsSchema>
@@ -65,6 +70,7 @@ export function updateIngestSettings(partial: Partial<IngestSettings>): IngestSe
   const merged: IngestSettings = {
     ingestEnabled: partial.ingestEnabled ?? current.ingestEnabled,
     ingestFolders: partial.ingestFolders ?? current.ingestFolders,
+    channelDigestEnabled: partial.channelDigestEnabled ?? current.channelDigestEnabled,
   }
   const validated = normalize(IngestSettingsSchema.parse(merged))
   db.run(

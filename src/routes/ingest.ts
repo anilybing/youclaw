@@ -34,6 +34,14 @@ app.post('/ingest/config', async (c) => {
     partial.ingestFolders = body.ingestFolders as string[]
   }
 
+  // [G6.2] 渠道消息日摘要开关
+  if ('channelDigestEnabled' in body) {
+    if (typeof body.channelDigestEnabled !== 'boolean') {
+      return c.json({ error: 'channelDigestEnabled must be a boolean' }, 400)
+    }
+    partial.channelDigestEnabled = body.channelDigestEnabled
+  }
+
   const updated = updateIngestSettings(partial)
   // 隐私红线：目录移除立即清理其游标条目，不等下一轮扫描
   pruneIngestStateToFolders(updated.ingestFolders)

@@ -677,6 +677,8 @@ export const en = {
     ingestRemoveFolder: 'Remove',
     ingestNoFolders: 'No watched folders yet',
     ingestSaveFailed: 'Failed to save, please retry',
+    channelDigestEnable: 'Daily channel digest',
+    channelDigestEnableDesc: 'At 23:40 each day, folds today\'s DingTalk/Feishu conversations into a digest in daily memory, so the nightly distillation can capture people, events and todos. Uses only conversation records already on this device; stores snippets only.',
   },
   startupError: {
     title: 'Startup Failed',
