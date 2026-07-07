@@ -4,8 +4,9 @@
  * Build Bun sidecar executable
  *
  * Usage:
- *   bun scripts/build-sidecar.mjs          # Current platform only
- *   bun scripts/build-sidecar.mjs --all    # All platforms
+ *   bun scripts/build-sidecar.mjs                              # Current platform only
+ *   bun scripts/build-sidecar.mjs --all                        # All platforms
+ *   bun scripts/build-sidecar.mjs --platform bun-darwin-arm64  # Explicit target (CI matrix)
  */
 
 import { execSync } from 'node:child_process'
@@ -137,6 +138,10 @@ mkdirSync(binDir, { recursive: true })
 generateBuildConstants()
 
 const buildAll = process.argv.includes('--all')
+const platformFlagIndex = process.argv.indexOf('--platform')
+const explicitTarget = platformFlagIndex !== -1
+  ? process.argv[platformFlagIndex + 1]
+  : (process.env.XJC_SIDECAR_TARGET || '')
 
 if (buildAll) {
   console.log('Building sidecar for all platforms...\n')
@@ -144,7 +149,9 @@ if (buildAll) {
     build(target, name)
   }
 } else {
-  const currentTarget = getCurrentTarget()
+  // CI matrix passes --platform（或 XJC_SIDECAR_TARGET）指定交叉编译目标；
+  // 本地默认按当前平台（优先 baseline 变体，兼容无 AVX 的老 CPU）。
+  const currentTarget = explicitTarget || getCurrentTarget()
   const name = targets[currentTarget]
 
   if (!name) {
@@ -153,7 +160,7 @@ if (buildAll) {
     process.exit(1)
   }
 
-  console.log(`Building sidecar for current platform (${currentTarget})...\n`)
+  console.log(`Building sidecar for platform (${currentTarget})...\n`)
   build(currentTarget, name)
 }
 

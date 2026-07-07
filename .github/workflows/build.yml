@@ -36,7 +36,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.ref_name }}"
-          TITLE="You Claw v${{ steps.version.outputs.VERSION }}"
+          TITLE="XiaoJuClaw v${{ steps.version.outputs.VERSION }}"
           if [ "${IS_BETA}" = "true" ]; then
             gh release create "$TAG" \
               --title "$TITLE" \
@@ -129,7 +129,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "You Claw v${{ steps.setup.outputs.version }}"
+          releaseName: "XiaoJuClaw v${{ steps.setup.outputs.version }}"
           releaseBody: ""
           releaseDraft: ${{ env.IS_BETA == 'true' }}
           prerelease: ${{ env.IS_BETA == 'true' }}
@@ -142,7 +142,7 @@ jobs:
         uses: ./.github/actions/notify-feishu
         with:
           webhook-url: ${{ secrets.FEISHU_WEBHOOK }}
-          title: "You Claw v${{ steps.setup.outputs.version }} · ${{ matrix.platform_label }}"
+          title: "XiaoJuClaw v${{ steps.setup.outputs.version }} · ${{ matrix.platform_label }}"
           run-number: ${{ github.run_number }}
           run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           status: ${{ job.status }}
@@ -195,7 +195,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "You Claw v${{ steps.setup.outputs.version }}"
+          releaseName: "XiaoJuClaw v${{ steps.setup.outputs.version }}"
           releaseBody: ""
           releaseDraft: ${{ env.IS_BETA == 'true' }}
           prerelease: ${{ env.IS_BETA == 'true' }}
@@ -207,7 +207,7 @@ jobs:
         uses: ./.github/actions/notify-feishu
         with:
           webhook-url: ${{ secrets.FEISHU_WEBHOOK }}
-          title: "You Claw v${{ steps.setup.outputs.version }} · Windows x64"
+          title: "XiaoJuClaw v${{ steps.setup.outputs.version }} · Windows x64"
           run-number: ${{ github.run_number }}
           run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           status: ${{ job.status }}
@@ -293,7 +293,7 @@ jobs:
         uses: ./.github/actions/notify-feishu
         with:
           webhook-url: ${{ secrets.FEISHU_WEBHOOK }}
-          title: "You Claw v${{ steps.version.outputs.VERSION }} · Windows Signing"
+          title: "XiaoJuClaw v${{ steps.version.outputs.VERSION }} · Windows Signing"
           run-number: ${{ github.run_number }}
           run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           status: ${{ job.status }}
@@ -358,7 +358,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "You Claw v${{ steps.setup.outputs.version }}"
+          releaseName: "XiaoJuClaw v${{ steps.setup.outputs.version }}"
           releaseBody: ""
           releaseDraft: false
           prerelease: false
@@ -370,7 +370,7 @@ jobs:
         uses: ./.github/actions/notify-feishu
         with:
           webhook-url: ${{ secrets.FEISHU_WEBHOOK }}
-          title: "You Claw v${{ steps.setup.outputs.version }} · Linux x64"
+          title: "XiaoJuClaw v${{ steps.setup.outputs.version }} · Linux x64"
           run-number: ${{ github.run_number }}
           run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           status: ${{ job.status }}
@@ -525,7 +525,7 @@ jobs:
         uses: ./.github/actions/notify-feishu
         with:
           webhook-url: ${{ secrets.FEISHU_WEBHOOK }}
-          title: "You Claw ${{ github.ref_name }} · OSS Upload"
+          title: "XiaoJuClaw ${{ github.ref_name }} · OSS Upload"
           run-number: ${{ github.run_number }}
           run-url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           status: ${{ job.status }}
