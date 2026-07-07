@@ -1,5 +1,7 @@
 import { describe, test, expect, mock } from 'bun:test'
+import { parse as parseYaml } from 'yaml'
 import { AgentManager } from './manager.ts'
+import { OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD } from './templates.ts'
 
 // Minimal mock dependencies
 const mockEventBus = {} as any
@@ -65,5 +67,28 @@ describe('AgentManager.resolveAgent', () => {
     const manager = createManager([])
     const result = manager.resolveAgent('tg:999')
     expect(result).toBeUndefined()
+  })
+})
+
+// [XJC] T-D7：预置数字员工模板本身必须是合法可加载的配置
+describe('office-assistant preset template', () => {
+  test('agent.yaml 模板可解析且挂载全部 8 个办公技能', () => {
+    const parsed = parseYaml(OFFICE_ASSISTANT_AGENT_YAML) as {
+      id: string
+      name: string
+      skills: string[]
+      memory: { enabled: boolean }
+    }
+    expect(parsed.id).toBe('office-assistant')
+    expect(parsed.memory.enabled).toBe(true)
+    expect(parsed.skills).toEqual([
+      'office-ppt', 'office-doc', 'office-excel', 'office-pdf',
+      'meeting-notes', 'weekly-report', 'email-draft', 'file-organizer',
+    ])
+  })
+
+  test('SOUL 模板包含产出目录与 dry-run 红线约定', () => {
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('办公产出')
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('dry-run')
   })
 })

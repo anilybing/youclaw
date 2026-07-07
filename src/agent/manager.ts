@@ -17,6 +17,8 @@ import type { BrowserManager } from '../browser/index.ts'
 import type { AgentConfig, AgentInstance } from './types.ts'
 import {
   DEFAULT_AGENT_YAML, GLOBAL_MEMORY_MD,
+  OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD,
+  OFFICE_ASSISTANT_IDENTITY_MD, OFFICE_ASSISTANT_BOOTSTRAP_MD,
 } from './templates.ts'
 import { ensureAgentWorkspace } from './workspace.ts'
 
@@ -68,6 +70,24 @@ export class AgentManager {
     }
     ensureAgentWorkspace(defaultDir, {
       ensureBootstrap: true,
+      ensureSkillsDir: true,
+      ensurePromptsDir: true,
+    })
+
+    // [XJC] 预置数字员工「小橘办公助理」（T-D7）：
+    // agent.yaml 为哨兵——用户改过/删过不覆盖；人设文档先于默认模板写入
+    // （ensureAgentWorkspace 只补缺失文件，自定义 SOUL/IDENTITY/BOOTSTRAP 得以保留）。
+    const officeDir = resolve(paths.agents, 'office-assistant')
+    if (!existsSync(resolve(officeDir, 'agent.yaml'))) {
+      logger.info('Initializing office-assistant digital staff template...')
+      mkdirSync(officeDir, { recursive: true })
+      writeFileSync(resolve(officeDir, 'agent.yaml'), OFFICE_ASSISTANT_AGENT_YAML)
+      writeFileSync(resolve(officeDir, 'SOUL.md'), OFFICE_ASSISTANT_SOUL_MD)
+      writeFileSync(resolve(officeDir, 'IDENTITY.md'), OFFICE_ASSISTANT_IDENTITY_MD)
+      writeFileSync(resolve(officeDir, 'BOOTSTRAP.md'), OFFICE_ASSISTANT_BOOTSTRAP_MD)
+    }
+    ensureAgentWorkspace(officeDir, {
+      ensureBootstrap: false,
       ensureSkillsDir: true,
       ensurePromptsDir: true,
     })
