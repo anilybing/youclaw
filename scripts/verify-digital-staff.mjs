@@ -4,11 +4,11 @@
  * 用法：bun scripts/verify-digital-staff.mjs
  *
  * 检查项（全部通过退出码 0，任一失败退出码 1 并列出明细）：
- *   1. 9 个内置技能目录齐全：SKILL.md 存在且 frontmatter 含 name/description
- *   2. 5 个脚本技能的构建产物 .mjs 存在且非空
+ *   1. 12 个内置技能目录齐全：SKILL.md 存在且 frontmatter 含 name/description
+ *   2. 6 个脚本技能的构建产物 .mjs 存在且非空
  *   3. skills-dev golden 测试全绿（bun test）
- *   4. 预置数字员工模板：office-assistant agent.yaml 可解析、8 技能白名单齐全
- *   5. 工作台任务卡配置：9 张卡、promptTemplate 双语、绑定 office-assistant
+ *   4. 预置数字员工模板：office-assistant（8 办公技能）与 ecommerce-assistant（6 电商技能）agent.yaml 可解析、白名单齐全
+ *   5. 工作台任务卡配置：15 张卡、promptTemplate 双语、办公卡绑定 office-assistant、电商卡绑定 ecommerce-assistant
  *
  * 不覆盖（需人工/真机，见 doc/数字员工验收清单.md）：
  *   真实模型端到端产出、打包后资源加载、U 盘断网场景。
@@ -37,6 +37,20 @@ const SKILLS = [
   { slug: 'meeting-notes', script: null },
   { slug: 'weekly-report', script: null },
   { slug: 'email-draft', script: null },
+  // 电商能力包（client-side 零配置）
+  { slug: 'ecom-copywriter', script: null },
+  { slug: 'ecom-compliance', script: null },
+  { slug: 'ecom-analytics', script: null },
+  { slug: 'ecom-image', script: 'scripts/image.mjs' },
+]
+
+// 各预置数字员工的技能白名单（与 templates.ts 的 agent.yaml 对齐）
+const OFFICE_ASSISTANT_SKILLS = [
+  'office-ppt', 'office-doc', 'office-excel', 'office-pdf',
+  'meeting-notes', 'weekly-report', 'email-draft', 'file-organizer',
+]
+const ECOMMERCE_ASSISTANT_SKILLS = [
+  'ecom-copywriter', 'ecom-compliance', 'ecom-image', 'ecom-analytics', 'office-excel', 'office-doc',
 ]
 
 for (const skill of SKILLS) {
@@ -74,22 +88,39 @@ try {
     check('office-assistant 模板', false, '未找到 OFFICE_ASSISTANT_AGENT_YAML')
   } else {
     const parsed = parse(yamlMatch[1].replace(/\\`/g, '`'))
-    const expected = SKILLS.map((s) => s.slug)
     const skills = Array.isArray(parsed?.skills) ? parsed.skills : []
-    const missing = expected.filter((s) => !skills.includes(s))
+    const missing = OFFICE_ASSISTANT_SKILLS.filter((s) => !skills.includes(s))
     check('office-assistant 模板', parsed?.id === 'office-assistant' && missing.length === 0,
       missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
   }
+
+  // 电商助理模板：id + 6 技能白名单齐全
+  const ecomMatch = templates.match(/ECOMMERCE_ASSISTANT_AGENT_YAML = `\\?\n?([\s\S]*?)`/)
+  if (!ecomMatch) {
+    check('ecommerce-assistant 模板', false, '未找到 ECOMMERCE_ASSISTANT_AGENT_YAML')
+  } else {
+    const parsed = parse(ecomMatch[1].replace(/\\`/g, '`'))
+    const skills = Array.isArray(parsed?.skills) ? parsed.skills : []
+    const missing = ECOMMERCE_ASSISTANT_SKILLS.filter((s) => !skills.includes(s))
+    check('ecommerce-assistant 模板', parsed?.id === 'ecommerce-assistant' && missing.length === 0,
+      missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
+  }
 } catch (err) {
-  check('office-assistant 模板', false, String(err))
+  check('数字员工模板', false, String(err))
 }
 
 // ── 5. 工作台任务卡 ────────────────────────────────────────────────
 try {
   const cardsSrc = readFileSync(resolve(REPO, 'web/src/config/workbench-tasks.ts'), 'utf8')
   const cardIds = [...cardsSrc.matchAll(/^\s{4}id:\s*'([a-z-]+)'/gm)].map((m) => m[1])
-  check('工作台任务卡数量(9)', cardIds.length === 9, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
+  check('工作台任务卡数量(15)', cardIds.length === 15, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
   check('工作台绑定 office-assistant', /WORKBENCH_AGENT_ID = 'office-assistant'/.test(cardsSrc))
+  check('电商卡绑定 ecommerce-assistant', /ECOMMERCE_AGENT_ID = 'ecommerce-assistant'/.test(cardsSrc))
+  // 每张 ecom-* 卡都必须显式绑定 agentId: ECOMMERCE_AGENT_ID（漏绑会误派给办公助理）
+  const ecomCardIds = cardIds.filter((id) => id.startsWith('ecom-'))
+  const agentBindCount = (cardsSrc.match(/agentId:\s*ECOMMERCE_AGENT_ID/g) ?? []).length
+  check('电商卡均显式绑定 ecommerce-assistant', ecomCardIds.length > 0 && agentBindCount === ecomCardIds.length,
+    `电商卡 ${ecomCardIds.length} 张 / agentId 绑定 ${agentBindCount} 处`)
   const zhCount = (cardsSrc.match(/zh:/g) ?? []).length
   const enCount = (cardsSrc.match(/en:/g) ?? []).length
   check('任务卡双语文案', zhCount > 20 && enCount > 20 && zhCount === enCount, `zh=${zhCount} en=${enCount}`)

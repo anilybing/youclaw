@@ -19,6 +19,8 @@ import {
   DEFAULT_AGENT_YAML, GLOBAL_MEMORY_MD,
   OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD,
   OFFICE_ASSISTANT_IDENTITY_MD, OFFICE_ASSISTANT_BOOTSTRAP_MD,
+  ECOMMERCE_ASSISTANT_AGENT_YAML, ECOMMERCE_ASSISTANT_SOUL_MD,
+  ECOMMERCE_ASSISTANT_IDENTITY_MD, ECOMMERCE_ASSISTANT_BOOTSTRAP_MD,
 } from './templates.ts'
 import { ensureAgentWorkspace } from './workspace.ts'
 
@@ -87,6 +89,23 @@ export class AgentManager {
       writeFileSync(resolve(officeDir, 'BOOTSTRAP.md'), OFFICE_ASSISTANT_BOOTSTRAP_MD)
     }
     ensureAgentWorkspace(officeDir, {
+      ensureBootstrap: false,
+      ensureSkillsDir: true,
+      ensurePromptsDir: true,
+    })
+
+    // [XJC] 预置数字员工「小橘电商助理」（电商能力包）：与办公助理同款种子逻辑，
+    // agent.yaml 为哨兵，用户改过不覆盖；技能全部随包预置，用户零配置即可用。
+    const ecomDir = resolve(paths.agents, 'ecommerce-assistant')
+    if (!existsSync(resolve(ecomDir, 'agent.yaml'))) {
+      logger.info('Initializing ecommerce-assistant digital staff template...')
+      mkdirSync(ecomDir, { recursive: true })
+      writeFileSync(resolve(ecomDir, 'agent.yaml'), ECOMMERCE_ASSISTANT_AGENT_YAML)
+      writeFileSync(resolve(ecomDir, 'SOUL.md'), ECOMMERCE_ASSISTANT_SOUL_MD)
+      writeFileSync(resolve(ecomDir, 'IDENTITY.md'), ECOMMERCE_ASSISTANT_IDENTITY_MD)
+      writeFileSync(resolve(ecomDir, 'BOOTSTRAP.md'), ECOMMERCE_ASSISTANT_BOOTSTRAP_MD)
+    }
+    ensureAgentWorkspace(ecomDir, {
       ensureBootstrap: false,
       ensureSkillsDir: true,
       ensurePromptsDir: true,

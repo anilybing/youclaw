@@ -9,12 +9,14 @@
     "build:office-excel": "bun build src/office-excel/cli.ts --target=bun --outfile ../skills/office-excel/scripts/excel.mjs",
     "build:office-pdf": "bun build src/office-pdf/cli.ts --target=bun --outfile ../skills/office-pdf/scripts/pdf.mjs",
     "build:file-organizer": "bun build src/file-organizer/cli.ts --target=bun --outfile ../skills/file-organizer/scripts/organize.mjs",
-    "build:all": "bun run build:office-ppt && bun run build:office-doc && bun run build:office-excel && bun run build:office-pdf && bun run build:file-organizer",
+    "build:ecom-image": "bun build src/ecom-image/cli.ts --target=bun --outfile ../skills/ecom-image/scripts/image.mjs",
+    "build:all": "bun run build:office-ppt && bun run build:office-doc && bun run build:office-excel && bun run build:office-pdf && bun run build:file-organizer && bun run build:ecom-image",
     "test": "bun test"
   },
   "dependencies": {
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
+    "jimp": "^1.6.1",
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^4.0.1"
   },

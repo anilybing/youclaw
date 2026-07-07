@@ -49,7 +49,9 @@ function TaskCard({ task, locale, onSelect }: { task: WorkbenchTask; locale: Wor
 
 function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: WorkbenchLocale; onBack: () => void }) {
   const navigate = useNavigate()
-  const { send } = useChatActions(WORKBENCH_AGENT_ID)
+  // 每张卡可绑定不同数字员工（电商卡→电商助理），缺省用工作台默认（办公助理）
+  const agentId = task.agentId ?? WORKBENCH_AGENT_ID
+  const { send } = useChatActions(agentId)
   const [values, setValues] = useState<Record<string, string>>({})
   const [files, setFiles] = useState<Record<string, File | null>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -78,7 +80,7 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
         const preset = WORKBENCH_CRON_PRESETS.find((p) => p.id === cronPreset)
         if (!preset) throw new Error('invalid schedule preset')
         await createScheduledTask({
-          agentId: WORKBENCH_AGENT_ID,
+          agentId,
           chatId: `workbench:${task.id}`,
           prompt,
           scheduleType: 'cron',
@@ -195,7 +197,7 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
           {cronPreset && (
             <p className="text-xs text-muted-foreground">
               {locale === 'zh'
-                ? '小橘办公助理会按计划自动执行，附件类输入在定时模式下不生效。'
+                ? '数字员工会按计划自动执行，附件类输入在定时模式下不生效。'
                 : 'Runs automatically on schedule; file inputs are ignored in scheduled mode.'}
             </p>
           )}

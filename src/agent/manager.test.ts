@@ -2,7 +2,10 @@ import { describe, test, expect, mock } from 'bun:test'
 import { parse as parseYaml } from 'yaml'
 import { AgentManager } from './manager.ts'
 import { AgentConfigSchema } from './schema.ts'
-import { OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD } from './templates.ts'
+import {
+  OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD,
+  ECOMMERCE_ASSISTANT_AGENT_YAML, ECOMMERCE_ASSISTANT_SOUL_MD,
+} from './templates.ts'
 
 // Minimal mock dependencies
 const mockEventBus = {} as any
@@ -129,5 +132,35 @@ describe('office-assistant preset template', () => {
     expect(OFFICE_ASSISTANT_SOUL_MD).toContain('不得再派生')
     expect(OFFICE_ASSISTANT_SOUL_MD).toContain('long-doc-processor')
     expect(OFFICE_ASSISTANT_SOUL_MD).toContain('sheet-processor')
+  })
+})
+
+// [XJC] 电商能力包：预置数字员工「小橘电商助理」模板必须是合法可加载配置
+describe('ecommerce-assistant preset template', () => {
+  test('agent.yaml 模板可解析且挂载 6 个电商/复用技能', () => {
+    const parsed = parseYaml(ECOMMERCE_ASSISTANT_AGENT_YAML) as {
+      id: string
+      name: string
+      skills: string[]
+      memory: { enabled: boolean }
+    }
+    expect(parsed.id).toBe('ecommerce-assistant')
+    expect(parsed.memory.enabled).toBe(true)
+    expect(parsed.skills).toEqual([
+      'ecom-copywriter', 'ecom-compliance', 'ecom-image', 'ecom-analytics',
+      'office-excel', 'office-doc',
+    ])
+  })
+
+  test('agent.yaml 模板整体通过 AgentConfigSchema 校验', () => {
+    const parsed = parseYaml(ECOMMERCE_ASSISTANT_AGENT_YAML)
+    const result = AgentConfigSchema.safeParse(parsed)
+    expect(result.success).toBe(true)
+  })
+
+  test('SOUL 模板包含电商产出目录与合规红线约定', () => {
+    expect(ECOMMERCE_ASSISTANT_SOUL_MD).toContain('电商产出')
+    expect(ECOMMERCE_ASSISTANT_SOUL_MD).toContain('ecom-compliance')
+    expect(ECOMMERCE_ASSISTANT_SOUL_MD).toContain('不覆盖原图')
   })
 })
