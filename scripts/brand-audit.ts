@@ -144,8 +144,8 @@ function checkOpenExternal(file: string, lines: string[], violations: Violation[
       if (!arg) continue
       const literal = arg.match(/^["'`](.+?)["'`]$/)
       if (literal) {
-        const target = literal[1]
-        if (!EXTERNAL_URL_PREFIXES.some((p) => target.startsWith(p))) {
+        const target = literal[1] ?? ''
+        if (target && !EXTERNAL_URL_PREFIXES.some((p) => target.startsWith(p))) {
           violations.push({ file, line: idx + 1, detail: `openExternal literal not whitelisted: ${target}` })
         }
         continue
