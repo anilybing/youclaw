@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 /**
  * XiaoJuClaw Application Configuration
  *
@@ -8,7 +9,7 @@
 const appConfig = {
   // ── App Info ──
   name: 'XiaoJuClaw',
-  identifier: 'com.XiaoJuClaw.app',
+  identifier: 'com.xiaojuclaw.app',
   github: 'https://github.com/CodePhiliaX/youClaw',
   supportEmail: 'support@chat2db-ai.com',
 

@@ -63,15 +63,40 @@ export function getLegacyProductionDataDir(): string {
 
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA || resolve(home, 'AppData', 'Roaming')
-    return resolve(appData, 'com.XiaoJuClaw.app')
+    return resolve(appData, 'com.xiaojuclaw.app')
   }
 
   if (process.platform === 'darwin') {
-    return resolve(home, 'Library', 'Application Support', 'com.XiaoJuClaw.app')
+    return resolve(home, 'Library', 'Application Support', 'com.xiaojuclaw.app')
   }
 
   const xdgDataHome = process.env.XDG_DATA_HOME || resolve(home, '.local', 'share')
-  return resolve(xdgDataHome, 'com.XiaoJuClaw.app')
+  return resolve(xdgDataHome, 'com.xiaojuclaw.app')
+}
+
+// [XJC-PATCH] Older builds used the mixed-case identifier below. On case-sensitive
+// filesystems (macOS/Linux) that maps to a different directory than the lowercase
+// identifier, so it must join the migration candidates. Windows filesystems are
+// case-insensitive — both spellings resolve to the same directory there, and adding
+// the mixed-case path would risk a self-copy, so it is only added off-Windows.
+const LEGACY_MIXED_CASE_IDENTIFIER = 'com.XiaoJuClaw.app'
+
+export function getLegacyProductionDataDirs(): string[] {
+  const dirs = [getLegacyProductionDataDir()]
+
+  if (process.platform === 'win32') return dirs
+
+  const home = getHomeDir()
+  if (!home) return dirs
+
+  if (process.platform === 'darwin') {
+    dirs.push(resolve(home, 'Library', 'Application Support', LEGACY_MIXED_CASE_IDENTIFIER))
+  } else {
+    const xdgDataHome = process.env.XDG_DATA_HOME || resolve(home, '.local', 'share')
+    dirs.push(resolve(xdgDataHome, LEGACY_MIXED_CASE_IDENTIFIER))
+  }
+
+  return dirs
 }
 
 function hasInitializedDataDir(dir: string): boolean {
@@ -101,26 +126,27 @@ function copyDir(sourceDir: string, targetDir: string): void {
 
 export function resolveProductionDataDir(): string {
   const targetDir = getProductionDataDir()
-  const legacyDir = getLegacyProductionDataDir()
-
-  if (legacyDir === targetDir || !existsSync(legacyDir)) {
-    return targetDir
-  }
 
   if (hasInitializedDataDir(targetDir)) {
     return targetDir
   }
 
-  try {
-    mkdirSync(dirname(targetDir), { recursive: true })
-    copyDir(legacyDir, targetDir)
-    console.info(`[DATA_DIR] Migrated legacy data directory to ${targetDir}`)
-    return targetDir
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`[DATA_DIR] Failed to migrate legacy data directory to ${targetDir}: ${message}`)
-    return legacyDir
+  for (const legacyDir of getLegacyProductionDataDirs()) {
+    if (legacyDir === targetDir || !existsSync(legacyDir)) continue
+
+    try {
+      mkdirSync(dirname(targetDir), { recursive: true })
+      copyDir(legacyDir, targetDir)
+      console.info(`[DATA_DIR] Migrated legacy data directory to ${targetDir}`)
+      return targetDir
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[DATA_DIR] Failed to migrate legacy data directory to ${targetDir}: ${message}`)
+      return legacyDir
+    }
   }
+
+  return targetDir
 }
 
 function resolveExplicitDataDir(targetDir: string): string {
@@ -130,7 +156,7 @@ function resolveExplicitDataDir(targetDir: string): string {
 
   const sources = [
     resolveProductionDataDir(),
-    getLegacyProductionDataDir(),
+    ...getLegacyProductionDataDirs(),
   ]
   const visited = new Set<string>()
 

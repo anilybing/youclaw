@@ -122,11 +122,11 @@ export function loadEnv(): EnvConfig {
       const platform = process.platform
       let storeDir: string
       if (platform === 'darwin') {
-        storeDir = resolve(home, 'Library/Application Support/com.XiaoJuClaw.app')
+        storeDir = resolve(home, 'Library/Application Support/com.xiaojuclaw.app')
       } else if (platform === 'win32') {
-        storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.XiaoJuClaw.app')
+        storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.xiaojuclaw.app')
       } else {
-        storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.XiaoJuClaw.app')
+        storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.xiaojuclaw.app')
       }
       const storeFile = resolve(storeDir, 'settings.json')
       const storeContent = JSON.parse(readFileSync(storeFile, 'utf-8'))

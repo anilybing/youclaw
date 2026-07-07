@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -10,6 +11,7 @@ import {
   resetPathsCache,
   resolveProductionDataDir,
 } from '../src/config/index.ts'
+import { getLegacyProductionDataDirs } from '../src/config/paths.ts'
 
 const originalEnv = {
   DATA_DIR: process.env.DATA_DIR,
@@ -30,7 +32,7 @@ function makeTempDir(prefix: string): string {
 
 function configurePathEnv(): { dataDir: string; homeDir: string } {
   const homeDir = makeTempDir('XiaoJuClaw-home-')
-  const dataDir = resolve(makeTempDir('XiaoJuClaw-data-'), 'com.XiaoJuClaw.app')
+  const dataDir = resolve(makeTempDir('XiaoJuClaw-data-'), 'com.xiaojuclaw.app')
   process.env.HOME = homeDir
   delete process.env.USERPROFILE
   process.env.DATA_DIR = dataDir
@@ -108,6 +110,41 @@ describe('storage paths', () => {
 
     expect(resolvedDir).toBe(targetDir)
     expect(readFileSync(resolve(targetDir, 'sample.txt'), 'utf-8')).toBe('migrated')
-    expect(existsSync(legacyDir)).toBe(false)
+    // Migration copies (not moves) the legacy directory, so the source stays intact.
+    expect(existsSync(legacyDir)).toBe(true)
+  })
+
+  test('offers the mixed-case legacy directory as a migration candidate on case-sensitive platforms', () => {
+    const homeDir = makeTempDir('XiaoJuClaw-home-')
+    process.env.HOME = homeDir
+    delete process.env.USERPROFILE
+    delete process.env.DATA_DIR
+    process.env.XDG_DATA_HOME = resolve(homeDir, '.local', 'share')
+
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'linux' })
+    try {
+      const candidates = getLegacyProductionDataDirs()
+      expect(candidates).toContain(resolve(homeDir, '.local', 'share', 'com.xiaojuclaw.app'))
+      expect(candidates).toContain(resolve(homeDir, '.local', 'share', 'com.XiaoJuClaw.app'))
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
+  })
+
+  test('keeps the legacy candidate list free of mixed-case duplicates on Windows', () => {
+    const homeDir = makeTempDir('XiaoJuClaw-home-')
+    process.env.HOME = homeDir
+    delete process.env.USERPROFILE
+    process.env.APPDATA = resolve(homeDir, 'AppData', 'Roaming')
+
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      const candidates = getLegacyProductionDataDirs()
+      expect(candidates).toEqual([resolve(homeDir, 'AppData', 'Roaming', 'com.xiaojuclaw.app')])
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
   })
 })
