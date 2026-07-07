@@ -74,6 +74,9 @@ if errorlevel 1 goto :fail
 call :run_in "Web typecheck" "%WEB_DIR%" "bun run typecheck"
 if errorlevel 1 goto :fail
 
+call :run_in "Brand audit" "%ROOT%" "bun run brand-audit"
+if errorlevel 1 goto :fail
+
 if /I not "%SKIP_RECOMMENDED_VALIDATION%"=="1" (
   call :run_in "Validate recommended skills" "%ROOT%" "bun run validate:recommended-skills"
   if errorlevel 1 goto :fail

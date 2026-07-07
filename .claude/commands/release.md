@@ -134,6 +134,6 @@ gh release edit vX.Y.Z --title "XiaoJuClaw vX.Y.Z" --notes "CHANGELOG_CONTENT"
 ## Step 7: Report
 
 Print:
-- ✅ Release URL: `https://github.com/CodePhiliaX/XiaoJuClaw/releases/tag/vX.Y.Z`
+- ✅ Release URL: `https://github.com/anilybing/youclaw/releases/tag/vX.Y.Z`
 - CI builds are in progress — artifacts will appear when complete
 - For stable releases: OSS upload and updater manifest will be generated after builds complete

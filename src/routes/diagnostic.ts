@@ -14,7 +14,7 @@ import { getLogDates, readLogEntries } from '../logger/reader.ts'
  * 返回：版本号、API 地址、运行时信息、便携路径、最近错误日志摘要等。
  * 不返回：用户 Key、激活码明文、JWT、Authorization 头。
  *
- * 该路由属于商业化隔离层，与上游 YouClaw 无关。
+ * 该路由属于商业化隔离层，上游开源项目中不存在。
  */
 
 const startedAt = new Date().toISOString()

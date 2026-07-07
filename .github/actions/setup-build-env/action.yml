@@ -99,9 +99,8 @@ runs:
           const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8'));
           // MSI requires numeric-only version; strip pre-release suffix for tauri.conf.json
           tauri.version = isBeta ? ver.replace(/-.*$/, '') : ver;
-          tauri.plugins.updater.endpoints = tauri.plugins.updater.endpoints.map(u =>
-            u.replace('https://UPDATER_ENDPOINT_PLACEHOLDER', cdnBase)
-          );
+          // updater endpoints are pinned to the self-hosted release channel in
+          // tauri.conf.json (api.xiaojuclaw.top); no placeholder rewriting needed.
           // Beta: skip MSI (it rejects semver pre-release identifiers), build NSIS only
           if (isBeta) {
             tauri.bundle = tauri.bundle || {};

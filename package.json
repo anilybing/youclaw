@@ -7,16 +7,17 @@
   "description": "Desktop AI assistant powered by a multi-provider coding agent runtime",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CodePhiliaX/youClaw"
+    "url": "https://github.com/anilybing/youclaw"
   },
   "author": {
-    "name": "CodePhiliaX",
-    "email": "huanyueyaoqin@qq.com"
+    "name": "XiaoJuClaw Team",
+    "email": "support@xiaojuclaw.top"
   },
   "scripts": {
     "dev": "bun run src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
+    "brand-audit": "bun run scripts/brand-audit.ts",
     "validate:recommended-skills": "bun run scripts/validate-recommended-skills.ts",
     "dev:web": "bun scripts/dev-web.mjs",
     "dev:tauri": "bun tauri dev",
