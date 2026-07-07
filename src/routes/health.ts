@@ -8,75 +8,22 @@ import { z } from 'zod/v4'
 import { which, resetShellEnvCache, getShellEnv } from '../utils/shell-env.ts'
 import { getLogger } from '../logger/index.ts'
 import { BUN_CDN_BASE, BUN_GITHUB_BASE, GIT_CDN_URL, UV_CDN_BASE, UV_GITHUB_BASE } from '../config/tools.ts'
-import { getPaths } from '../config/index.ts'
+import { ensurePortableToolsInPath, getPortableToolDir } from '../config/portable-tools.ts'
 
 // ---------------------------------------------------------------------------
-// Portable Tools Directory — 所有工具安装到 XiaoJuClawData/tools/ 下
-// 这样 U 盘拔走换电脑不需要重新安装
+// Portable Tools Directory — 实现已迁至 src/config/portable-tools.ts（T-E2）
+// 此处 re-export 保持旧导入路径兼容
 // ---------------------------------------------------------------------------
-
-/**
- * 获取便携工具目录（XiaoJuClawData/tools/）
- * 所有一键安装的工具都放在这里，而不是 C 盘用户目录
- */
-function getPortableToolsDir(): string {
-  const dataDir = getPaths().data
-  const toolsDir = resolve(dataDir, 'tools')
-  mkdirSync(toolsDir, { recursive: true })
-  return toolsDir
-}
-
-/**
- * 获取特定工具的便携安装目录
- */
-function getPortableToolDir(toolName: string): string {
-  const dir = resolve(getPortableToolsDir(), toolName)
-  mkdirSync(dir, { recursive: true })
-  return dir
-}
-
-/**
- * 把便携工具目录加到 PATH 环境变量前面
- * 这样 which() 和 execSync 都能优先找到 U 盘上的工具
- */
-function ensurePortableToolsInPath(): void {
-  const toolsDir = getPortableToolsDir()
-  const sep = process.platform === 'win32' ? ';' : ':'
-  const currentPath = process.env.PATH || ''
-
-  // 收集所有可能的 bin 路径
-  const toolPaths: string[] = []
-
-  // bun: tools/bun/
-  const bunDir = resolve(toolsDir, 'bun')
-  if (existsSync(bunDir)) toolPaths.push(bunDir)
-
-  // git: tools/git/cmd/ 和 tools/git/bin/
-  const gitCmd = resolve(toolsDir, 'git', 'cmd')
-  const gitBin = resolve(toolsDir, 'git', 'bin')
-  if (existsSync(gitCmd)) toolPaths.push(gitCmd)
-  if (existsSync(gitBin)) toolPaths.push(gitBin)
-
-  // node: tools/node/
-  const nodeDir = resolve(toolsDir, 'node')
-  if (existsSync(nodeDir)) toolPaths.push(nodeDir)
-
-  // uv: tools/uv/
-  const uvDir = resolve(toolsDir, 'uv')
-  if (existsSync(uvDir)) toolPaths.push(uvDir)
-
-  // python: tools/python/
-  const pythonDir = resolve(toolsDir, 'python')
-  if (existsSync(pythonDir)) toolPaths.push(pythonDir)
-
-  if (toolPaths.length === 0) return
-
-  // 把便携工具路径加到 PATH 最前面（优先级最高）
-  const newPaths = toolPaths.filter(p => !currentPath.includes(p))
-  if (newPaths.length > 0) {
-    process.env.PATH = newPaths.join(sep) + sep + currentPath
-  }
-}
+export {
+  getPlatformKey,
+  getPortableToolsDir,
+  getPortableToolDir,
+  resolvePortableToolDir,
+  ensurePortableToolsInPath,
+  readToolsManifest,
+  checkManifestVersions,
+  getExpectedToolVersions,
+} from '../config/portable-tools.ts'
 
 // 模块加载时立即执行，确保后续所有 which() 调用都能找到便携工具
 try {
