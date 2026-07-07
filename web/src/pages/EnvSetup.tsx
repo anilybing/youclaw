@@ -4,14 +4,26 @@ import { useI18n } from "@/i18n"
 import type { Translations } from "@/i18n/types"
 import { useAppRuntimeStore } from "@/stores/app"
 import type { DependencyStatus } from "@/api/client"
-import { Download, Loader2, CheckCircle2, AlertTriangle, Terminal, Copy, Check, ChevronRight, ChevronDown } from "lucide-react"
+import { Download, Loader2, CheckCircle2, AlertTriangle, Terminal, Copy, Check, ChevronRight, ChevronDown, Usb } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { installTool } from "@/api/client"
 import { isTauri, openExternal } from "@/api/transport"
 import logoUrl from "@/assets/logo.png"
 import { GIT_DOWNLOAD_URL } from "@/config/tools"
 const COMPACT_SIZE = { width: 520, height: 720 }
 const DEFAULT_SIZE = { width: 1400, height: 900 }
+
+// env-check 的 source 与 install-tool 的 installedTo 为后端 T-E3 新增字段；
+// 此处用本地类型扩展消费，避免改动并行维护中的 client.ts
+type DependencyWithSource = DependencyStatus & { source?: 'portable' | 'system' | null }
+type InstallToolResult = {
+  ok: boolean
+  stdout: string
+  stderr: string
+  exitCode: number
+  installedTo?: string | null
+}
 
 async function resizeWindow(width: number, height: number) {
   if (!isTauri) return
@@ -134,8 +146,8 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
   const [isChecking, setIsChecking] = useState(false)
   const isWindows = navigator.userAgent.includes("Windows")
 
-  // Filter to only missing required dependencies
-  const missingDeps = dependencies.filter((d) => d.required && !d.available)
+  // All required dependencies: missing ones show the install card, ready ones show a compact status row
+  const requiredDeps = (dependencies as DependencyWithSource[]).filter((d) => d.required)
 
   // Shrink window to compact size on mount
   useEffect(() => {
@@ -198,7 +210,7 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
 
             {/* Dependency Cards */}
             <div className="space-y-4">
-              {missingDeps.map((dep) => {
+              {requiredDeps.map((dep) => {
                 const info = getDependencyInfo(dep.name, isWindows, t)
                 return (
                   <DependencyCard
@@ -242,6 +254,16 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
   )
 }
 
+// Small "on USB drive" badge shown when a tool resolves from the portable tools dir
+function PortableBadge({ t }: { t: Translations }) {
+  return (
+    <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium shrink-0">
+      <Usb size={10} />
+      {t.envSetup.portableBadge}
+    </Badge>
+  )
+}
+
 // Individual dependency card component with one-click install
 function DependencyCard({
   dep,
@@ -250,7 +272,7 @@ function DependencyCard({
   t,
   recheckEnv,
 }: {
-  dep: DependencyStatus
+  dep: DependencyWithSource
   info: ReturnType<typeof getDependencyInfo>
   isWindows: boolean
   t: Translations
@@ -258,7 +280,10 @@ function DependencyCard({
 }) {
   const guidance = info.guidance
   const [installStatus, setInstallStatus] = useState<'idle' | 'installing' | 'success' | 'error'>('idle')
-  const [manualOpen, setManualOpen] = useState(false)
+  const [installedTo, setInstalledTo] = useState<string | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  const isPortableSource = dep.source === 'portable'
 
   // Determine platform hint
   const platformHint = (() => {
@@ -270,26 +295,55 @@ function DependencyCard({
   const handleInstall = useCallback(async () => {
     setInstallStatus('installing')
     try {
-      const result = await installTool(dep.name)
+      const result = (await installTool(dep.name)) as InstallToolResult
       if (result.ok) {
+        setInstalledTo(result.installedTo ?? null)
         setInstallStatus('success')
         await recheckEnv()
       } else {
         setInstallStatus('error')
-        setManualOpen(true)
+        setAdvancedOpen(true)
       }
     } catch {
       setInstallStatus('error')
-      setManualOpen(true)
+      setAdvancedOpen(true)
     }
   }, [dep.name, recheckEnv])
+
+  // Already satisfied (preinstalled or bundled on the USB drive): compact status row
+  if (dep.available && installStatus === 'idle') {
+    return (
+      <div className="bg-muted/30 rounded-xl border border-border/30 p-4 flex items-center gap-3">
+        <div className="bg-green-500/10 p-1.5 rounded-lg text-green-500 shrink-0">
+          <CheckCircle2 className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{info.displayName}</h3>
+            {isPortableSource && <PortableBadge t={t} />}
+          </div>
+          {dep.version && (
+            <p className="text-xs text-muted-foreground truncate mt-0.5">{dep.version}</p>
+          )}
+        </div>
+        <span className="text-xs font-medium text-green-600 dark:text-green-400 shrink-0">
+          {t.envSetup.ready}
+        </span>
+      </div>
+    )
+  }
+
+  const isSuccess = installStatus === 'success'
 
   return (
     <div className="bg-muted/30 rounded-xl border border-border/30 p-4 space-y-3">
       {/* Dependency name and description */}
       <div className="flex items-start gap-2">
-        <div className="bg-red-500/10 p-1.5 rounded-lg text-red-500 shrink-0 mt-0.5">
-          <AlertTriangle className="h-4 w-4" />
+        <div className={isSuccess
+          ? "bg-green-500/10 p-1.5 rounded-lg text-green-500 shrink-0 mt-0.5"
+          : "bg-red-500/10 p-1.5 rounded-lg text-red-500 shrink-0 mt-0.5"}
+        >
+          {isSuccess ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
         </div>
         <div>
           <h3 className="text-sm font-semibold text-foreground">{info.displayName}</h3>
@@ -297,12 +351,22 @@ function DependencyCard({
         </div>
       </div>
 
-      {/* One-click install button */}
+      {/* One-click install: big button + progress + success/failure feedback */}
       <div className="space-y-2">
         {installStatus === 'success' ? (
-          <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium">
-            <CheckCircle2 size={16} />
-            {t.envSetup.installSuccess}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium">
+              <CheckCircle2 size={16} />
+              {t.envSetup.installSuccess}
+              {isPortableSource && <PortableBadge t={t} />}
+            </div>
+            {installedTo && (
+              <p className="text-xs text-muted-foreground break-all">
+                {isPortableSource
+                  ? t.envSetup.installedToUsb
+                  : t.envSetup.installedTo.replace('{path}', installedTo)}
+              </p>
+            )}
           </div>
         ) : installStatus === 'error' ? (
           <div className="text-sm text-red-500 font-medium">
@@ -336,25 +400,26 @@ function DependencyCard({
         )}
       </div>
 
-      {/* Collapsible manual install section */}
-      {guidance && (
+      {/* Advanced options: manual install guidance (winget/brew/xcode-select …), collapsed by default */}
+      {guidance && !isSuccess && (
         <div>
           <button
-            onClick={() => setManualOpen((v) => !v)}
+            onClick={() => setAdvancedOpen((v) => !v)}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            {manualOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            {t.envSetup.manualInstall}
+            {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {t.envSetup.advancedOptions}
           </button>
 
-          {manualOpen && (
+          {advancedOpen && (
             <div className="mt-2 space-y-2">
               {guidance.type === "download" && (
                 <div className="space-y-3">
                   <Button
                     size="sm"
+                    variant="outline"
                     onClick={() => openExternal(guidance.url)}
-                    className="w-full gap-2 py-5 text-sm font-semibold rounded-xl shadow-lg shadow-primary/20 active:scale-[0.98] transition-all duration-200"
+                    className="w-full gap-2 rounded-xl active:scale-[0.98] transition-all duration-200"
                   >
                     <Download size={16} />
                     {guidance.label}

@@ -21,6 +21,8 @@ import { createApp } from './routes/index.ts'
 import { RealtimeHub } from './realtime/hub.ts'
 import { ensureBunRuntime } from './agent/runtime.ts'
 import { resetShellEnvCache } from './utils/shell-env.ts'
+import { ensurePortableToolsInPath, getInjectedPortablePaths } from './config/portable-tools.ts'
+import { isPortableMode } from './config/paths.ts'
 
 async function main() {
   // 1. Load environment variables
@@ -49,6 +51,23 @@ async function main() {
   } catch (err) {
     logger.warn({ err }, '[STARTUP] Step 2b failed: ensure Bun runtime, continuing without embedded runtime')
   }
+
+  // 2c. [XJC-PATCH] T-E4: 静默启用便携工具 —— health.ts 模块加载期 env 尚未就绪会静默失败，
+  // 此处 env/logger 均已初始化，兜底注入并汇报（manifest 版本告警在函数内部走 warn）
+  try {
+    ensurePortableToolsInPath()
+    const injected = getInjectedPortablePaths()
+    logger.info(
+      { category: 'portable-tools', portable: isPortableMode(), paths: injected },
+      injected.length > 0
+        ? `Portable tools enabled in PATH (${injected.length} dir(s)): ${injected.join(', ')}`
+        : 'Portable tools: no tool directories found to inject',
+    )
+    resetShellEnvCache()
+  } catch (err) {
+    logger.warn({ err }, '[STARTUP] Step 2c failed: enable portable tools in PATH')
+  }
+
   // 3. Initialize database
   try {
     initDatabase()
