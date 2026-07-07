@@ -1782,3 +1782,29 @@ export async function updateAiPreference(params: { aiMode: 'platform' | 'user_ke
 export async function getUserKeyConfigStatus() {
   return apiFetch<UserKeyConfigStatus>('/api/ai/user-key/status')
 }
+
+// ─── 远程配置与遥测（T-C5 / T-C4） ────────────────────────────
+
+export interface RemoteConfigPayload {
+  configs: Record<string, unknown>
+  version: number
+  source: 'cloud' | 'cache' | 'default'
+}
+
+export async function getRemoteConfig() {
+  return apiFetch<RemoteConfigPayload>('/api/commercial/config')
+}
+
+export type TelemetryEventType = 'app_start' | 'skill_run' | 'error'
+
+/** 遥测上报（失败静默，绝不影响业务流；payload 禁止含对话与文件内容） */
+export async function reportTelemetry(eventType: TelemetryEventType, payload?: Record<string, unknown>) {
+  try {
+    return await apiFetch<{ accepted: boolean }>('/api/commercial/telemetry', {
+      method: 'POST',
+      body: JSON.stringify({ eventType, payload: payload ?? {} }),
+    })
+  } catch {
+    return { accepted: false }
+  }
+}

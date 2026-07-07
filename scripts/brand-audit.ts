@@ -89,6 +89,7 @@ const EXTERNAL_IDENT_ALLOW = [
   'externalUrl',
   'channel.docsUrl',
   'typeInfo.docsUrl',
+  'announcement.link', // 运营公告链接（后台远程配置下发，管理员可信输入）
   'CUSTOM_MODEL_DOCS_URL',
   'url', // link-safety-modal 的通用参数（经 LinkSafetyModal 用户确认层）
   'href',

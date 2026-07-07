@@ -18,6 +18,8 @@ import {
   type RegistrySourceInfo,
 } from '@/api/client'
 import { getPortableDiskSpace, isTauri } from '@/api/transport'
+import { reportTelemetry } from '@/api/client'
+import { useRemoteConfigStore } from './remote-config'
 import { resolvePreferredRegistrySource } from '@/lib/registry-source'
 import { getErrorMessage, logAuthClientEvent } from '@/lib/auth-debug'
 import { applyThemeToDOM } from '@/hooks/useTheme'
@@ -157,6 +159,14 @@ function navigateInApp(path: string): void {
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
+// app_start 遥测：每次会话只上报一次（登录态确认后触发；失败静默）
+let appStartReported = false
+function reportAppStartOnce(): void {
+  if (appStartReported) return
+  appStartReported = true
+  void reportTelemetry('app_start', { platform: navigator.platform, portable: isTauri })
+}
+
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
   if (bytes >= 1024 * 1024) return `${Math.round(bytes / 1024 / 1024)} MB`
@@ -259,6 +269,7 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
         hasEmail: !!user.email,
       })
       set({ user, isLoggedIn: true, authLoading: false })
+      reportAppStartOnce()
     } catch (err) {
       void logAuthClientEvent('warn', 'Failed to fetch auth user', {
         error: getErrorMessage(err),
@@ -309,6 +320,8 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
     applyThemeToDOM(useAppPreferencesStore.getState().theme)
     void notifyPortableDiskSpace()
     startPortableDiskSpaceMonitor()
+    // 远程配置：立即拉取 + 30 分钟轮询（Sidecar 侧有缓存/默认值兜底）
+    useRemoteConfigStore.getState().startPolling()
 
     await get().recheckEnv()
 

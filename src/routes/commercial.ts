@@ -1,13 +1,73 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
+import { randomUUID } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { getAuthToken } from './auth.ts'
+import { getDatabase } from '../db/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { getEnv } from '../config/index.ts'
+import { getPaths } from '../config/paths.ts'
 import {
   generateUserKeyChat,
   readUserAiConfig,
   userAiConfigStatus,
 } from './user-ai.ts'
+
+// ─── 远程配置（T-C5）───────────────────────────────────────────────
+// 离线默认值与 MVP remote_configs 种子保持一致；拉取成功缓存到数据目录，
+// 断网时用缓存，无缓存用默认值 —— 客户端永远能拿到一份配置。
+const REMOTE_CONFIG_DEFAULTS: Record<string, unknown> = {
+  'features.channels_enabled': false,
+  'features.browser_enabled': false,
+  'features.skill_market_enabled': true,
+  'skills.thirdparty_enabled': false,
+  'skills.blacklist': [],
+  'announcement': { text: '', link: '', until: '' },
+  'ai.model_routing': { primary: '', fallback: [] },
+}
+
+function remoteConfigCachePath(): string {
+  return resolve(getPaths().data, 'remote-config-cache.json')
+}
+
+function readRemoteConfigCache(): { configs: Record<string, unknown>; version: number } | null {
+  try {
+    const parsed = JSON.parse(readFileSync(remoteConfigCachePath(), 'utf8')) as {
+      configs?: Record<string, unknown>
+      version?: number
+    }
+    if (parsed && typeof parsed.configs === 'object' && parsed.configs) {
+      return { configs: parsed.configs, version: Number(parsed.version) || 0 }
+    }
+  } catch { /* 缓存不存在或损坏，走默认 */ }
+  return null
+}
+
+// ─── 遥测设备标识（T-C4）────────────────────────────────────────────
+// 与设备绑定指纹解耦的匿名上报 id，持久化在 kv_state。
+const TELEMETRY_DEVICE_KEY = 'telemetry_device_id'
+
+function getTelemetryDeviceId(): string {
+  const db = getDatabase()
+  const row = db.query('SELECT value FROM kv_state WHERE key = ?').get(TELEMETRY_DEVICE_KEY) as { value: string } | null
+  if (row?.value) return row.value
+  const id = `tdev_${randomUUID()}`
+  db.run('INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)', [TELEMETRY_DEVICE_KEY, id])
+  return id
+}
+
+let cachedSidecarVersion = ''
+function getSidecarVersion(): string {
+  if (cachedSidecarVersion) return cachedSidecarVersion
+  try {
+    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version?: string }
+    cachedSidecarVersion = pkg.version || ''
+  } catch {
+    cachedSidecarVersion = ''
+  }
+  return cachedSidecarVersion
+}
 
 /**
  * Commercial routes — proxy layer for MVP cloud API.
@@ -66,6 +126,69 @@ export function createCommercialRoutes() {
       res.status as any,
     )
   }
+
+  // ─── Remote Config（T-C5）─────────────────────────────────────────
+
+  // GET /config — 远程配置（云端 → 缓存 → 默认值 三级降级）
+  app.get('/config', async (c) => {
+    const apiUrl = getApiUrl()
+    const token = getAuthToken()
+
+    if (apiUrl && token) {
+      try {
+        const res = await proxyGet(apiUrl, '/api/client/config', token)
+        if (res.ok) {
+          const data = await res.json() as { success?: boolean; data?: { configs?: Record<string, unknown>; version?: number } }
+          const merged = data.data
+          if (merged && merged.configs) {
+            const payload = {
+              configs: { ...REMOTE_CONFIG_DEFAULTS, ...merged.configs },
+              version: Number(merged.version) || 0,
+              source: 'cloud' as const,
+            }
+            try {
+              writeFileSync(remoteConfigCachePath(), JSON.stringify(payload), 'utf8')
+            } catch { /* 缓存写失败不影响下发 */ }
+            return c.json(payload)
+          }
+        }
+      } catch (err) {
+        getLogger().warn({ error: String(err), category: 'commercial' }, 'Remote config fetch failed, fallback to cache')
+      }
+    }
+
+    const cached = readRemoteConfigCache()
+    if (cached) {
+      return c.json({ configs: { ...REMOTE_CONFIG_DEFAULTS, ...cached.configs }, version: cached.version, source: 'cache' })
+    }
+    return c.json({ configs: REMOTE_CONFIG_DEFAULTS, version: 0, source: 'default' })
+  })
+
+  // ─── Telemetry（T-C4 桌面端）──────────────────────────────────────
+
+  // POST /telemetry — 遥测上报代理（补全设备 id / 版本 / 平台，失败静默）
+  app.post('/telemetry', async (c) => {
+    const apiUrl = getApiUrl()
+    const token = getAuthToken()
+    if (!apiUrl || !token) return c.json({ accepted: false, reason: 'OFFLINE' })
+
+    try {
+      const body = await c.req.json() as { eventType?: string; payload?: unknown }
+      const res = await proxyPost(apiUrl, '/api/client/telemetry', token, {
+        eventType: body.eventType,
+        payload: body.payload,
+        deviceId: getTelemetryDeviceId(),
+        appVersion: getSidecarVersion(),
+        platform: process.platform,
+      })
+      if (!res.ok) return c.json({ accepted: false, reason: `HTTP_${res.status}` })
+      const data = await res.json() as { success?: boolean; data?: unknown }
+      return c.json(data.data ?? { accepted: true })
+    } catch (err) {
+      getLogger().warn({ error: String(err), category: 'commercial' }, 'Telemetry report failed')
+      return c.json({ accepted: false, reason: 'NETWORK' })
+    }
+  })
 
   // ─── Device Routes ───────────────────────────────────────────────
 

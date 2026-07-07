@@ -14,6 +14,7 @@ import { X, User, Palette, Cpu, Radio, Globe, Info, Store, Terminal } from "luci
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n"
 import { useAppRuntimeStore } from "@/stores/app"
+import { useRemoteConfigStore } from "@/stores/remote-config"
 
 type Tab = "account" | "general" | "marketplace" | "models" | "channels" | "browser" | "environment" | "about"
 
@@ -31,21 +32,23 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: SettingsDialogProps) {
   const { t } = useI18n()
   const cloudEnabled = useAppRuntimeStore((s) => s.cloudEnabled)
+  const flag = useRemoteConfigStore((s) => s.flag)
 
-  const allTabs: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }>; cloud?: boolean }[] = [
+  // 高级功能入口由远程配置控制（小白用户默认隐藏，运营可按套餐/用户放开）
+  const allTabs: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }>; cloud?: boolean; enabled?: boolean }[] = [
     { id: "account", label: t.account.title, icon: User, cloud: true },
     { id: "general", label: t.settings.general, icon: Palette },
     { id: "models", label: t.settings.models, icon: Cpu },
-    { id: "marketplace", label: t.settings.marketplaceConfig, icon: Store },
-    { id: "channels", label: t.nav.channels, icon: Radio },
-    { id: "browser", label: t.nav.browser, icon: Globe },
+    { id: "marketplace", label: t.settings.marketplaceConfig, icon: Store, enabled: flag("features.skill_market_enabled", true) },
+    { id: "channels", label: t.nav.channels, icon: Radio, enabled: flag("features.channels_enabled", false) },
+    { id: "browser", label: t.nav.browser, icon: Globe, enabled: flag("features.browser_enabled", false) },
     { id: "environment", label: t.settings.environment, icon: Terminal },
     // Invitation/referral tab hidden — not applicable for USB activation model
     { id: "about", label: t.settings.about, icon: Info },
   ]
 
-  // Hide cloud-dependent tabs in offline mode
-  const tabs = allTabs.filter((tab) => (!tab.cloud || cloudEnabled) && (!allowedTabs || allowedTabs.includes(tab.id)))
+  // Hide cloud-dependent tabs in offline mode + feature-flagged tabs
+  const tabs = allTabs.filter((tab) => (!tab.cloud || cloudEnabled) && tab.enabled !== false && (!allowedTabs || allowedTabs.includes(tab.id)))
   const fallbackTab = tabs[0]?.id ?? "general"
   const defaultTab = initialTab && tabs.some((tab) => tab.id === initialTab) ? initialTab : fallbackTab
   const [currentTab, setCurrentTab] = useState<Tab>(defaultTab)
