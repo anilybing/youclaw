@@ -1,5 +1,6 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
-import { createBuiltinImageTool } from './builtin-mcp.ts'
+import { createBuiltinImageTool, isVlmAvailable } from './builtin-mcp.ts'
 import { createMessageTool } from './message-mcp.ts'
 import { createDocumentTools } from './document-mcp.ts'
 import { createTaskTools } from './task-mcp.ts'
@@ -48,7 +49,8 @@ export async function buildRuntimeCustomTools(params: {
   dispose: () => Promise<void>
 }> {
   const customTools: ToolDefinition[] = [
-    createBuiltinImageTool(),
+    // Image tool requires a configured VLM endpoint; skip registration when absent
+    ...(isVlmAvailable() ? [createBuiltinImageTool()] : []),
     createMessageTool(params.chatId),
     ...createDocumentTools(params.chatId),
     ...createTaskTools({ chatId: params.chatId, agentId: params.agentId }),

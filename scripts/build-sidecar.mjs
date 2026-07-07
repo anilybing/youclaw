@@ -17,14 +17,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 const binDir = resolve(root, 'src-tauri', 'bin')
 
-function loadDotEnvForBuild() {
+// Parse a dotenv-style file into a key/value map (does not mutate process.env)
+function parseDotEnvFile(path) {
   let content = ''
   try {
-    content = readFileSync(resolve(root, '.env'), 'utf-8')
+    content = readFileSync(path, 'utf-8')
   } catch {
-    return
+    return {}
   }
 
+  const env = {}
   for (const rawLine of content.split('\n')) {
     const line = rawLine.trim()
     if (!line || line.startsWith('#')) continue
@@ -37,10 +39,11 @@ function loadDotEnvForBuild() {
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1)
     }
-    if (key && value && !process.env[key]) {
-      process.env[key] = value
+    if (key && value) {
+      env[key] = value
     }
   }
+  return env
 }
 
 // Bun compile target -> Tauri sidecar filename mapping
@@ -62,20 +65,33 @@ function getCurrentTarget() {
   return key
 }
 
-// Generate build-constants.ts from env vars, compiled into sidecar
+// Generate build-constants.ts compiled into the sidecar.
+// Value priority per key: process.env > repo-root .env.production > default.
+//
+// process.env only honors the exact XiaoJuClaw_* names: Bun auto-loads
+// .env/.env.local (dev files, legacy YOUCLAW_* names) into process.env, and
+// those must never leak into release constants. Legacy-name fallback applies
+// only when parsing .env.production, whose URL entries use the legacy names.
+// BUILTIN_* default to empty string = built-in cloud model disabled; they have
+// no legacy-name fallback at all so upstream tokens cannot slip in.
 function generateBuildConstants() {
-  const envPairs = [
-    ['XiaoJuClaw_WEBSITE_URL', 'YOUCLAW_WEBSITE_URL'],
-    ['XiaoJuClaw_API_URL', 'YOUCLAW_API_URL'],
-    ['XiaoJuClaw_BUILTIN_API_URL', 'YOUCLAW_BUILTIN_API_URL'],
-    ['XiaoJuClaw_BUILTIN_AUTH_TOKEN', 'YOUCLAW_BUILTIN_AUTH_TOKEN'],
+  const prodEnv = parseDotEnvFile(resolve(root, '.env.production'))
+
+  // [key, legacy alias in .env.production (URL keys only), default]
+  const injectionKeys = [
+    ['XiaoJuClaw_WEBSITE_URL', 'YOUCLAW_WEBSITE_URL', 'https://www.xiaojuclaw.top'],
+    ['XiaoJuClaw_API_URL', 'YOUCLAW_API_URL', 'https://www.xiaojuclaw.top'],
+    ['XiaoJuClaw_BUILTIN_API_URL', null, ''],
+    ['XiaoJuClaw_BUILTIN_AUTH_TOKEN', null, ''],
   ]
+
   const entries = {}
-  for (const [currentKey, legacyKey] of envPairs) {
-    const val = process.env[currentKey] || process.env[legacyKey]
-    if (val) {
-      entries[currentKey] = val
-    }
+  for (const [key, prodLegacyKey, defaultValue] of injectionKeys) {
+    entries[key] =
+      process.env[key] ||
+      prodEnv[key] ||
+      (prodLegacyKey && prodEnv[prodLegacyKey]) ||
+      defaultValue
   }
 
   const constPath = resolve(root, 'src/config/build-constants.ts')
@@ -83,7 +99,10 @@ function generateBuildConstants() {
 export const BUILD_CONSTANTS: Record<string, string> = ${JSON.stringify(entries, null, 2)}
 `
   writeFileSync(constPath, code, 'utf-8')
-  console.log(`Generated build-constants.ts with keys: ${Object.keys(entries).join(', ') || '(none)'}`)
+  const summary = injectionKeys
+    .map(([key]) => `${key}=${entries[key] ? (key.includes('TOKEN') ? '<set>' : entries[key]) : '(empty)'}`)
+    .join(', ')
+  console.log(`Generated build-constants.ts: ${summary}`)
 }
 
 function build(bunTarget, outName) {
@@ -115,7 +134,6 @@ function build(bunTarget, outName) {
 mkdirSync(binDir, { recursive: true })
 
 // Generate compile-time constants
-loadDotEnvForBuild()
 generateBuildConstants()
 
 const buildAll = process.argv.includes('--all')

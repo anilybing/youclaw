@@ -177,7 +177,7 @@ export function createAuthRoutes() {
     `)
   })
 
-  // POST /auth/upload — Proxy file upload to ReadmeX
+  // POST /auth/upload — Proxy file upload to cloud API
   app.post('/auth/upload', async (c) => {
     const apiUrl = getEnv().XiaoJuClaw_API_URL
     if (!apiUrl) {

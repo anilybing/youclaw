@@ -998,7 +998,7 @@ export const en = {
       qq: 'QQ Bot API',
       wecom: 'WeCom Bot (Webhook Callback)',
       dingtalk: 'DingTalk Bot (Stream Mode)',
-      'wechat-oa': 'WeChat Official Account via ReadmeX Bridge (Long Polling)',
+      'wechat-oa': 'WeChat Official Account via Cloud Bridge (Long Polling)',
       'wechat-personal': 'WeChat personal account via OpenClaw-compatible bridge',
     },
     fieldLabels: {

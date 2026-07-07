@@ -1000,7 +1000,7 @@ export const zh: Translations = {
       qq: 'QQ Bot API',
       wecom: '企业微信机器人（Webhook 回调）',
       dingtalk: '钉钉机器人（Stream Mode）',
-      'wechat-oa': '通过 ReadmeX Bridge 接入的微信公众号（长轮询）',
+      'wechat-oa': '通过云桥接接入的微信公众号（长轮询）',
       'wechat-personal': '通过 OpenClaw 兼容桥接接入的微信个人号',
     },
     fieldLabels: {

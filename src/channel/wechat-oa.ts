@@ -10,8 +10,8 @@ export interface WechatOAChannelOpts {
 }
 
 /**
- * WeChat Official Account channel via ReadmeX Bridge (Long Polling).
- * Communicates with ReadmeX's Telegram-API-compatible bridge endpoints.
+ * WeChat Official Account channel via Cloud Bridge (Long Polling).
+ * Communicates with the cloud's Telegram-API-compatible bridge endpoints.
  * Uses the logged-in user's auth token automatically (no manual config needed).
  */
 export class WechatOAChannel implements Channel {
@@ -53,7 +53,7 @@ export class WechatOAChannel implements Channel {
   private getToken(): string {
     const token = getAuthToken()
     if (!token) {
-      throw new Error('Not logged in: WeChat OA channel requires ReadmeX login')
+      throw new Error('Not logged in: WeChat OA channel requires cloud account login')
     }
     return token
   }
@@ -275,7 +275,7 @@ export class WechatOAChannel implements Channel {
 
 /**
  * Fix large chat.id numbers that exceed Number.MAX_SAFE_INTEGER.
- * ReadmeX's chatId is SHA-256 first 8 bytes -> Java long (max 2^63-1).
+ * The bridge's chatId is SHA-256 first 8 bytes -> Java long (max 2^63-1).
  * We convert numeric chat.id values to strings before JSON.parse.
  */
 function fixLargeChatIds(json: string): string {

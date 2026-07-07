@@ -57,7 +57,7 @@ describe('runtime error handling', () => {
     expect(buildEmptyAssistantResponseErrorMessage({
       provider: 'builtin',
       modelId: 'MiniMax-M2.7-highspeed',
-      baseUrl: 'https://readmex.com/api',
+      baseUrl: 'https://www.xiaojuclaw.top/api',
     })).toContain('Model returned an empty response')
   })
 })

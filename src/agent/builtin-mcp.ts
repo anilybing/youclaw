@@ -7,8 +7,15 @@ import { getLogger } from '../logger/index.ts'
 import { BUILD_CONSTANTS } from '../config/build-constants.ts'
 import { getAuthToken } from '../routes/auth.ts'
 
-const VLM_HOST = BUILD_CONSTANTS['XiaoJuClaw_API_URL'] || 'https://readmex.com'
+const VLM_HOST = BUILD_CONSTANTS['XiaoJuClaw_API_URL'] || ''
 const VLM_ENDPOINT = '/v1/coding_plan/vlm'
+
+/**
+ * Whether the VLM-backed image tool can be used (requires a configured API host).
+ */
+export function isVlmAvailable(): boolean {
+  return VLM_HOST !== ''
+}
 
 const UnderstandImageParams = Type.Object({
   prompt: Type.String({ description: 'What to analyze or extract from the image' }),
@@ -35,6 +42,7 @@ function processImageSource(source: string): string {
  */
 async function callVlmApi(prompt: string, imageUrl: string): Promise<string> {
   const logger = getLogger()
+  if (!isVlmAvailable()) throw new Error('Image analysis unavailable: no VLM API endpoint configured')
   const authToken = getAuthToken()
   if (!authToken) throw new Error('Not logged in: auth token required for image analysis')
 
