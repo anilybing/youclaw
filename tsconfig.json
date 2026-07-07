@@ -32,5 +32,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["web", "tests", "data", "**/*.test.ts", "src-tauri/target"]
+  "exclude": ["web", "tests", "data", "**/*.test.ts", "src-tauri/target", "skills-dev"]
 }
