@@ -59,6 +59,10 @@ src-tauri/target/
 src-tauri/bin/
 src-tauri/resources/bun-runtime/
 
+# USB payload builder outputs (scripts/make-usb-payload.ps1)
+usb-payload/
+tool-cache/
+
 # Claude Code — track team commands, ignore local settings and personal commands
 .claude/*
 !.claude/commands/
