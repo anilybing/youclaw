@@ -35,18 +35,6 @@
     ]
   },
   {
-    "slug": "humanize-ai-text",
-    "displayName": "Humanize AI text",
-    "summary": "Humanize AI-generated text to bypass detection.",
-    "category": "content-creation",
-    "tags": [
-      "content",
-      "media",
-      "publishing",
-      "humanize"
-    ]
-  },
-  {
     "slug": "admapix",
     "displayName": "AdMapix",
     "summary": "Ad creative search assistant.",

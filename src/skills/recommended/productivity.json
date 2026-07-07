@@ -11,17 +11,6 @@
     ]
   },
   {
-    "slug": "multi-search-engine",
-    "displayName": "Multi Search Engine",
-    "summary": "Query multiple global and China-friendly search engines with advanced search operators.",
-    "category": "productivity",
-    "tags": [
-      "data",
-      "search",
-      "research"
-    ]
-  },
-  {
     "slug": "nano-pdf",
     "displayName": "Nano PDF",
     "summary": "Inspect, annotate, and rewrite PDF content through natural language.",

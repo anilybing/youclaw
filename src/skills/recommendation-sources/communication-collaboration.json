@@ -61,21 +61,6 @@
   },
   {
     "category": "communication-collaboration",
-    "description": "Use when you need to control Discord from Clawdbot via the discord tool: send messages, react, post or upload stickers, upload emojis, run polls, manage threads/pins/search, fetch permissions or member/role/channel info, or handle moderation actions in Discord DMs or channels.",
-    "description_zh": "通过 Clawdbot 的 discord 工具控制 Discord，支持发送消息、添加反应、上传贴纸/表情、发起投票、管理话题/置顶/搜索、查询权限及成员/角色/频道信息，以及在私信或频道中执行管理操作。",
-    "downloads": 20963,
-    "homepage": "https://clawhub.ai/steipete/discord",
-    "installs": 1276,
-    "name": "Discord",
-    "ownerName": "steipete",
-    "score": 72384.19123716446,
-    "slug": "discord",
-    "stars": 48,
-    "updated_at": 1774507939639,
-    "version": "1.0.1"
-  },
-  {
-    "category": "communication-collaboration",
     "description": "Microsoft Outlook API integration with managed OAuth. Read, send, and manage emails, folders, calendar events, and contacts via Microsoft Graph. Use this skill when users want to interact with Outlook. For other third party apps, use the api-gateway skill (https://clawhub.ai/byungkyu/api-gateway).",
     "description_zh": "Microsoft Outlook API集成，支持托管OAuth。通过Microsoft Graph管理邮件、文件夹、日历和联系人。适用于Outlook交互场景，其他第三方应用请使用api-gateway技能。",
     "downloads": 19439,
@@ -88,36 +73,6 @@
     "stars": 30,
     "updated_at": 1774507945184,
     "version": "1.0.3"
-  },
-  {
-    "category": "communication-collaboration",
-    "description": "WhatsApp Business API integration with managed OAuth. Send messages, manage templates, and handle conversations. Use this skill when users want to interact with WhatsApp Business. For other third party apps, use the api-gateway skill (https://clawhub.ai/byungkyu/api-gateway).",
-    "description_zh": "WhatsApp Business API集成（托管OAuth），支持发送消息、管理模板及对话处理。适用于WhatsApp Business交互场景，其他第三方应用请使用api-gateway技能(https://clawhub.ai/byungkyu/api-gateway)。",
-    "downloads": 18965,
-    "homepage": "https://clawhub.ai/byungkyu/whatsapp-business",
-    "installs": 417,
-    "name": "WhatsApp Business",
-    "ownerName": "byungkyu",
-    "score": 65655.23161752567,
-    "slug": "whatsapp-business",
-    "stars": 46,
-    "updated_at": 1774507946293,
-    "version": "1.0.3"
-  },
-  {
-    "category": "communication-collaboration",
-    "description": "Interact with Twitter/X — read tweets, search, post, like, retweet, and manage your timeline.",
-    "description_zh": "与 Twitter/X 互动，可阅读、搜索、发布、点赞、转发推文及管理时间线。",
-    "downloads": 17507,
-    "homepage": "https://clawhub.ai/annettemekuro30/x-twitter",
-    "installs": 491,
-    "name": "x-twitter",
-    "ownerName": "annettemekuro30",
-    "score": 60511.11037738965,
-    "slug": "x-twitter",
-    "stars": 41,
-    "updated_at": 1774507953884,
-    "version": "2.3.1"
   },
   {
     "category": "communication-collaboration",

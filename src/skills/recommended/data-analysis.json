@@ -70,29 +70,6 @@
     ]
   },
   {
-    "slug": "data-analyst",
-    "displayName": "Data Analyst",
-    "summary": "Turn raw data into reports, visualizations, SQL queries, and spreadsheet automations.",
-    "category": "data-analysis",
-    "tags": [
-      "data",
-      "analysis",
-      "reporting"
-    ]
-  },
-  {
-    "slug": "tushare-finance",
-    "displayName": "tushare-finance",
-    "summary": "Analyze market and financial data with tushare-finance.",
-    "category": "data-analysis",
-    "tags": [
-      "finance",
-      "data",
-      "analysis",
-      "reporting"
-    ]
-  },
-  {
     "slug": "excel-xlsx",
     "displayName": "Excel / XLSX",
     "summary": "Create, inspect, and edit Microsoft Excel workbooks and XLSX files with reliable formulas, dates, types, formatting, recalculation,.",
@@ -140,30 +117,6 @@
     ]
   },
   {
-    "slug": "us-stock-analysis",
-    "displayName": "Us Stock Analysis",
-    "summary": "Comprehensive US stock analysis including fundamental analysis (financial metrics, business quality, valuation), technical analysis.",
-    "category": "data-analysis",
-    "tags": [
-      "finance",
-      "data",
-      "analysis",
-      "reporting"
-    ]
-  },
-  {
-    "slug": "academic-deep-research",
-    "displayName": "Academic Deep Research",
-    "summary": "Transparent, rigorous research with full methodology — not a black-box API wrapper.",
-    "category": "data-analysis",
-    "tags": [
-      "data",
-      "analysis",
-      "reporting",
-      "academic"
-    ]
-  },
-  {
     "slug": "akshare-stock",
     "displayName": "A股量化 AkShare",
     "summary": "Analyze market and financial data with A股量化 AkShare.",
@@ -173,18 +126,6 @@
       "data",
       "analysis",
       "reporting"
-    ]
-  },
-  {
-    "slug": "polymarket-odds",
-    "displayName": "Polymarket Odds",
-    "summary": "Query Polymarket prediction market odds and events via CLI.",
-    "category": "data-analysis",
-    "tags": [
-      "search",
-      "web",
-      "finance",
-      "data"
     ]
   },
   {
@@ -212,18 +153,6 @@
     ]
   },
   {
-    "slug": "pdf-text-extractor",
-    "displayName": "PDF Text Extractor",
-    "summary": "Extract text from PDFs with OCR support.",
-    "category": "data-analysis",
-    "tags": [
-      "documents",
-      "data",
-      "analysis",
-      "reporting"
-    ]
-  },
-  {
     "slug": "stock-monitor-skill",
     "displayName": "Stock Monitor",
     "summary": "Analyze market and financial data with Stock Monitor.",
@@ -239,18 +168,6 @@
     "slug": "finance",
     "displayName": "finance",
     "summary": "Track stocks, ETFs, indices, crypto (where available), and FX pairs with caching + provider fallbacks.",
-    "category": "data-analysis",
-    "tags": [
-      "finance",
-      "data",
-      "analysis",
-      "reporting"
-    ]
-  },
-  {
-    "slug": "technical-analyst",
-    "displayName": "Technical Analyst",
-    "summary": "This skill should be used when analyzing weekly price charts for stocks, stock indices, cryptocurrencies, or forex pairs.",
     "category": "data-analysis",
     "tags": [
       "finance",

@@ -135,18 +135,6 @@
     ]
   },
   {
-    "slug": "capability-evolver",
-    "displayName": "Capability Evolver",
-    "summary": "A self-evolution engine for AI agents.",
-    "category": "ai-intelligence",
-    "tags": [
-      "agent",
-      "automation",
-      "assistant",
-      "capability"
-    ]
-  },
-  {
     "slug": "feishu-evolver-wrapper",
     "displayName": "Feishu Evolver Wrapper",
     "summary": "Feishu-integrated wrapper for the capability-evolver.",
@@ -171,18 +159,6 @@
     ]
   },
   {
-    "slug": "markdown-convert",
-    "displayName": "Markdown.new Skill",
-    "summary": "Convert public web pages into clean Markdown with markdown.new for AI workflows.",
-    "category": "ai-intelligence",
-    "tags": [
-      "documents",
-      "agent",
-      "automation",
-      "assistant"
-    ]
-  },
-  {
     "slug": "sag",
     "displayName": "Sag",
     "summary": "ElevenLabs text-to-speech with mac-style say UX.",
@@ -204,18 +180,6 @@
       "agent",
       "automation",
       "assistant"
-    ]
-  },
-  {
-    "slug": "agent-autonomy-kit",
-    "displayName": "Agent Autonomy Kit",
-    "summary": "Stop waiting for prompts.",
-    "category": "ai-intelligence",
-    "tags": [
-      "agent",
-      "automation",
-      "assistant",
-      "autonomy"
     ]
   },
   {

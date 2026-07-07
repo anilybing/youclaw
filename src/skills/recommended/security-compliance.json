@@ -68,17 +68,6 @@
     ]
   },
   {
-    "slug": "skill-scanner",
-    "displayName": "Skill Scanner",
-    "summary": "Scan skills for malware, exfiltration patterns, miners, and suspicious code before install.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "malware",
-      "scanning"
-    ]
-  },
-  {
     "slug": "skill-vetting",
     "displayName": "Skill Vetting",
     "summary": "Vet ClawHub skills for security and utility before installation.",
@@ -139,18 +128,6 @@
     ]
   },
   {
-    "slug": "clawdefender",
-    "displayName": "ClawDefender - OpenClaw Security - Prompt injection, rogue skills etc",
-    "summary": "Security scanner and input sanitizer for AI agents.",
-    "category": "security-compliance",
-    "tags": [
-      "calendar",
-      "security",
-      "review",
-      "compliance"
-    ]
-  },
-  {
     "slug": "security-audit-toolkit",
     "displayName": "Security Audit Toolkit",
     "summary": "Audit codebases and infrastructure for security issues.",
@@ -175,18 +152,6 @@
     ]
   },
   {
-    "slug": "verified-agent-identity",
-    "displayName": "Verified Agent Identity",
-    "summary": "Billions decentralized identity for agents.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "verified"
-    ]
-  },
-  {
     "slug": "security-audit",
     "displayName": "Security Audit",
     "summary": "Comprehensive security auditing for Clawdbot deployments.",
@@ -199,30 +164,6 @@
     ]
   },
   {
-    "slug": "clawdex",
-    "displayName": "Clawdex by Koi",
-    "summary": "Security check for ClawHub skills powered by Koi.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "clawdex"
-    ]
-  },
-  {
-    "slug": "guard-scanner",
-    "displayName": "Guard Scanner",
-    "summary": "Security scanner and runtime guard for AI agent skills.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "guard"
-    ]
-  },
-  {
     "slug": "security-monitor",
     "displayName": "Security Monitor",
     "summary": "Real-time security monitoring for Clawdbot.",
@@ -232,30 +173,6 @@
       "review",
       "compliance",
       "monitor"
-    ]
-  },
-  {
-    "slug": "yoder-skill-auditor",
-    "displayName": "Yoder Skill Auditor",
-    "summary": "The definitive security scanner for OpenClaw skills.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "yoder"
-    ]
-  },
-  {
-    "slug": "pentest",
-    "displayName": "security-reviewer",
-    "summary": "Use when conducting security audits, reviewing code for vulnerabilities, or analyzing infrastructure security.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "compliance",
-      "pentest"
     ]
   }
 ]

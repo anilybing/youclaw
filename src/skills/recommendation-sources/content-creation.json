@@ -46,21 +46,6 @@
   },
   {
     "category": "content-creation",
-    "description": "Humanize AI-generated text to bypass detection. This humanizer rewrites ChatGPT, Claude, and GPT content to sound natural and pass AI detectors like GPTZero,...",
-    "description_zh": "将ChatGPT、Claude等AI生成文本改写为自然人工内容，绕过GPTZero等检测器，实现去AI化。",
-    "downloads": 31697,
-    "homepage": "https://clawhub.ai/moltbro/humanize-ai-text",
-    "installs": 1191,
-    "name": "Humanize AI text",
-    "ownerName": "moltbro",
-    "score": 18649.644288387997,
-    "slug": "humanize-ai-text",
-    "stars": 144,
-    "updated_at": 1774508006260,
-    "version": "1.0.1"
-  },
-  {
-    "category": "content-creation",
     "description": "Ad creative search assistant. Results displayed via api.admapix.com. Triggers on keywords like: 找素材, 搜广告, 广告视频, 创意素材, 竞品广告, ad creative, search ads, find cre...",
     "description_zh": "Ad creative search assistant. Results displayed via api.admapix.com. Triggers on keywords like: 找素材, 搜广告, 广告视频, 创意素材, 竞品广告, ad creative, search ads, find cre...",
     "downloads": 24165,
@@ -121,21 +106,6 @@
   },
   {
     "category": "content-creation",
-    "description": "Access 23 marketing modules offering checklists, frameworks, and ready-to-use deliverables for CRO, SEO, copywriting, analytics, launches, ads, and social me...",
-    "description_zh": "访问23个营销模块，提供CRO、SEO、文案、分析、发布、广告及社交媒体领域的清单、框架与即用交付物。",
-    "downloads": 15227,
-    "homepage": "https://clawhub.ai/jchopard69/marketing-skills",
-    "installs": 3155,
-    "name": "Marketing Skills",
-    "ownerName": "jchopard69",
-    "score": 9172.990728305367,
-    "slug": "marketing-skills",
-    "stars": 89,
-    "updated_at": 1774508053370,
-    "version": "0.1.2"
-  },
-  {
-    "category": "content-creation",
     "description": "Complete toolkit for programmatic video creation with Remotion + React. Covers animations, timing, rendering (CLI/Node.js/Lambda/Cloud Run), captions, 3D, charts, text effects, transitions, and media handling. Use when writing Remotion code, building video generation pipelines, or creating data-driven video templates.",
     "description_zh": "Remotion + React 程序化视频创作工具包。涵盖动画、时序、渲染(CLI/Node.js/Lambda/Cloud Run)、字幕、3D、图表、文字特效、转场及媒体处理。适用于编写Remotion代码、构建视频生成流水线或创建数据驱动视频模板。",
     "downloads": 15667,
@@ -148,21 +118,6 @@
     "stars": 57,
     "updated_at": 1774507964955,
     "version": "1.4.0"
-  },
-  {
-    "category": "content-creation",
-    "description": "Fetch and summarize YouTube video transcripts. Use when asked to summarize, transcribe, or extract content from YouTube videos. Handles transcript fetching via residential IP proxy to bypass YouTube's cloud IP blocks.",
-    "description_zh": "获取并总结YouTube视频字幕。适用于视频摘要、转录或内容提取。通过住宅IP代理绕过平台IP封锁。",
-    "downloads": 15284,
-    "homepage": "https://clawhub.ai/xthezealot/youtube-transcript",
-    "installs": 564,
-    "name": "YouTube Transcript",
-    "ownerName": "xthezealot",
-    "score": 8470.197353872376,
-    "slug": "youtube-transcript",
-    "stars": 21,
-    "updated_at": 1774507975318,
-    "version": "1.0.1"
   },
   {
     "category": "content-creation",
@@ -298,21 +253,6 @@
     "stars": 6,
     "updated_at": 1774507942957,
     "version": "1.0.2"
-  },
-  {
-    "category": "content-creation",
-    "description": "Upload content to social media platforms via Upload-Post API. Use when posting videos, photos, text, or documents to TikTok, Instagram, YouTube, LinkedIn, Facebook, X (Twitter), Threads, Pinterest, Reddit, or Bluesky. Supports scheduling, analytics, FFmpeg processing, and upload history.",
-    "description_zh": "通过Upload-Post API向TikTok、Instagram、YouTube、LinkedIn、Facebook、X（Twitter）、Threads、Pinterest、Reddit、Bluesky等社交平台上传视频、图片、文本或文档。支持定时发布、数据分析、FFmpeg处理及上传历史管理。",
-    "downloads": 8394,
-    "homepage": "https://clawhub.ai/victorcavero14/upload-post",
-    "installs": 1504,
-    "name": "Upload Videos🎥, Photos📸 & Text🖊️ to TikTok, Instagram, YouTube, X, LinkedIn, Facebook, Threads, Pinterest, Reddit & Bluesky via Upload-Post API",
-    "ownerName": "victorcavero14",
-    "score": 4937.352685770996,
-    "slug": "upload-post",
-    "stars": 38,
-    "updated_at": 1774507929979,
-    "version": "1.0.0"
   },
   {
     "category": "content-creation",

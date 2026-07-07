@@ -16,21 +16,6 @@
   },
   {
     "category": "productivity",
-    "description": "Multi search engine integration with 17 engines (8 CN + 9 Global). Supports advanced search operators, time filters, site search, privacy engines, and WolframAlpha knowledge queries. No API keys required.",
-    "description_zh": "集成17个搜索引擎（8国内+9国际），支持高级搜索语法、时间筛选、站内搜索、隐私引擎及WolframAlpha知识查询，无需API密钥。",
-    "downloads": 61816,
-    "homepage": "https://clawhub.ai/gpyangyoujun/multi-search-engine",
-    "installs": 2941,
-    "name": "Multi Search Engine",
-    "ownerName": "gpyangyoujun",
-    "score": 64444.25433218316,
-    "slug": "multi-search-engine",
-    "stars": 299,
-    "updated_at": 1774508031291,
-    "version": "2.0.1"
-  },
-  {
-    "category": "productivity",
     "description": "Edit PDFs with natural-language instructions using the nano-pdf CLI.",
     "description_zh": "使用nano-pdf CLI通过自然语言指令编辑PDF",
     "downloads": 62598,
@@ -163,36 +148,6 @@
     "stars": 218,
     "updated_at": 1774507910393,
     "version": "1.0.0"
-  },
-  {
-    "category": "productivity",
-    "description": "Advanced desktop automation with mouse, keyboard, and screen control",
-    "description_zh": "高级桌面自动化，支持鼠标、键盘和屏幕控制",
-    "downloads": 31824,
-    "homepage": "https://clawhub.ai/matagul/desktop-control",
-    "installs": 1784,
-    "name": "Desktop Control",
-    "ownerName": "matagul",
-    "score": 34338.076634252524,
-    "slug": "desktop-control",
-    "stars": 215,
-    "updated_at": 1774508007034,
-    "version": "1.0.0"
-  },
-  {
-    "category": "productivity",
-    "description": "Connect OpenClaw to Outlook and Microsoft Graph for email, calendar, contacts, and folder operations using a pre-provided access token. Use when the user ask...",
-    "description_zh": "使用预提供的访问令牌将 OpenClaw 连接到 Outlook 和 Microsoft Graph，以执行邮件、日历、联系人和文件夹操作。",
-    "downloads": 31282,
-    "homepage": "https://clawhub.ai/c36025251-pixel/outlook-graph",
-    "installs": 526,
-    "name": "Outlook Graph",
-    "ownerName": "c36025251-pixel",
-    "score": 29811.503692930673,
-    "slug": "outlook-graph",
-    "stars": 4,
-    "updated_at": 1774508037352,
-    "version": "1.0.2"
   },
   {
     "category": "productivity",

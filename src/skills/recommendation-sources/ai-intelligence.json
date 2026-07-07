@@ -181,21 +181,6 @@
   },
   {
     "category": "ai-intelligence",
-    "description": "A self-evolution engine for AI agents. Analyzes runtime history to identify improvements and applies protocol-constrained evolution.",
-    "description_zh": "AI智能体自进化引擎，分析运行时历史识别改进并应用协议约束进化。",
-    "downloads": 20519,
-    "homepage": "https://clawhub.ai/autogame-17/capability-evolver",
-    "installs": 1307,
-    "name": "Capability Evolver",
-    "ownerName": "autogame-17",
-    "score": 7658.185235577125,
-    "slug": "capability-evolver",
-    "stars": 66,
-    "updated_at": 1774507989401,
-    "version": "1.31.0"
-  },
-  {
-    "category": "ai-intelligence",
     "description": "Feishu-integrated wrapper for the capability-evolver. Manages the evolution loop lifecycle (start/stop/ensure), sends rich Feishu card reports, and provides...",
     "description_zh": "飞书集成的能力进化器封装。管理进化循环生命周期（启动/停止/保活），发送飞书富文本卡片报告，并提供...",
     "downloads": 21384,
@@ -211,21 +196,6 @@
   },
   {
     "category": "ai-intelligence",
-    "description": "Persistent memory for AI agents to store facts, learn from actions, recall information, and track entities across sessions.",
-    "description_zh": "为AI智能体提供持久记忆，支持跨会话存储事实、学习行为、回忆信息及追踪实体。",
-    "downloads": 18952,
-    "homepage": "https://clawhub.ai/dennis-da-menace/agent-memory",
-    "installs": 5959,
-    "name": "Agent Memory",
-    "ownerName": "dennis-da-menace",
-    "score": 6744.000112212981,
-    "slug": "agent-memory",
-    "stars": 14,
-    "updated_at": 1774507992656,
-    "version": "1.0.0"
-  },
-  {
-    "category": "ai-intelligence",
     "description": "Multi-source deep research agent. Searches the web, synthesizes findings, and delivers cited reports. No API keys required.",
     "description_zh": "多源深度研究智能体，自动搜索网络、整合分析并生成引用报告，无需API密钥。",
     "downloads": 18078,
@@ -238,21 +208,6 @@
     "stars": 45,
     "updated_at": 1774507994768,
     "version": "1.0.2"
-  },
-  {
-    "category": "ai-intelligence",
-    "description": "Convert public web pages into clean Markdown with markdown.new for AI workflows. Use when tasks require URL-to-Markdown conversion for summarization, RAG ing...",
-    "description_zh": "使用 markdown.new 将公开网页转换为干净的 Markdown，供 AI 工作流（如摘要、RAG）使用。适用于需要 URL 转 Markdown 的场景。",
-    "downloads": 17710,
-    "homepage": "https://clawhub.ai/joelchance/markdown-convert",
-    "installs": 626,
-    "name": "Markdown.new Skill",
-    "ownerName": "joelchance",
-    "score": 6483.806264289621,
-    "slug": "markdown-convert",
-    "stars": 39,
-    "updated_at": 1774507996157,
-    "version": "1.0.0"
   },
   {
     "category": "ai-intelligence",
@@ -283,21 +238,6 @@
     "stars": 24,
     "updated_at": 1774507998483,
     "version": "1.0.1"
-  },
-  {
-    "category": "ai-intelligence",
-    "description": "Stop waiting for prompts. Keep working.",
-    "description_zh": "无需等待提示，持续工作。",
-    "downloads": 15786,
-    "homepage": "https://clawhub.ai/ryancampbell/agent-autonomy-kit",
-    "installs": 3308,
-    "name": "Agent Autonomy Kit",
-    "ownerName": "ryancampbell",
-    "score": 5963.418568442905,
-    "slug": "agent-autonomy-kit",
-    "stars": 61,
-    "updated_at": 1774508005218,
-    "version": "1.0.0"
   },
   {
     "category": "ai-intelligence",
