@@ -8,7 +8,8 @@
     "build:office-doc": "bun build src/office-doc/cli.ts --target=bun --outfile ../skills/office-doc/scripts/render.mjs",
     "build:office-excel": "bun build src/office-excel/cli.ts --target=bun --outfile ../skills/office-excel/scripts/excel.mjs",
     "build:office-pdf": "bun build src/office-pdf/cli.ts --target=bun --outfile ../skills/office-pdf/scripts/pdf.mjs",
-    "build:all": "bun run build:office-ppt && bun run build:office-doc && bun run build:office-excel && bun run build:office-pdf",
+    "build:file-organizer": "bun build src/file-organizer/cli.ts --target=bun --outfile ../skills/file-organizer/scripts/organize.mjs",
+    "build:all": "bun run build:office-ppt && bun run build:office-doc && bun run build:office-excel && bun run build:office-pdf && bun run build:file-organizer",
     "test": "bun test"
   },
   "dependencies": {
