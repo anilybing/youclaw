@@ -22,9 +22,29 @@ export interface WorkbenchTask {
   /** {{key}} 占位符会被表单值替换；附件文件名清单会自动追加说明 */
   promptTemplate: Record<WorkbenchLocale, string>
   fields: WorkbenchField[]
+  /**
+   * 是否允许"定时执行"（T-G5）。含文件上传的任务不宜定时（附件是一次性的），
+   * 默认 false；纯文本输入类任务显式开启。
+   */
+  schedulable?: boolean
 }
 
 export const WORKBENCH_AGENT_ID = 'office-assistant'
+
+/** 定时执行的 cron 预设（T-G5，工作台友好选项，避免让小白写 cron 表达式） */
+export interface CronPreset {
+  id: string
+  cron: string
+  label: Record<WorkbenchLocale, string>
+}
+
+export const WORKBENCH_CRON_PRESETS: CronPreset[] = [
+  { id: 'weekly-fri-17', cron: '0 17 * * 5', label: { zh: '每周五 17:00', en: 'Every Fri 17:00' } },
+  { id: 'weekly-mon-09', cron: '0 9 * * 1', label: { zh: '每周一 09:00', en: 'Every Mon 09:00' } },
+  { id: 'daily-09', cron: '0 9 * * *', label: { zh: '每天 09:00', en: 'Daily 09:00' } },
+  { id: 'daily-18', cron: '0 18 * * *', label: { zh: '每天 18:00', en: 'Daily 18:00' } },
+  { id: 'monthly-1-09', cron: '0 9 1 * *', label: { zh: '每月 1 号 09:00', en: 'Monthly 1st 09:00' } },
+]
 
 export const WORKBENCH_TASKS: WorkbenchTask[] = [
   {
@@ -103,12 +123,13 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     icon: '📅',
     title: { zh: '写周报', en: 'Weekly report' },
     desc: { zh: '扔进要点，产出可提交的周报', en: 'Bullets in, polished report out' },
+    schedulable: true,
     promptTemplate: {
       zh: '请用 weekly-report 技能帮我写周报。本周做的事：{{done}}。下周计划：{{plan}}。遇到的问题：{{blockers}}。',
       en: 'Use the weekly-report skill. Done this week: {{done}}. Next week: {{plan}}. Blockers: {{blockers}}.',
     },
     fields: [
-      { key: 'done', kind: 'textarea', required: true, label: { zh: '本周做的事', en: 'Done this week' }, placeholder: { zh: '要点即可，一行一条', en: 'One bullet per line' } },
+      { key: 'done', kind: 'textarea', required: true, label: { zh: '本周做的事', en: 'Done this week' }, placeholder: { zh: '要点即可，一行一条；定时执行时可写"根据本周记忆自动整理"', en: 'One bullet per line' } },
       { key: 'plan', kind: 'textarea', required: false, label: { zh: '下周计划（可选）', en: 'Next week (optional)' } },
       { key: 'blockers', kind: 'text', required: false, label: { zh: '问题/需要的支持（可选）', en: 'Blockers (optional)' } },
     ],
@@ -134,6 +155,7 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     icon: '🗂️',
     title: { zh: '整理文件夹', en: 'Organize a folder' },
     desc: { zh: '按类型或月份归类，先预览后执行', en: 'Group by type/month, preview first' },
+    schedulable: true,
     promptTemplate: {
       zh: '请用 file-organizer 技能整理这个文件夹：{{dir}}。规则：{{rule}}。务必先 dry-run 给我看移动计划，我确认后再执行。',
       en: 'Use the file-organizer skill on: {{dir}}. Rule: {{rule}}. Dry-run first and show me the plan; apply only after I confirm.',

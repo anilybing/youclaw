@@ -2,19 +2,31 @@
 // office-assistant 的对话流。复用 Chat 的发送链路（useChatActions + 附件上传）。
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, Clock, Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useChatActions } from '@/hooks/useChat'
-import { uploadChatAttachment, reportTelemetry } from '@/api/client'
+import { uploadChatAttachment, reportTelemetry, createScheduledTask } from '@/api/client'
 import { useAppPreferencesStore } from '@/stores/app-preferences'
 import {
   WORKBENCH_AGENT_ID,
   WORKBENCH_TASKS,
+  WORKBENCH_CRON_PRESETS,
   type WorkbenchLocale,
   type WorkbenchTask,
 } from '@/config/workbench-tasks'
 import type { Attachment } from '@/types/attachment'
+
+/** 把任务卡表单模板插值成最终 prompt（一次性发送与定时任务共用） */
+function fillPrompt(task: WorkbenchTask, locale: WorkbenchLocale, values: Record<string, string>): string {
+  let prompt = task.promptTemplate[locale]
+  for (const field of task.fields) {
+    if (field.kind === 'file') continue
+    const raw = (values[field.key] ?? '').trim()
+    prompt = prompt.replaceAll(`{{${field.key}}}`, raw || (locale === 'zh' ? '未指定，请按常规处理' : 'unspecified'))
+  }
+  return prompt
+}
 
 function useWorkbenchLocale(): WorkbenchLocale {
   const locale = useAppPreferencesStore((s) => s.locale)
@@ -42,6 +54,9 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
   const [files, setFiles] = useState<Record<string, File | null>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  // T-G5：定时执行——'' 表示立即执行，否则为选中的 cron 预设 id
+  const [cronPreset, setCronPreset] = useState('')
+  const [scheduled, setScheduled] = useState(false)
 
   const canSubmit = useMemo(() => (
     task.fields.every((field) => {
@@ -56,7 +71,28 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
     setSubmitting(true)
     setError('')
     try {
-      // 1) 上传附件（走既有聊天附件通道）
+      const prompt = fillPrompt(task, locale, values)
+
+      // 定时执行：落 scheduler 持久任务，不走即时对话
+      if (task.schedulable && cronPreset) {
+        const preset = WORKBENCH_CRON_PRESETS.find((p) => p.id === cronPreset)
+        if (!preset) throw new Error('invalid schedule preset')
+        await createScheduledTask({
+          agentId: WORKBENCH_AGENT_ID,
+          chatId: `workbench:${task.id}`,
+          prompt,
+          scheduleType: 'cron',
+          scheduleValue: preset.cron,
+          name: `${task.title[locale]} · ${preset.label[locale]}`,
+          description: locale === 'zh' ? '数字员工定时任务（工作台创建）' : 'Digital staff scheduled task',
+        })
+        void reportTelemetry('skill_run', { skill: task.id, ok: true, scheduled: true })
+        setScheduled(true)
+        setSubmitting(false)
+        return
+      }
+
+      // 立即执行：上传附件 → 发给数字员工 → 跳对话视图
       const attachments: Attachment[] = []
       for (const field of task.fields) {
         if (field.kind !== 'file') continue
@@ -64,16 +100,6 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
         if (!file) continue
         attachments.push(await uploadChatAttachment(file))
       }
-
-      // 2) 模板插值（未填的可选项替换为「未指定」）
-      let prompt = task.promptTemplate[locale]
-      for (const field of task.fields) {
-        if (field.kind === 'file') continue
-        const raw = (values[field.key] ?? '').trim()
-        prompt = prompt.replaceAll(`{{${field.key}}}`, raw || (locale === 'zh' ? '未指定，请按常规处理' : 'unspecified'))
-      }
-
-      // 3) 发给数字员工并跳到对话视图
       await send(prompt, attachments.length ? attachments : undefined)
       void reportTelemetry('skill_run', { skill: task.id, ok: true })
       navigate('/')
@@ -82,6 +108,24 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
       void reportTelemetry('skill_run', { skill: task.id, ok: false })
     }
     setSubmitting(false)
+  }
+
+  if (scheduled) {
+    return (
+      <div className="mx-auto w-full max-w-xl space-y-5 text-center py-16">
+        <div className="text-4xl" aria-hidden>⏰</div>
+        <h3 className="text-lg font-bold">{locale === 'zh' ? '定时任务已创建' : 'Scheduled task created'}</h3>
+        <p className="text-sm text-muted-foreground">
+          {locale === 'zh'
+            ? '小橘办公助理会按计划自动执行，产物放入「办公产出」目录并通知你。可在「定时任务」页查看或取消。'
+            : 'The office assistant will run it on schedule. Manage it in the Cron Jobs page.'}
+        </p>
+        <div className="flex justify-center gap-3">
+          <Button variant="outline" className="rounded-xl" onClick={onBack}>{locale === 'zh' ? '返回任务列表' : 'Back'}</Button>
+          <Button className="rounded-xl" onClick={() => navigate('/cron')}>{locale === 'zh' ? '查看定时任务' : 'View schedule'}</Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -129,13 +173,44 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
         ))}
       </div>
 
+      {/* T-G5：可定时任务提供"定时执行"选项 */}
+      {task.schedulable && (
+        <div className="rounded-xl border border-border p-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <Clock size={14} />
+            {locale === 'zh' ? '执行方式' : 'Run mode'}
+          </div>
+          <select
+            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            value={cronPreset}
+            onChange={(e) => setCronPreset(e.target.value)}
+          >
+            <option value="">{locale === 'zh' ? '立即执行一次' : 'Run once now'}</option>
+            {WORKBENCH_CRON_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {locale === 'zh' ? `定时：${preset.label.zh}` : `Schedule: ${preset.label.en}`}
+              </option>
+            ))}
+          </select>
+          {cronPreset && (
+            <p className="text-xs text-muted-foreground">
+              {locale === 'zh'
+                ? '小橘办公助理会按计划自动执行，附件类输入在定时模式下不生效。'
+                : 'Runs automatically on schedule; file inputs are ignored in scheduled mode.'}
+            </p>
+          )}
+        </div>
+      )}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button className="w-full gap-2 rounded-xl h-11" disabled={!canSubmit || submitting} onClick={handleSubmit}>
-        {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+        {submitting ? <Loader2 size={16} className="animate-spin" /> : (cronPreset ? <Clock size={16} /> : <Sparkles size={16} />)}
         {submitting
-          ? (locale === 'zh' ? '正在派发给小橘办公助理…' : 'Dispatching…')
-          : (locale === 'zh' ? '交给数字员工' : 'Run with digital staff')}
+          ? (locale === 'zh' ? '处理中…' : 'Working…')
+          : cronPreset
+            ? (locale === 'zh' ? '创建定时任务' : 'Create scheduled task')
+            : (locale === 'zh' ? '交给数字员工' : 'Run with digital staff')}
       </Button>
     </div>
   )
