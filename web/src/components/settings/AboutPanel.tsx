@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress"
 import { isTauri, openExternal } from "@/api/transport"
 import { useI18n } from "@/i18n"
 import { Github, Globe, Cog } from "lucide-react"
+import appConfig from "../../../../app.config.ts"
 
 type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error"
 
@@ -156,11 +157,11 @@ export function AboutPanel() {
 
       {/* Social links */}
       <div className="flex gap-3">
-        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal("https://github.com/CodePhiliaX/XiaoJuClaw")}>
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal(appConfig.github)}>
           <Github size={14} />
           GitHub
         </Button>
-        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal("https://XiaoJuClaw.dev")}>
+        <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => openExternal(appConfig.siteBase)}>
           <Globe size={14} />
           Website
         </Button>

@@ -44,13 +44,14 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import appConfig from "../../../../app.config.ts";
 
 /** Inline horizontal padding, keeps icon centered within 52px when collapsed (8+36+8=52) */
 const ROW_PX = "px-2";
-const FEEDBACK_URL_ZH =
-  "https://j12x8oxkydy.feishu.cn/share/base/form/shrcnoxGY5WZqwdPyROFLGTuNuc";
-const FEEDBACK_URL_EN =
-  "https://j12x8oxkydy.feishu.cn/share/base/form/shrcngmxMuqrhdUiW3P5UFQi5Fc";
+// 反馈入口统一指向自有官网（上游的飞书表单已移除；自有反馈表单上线后
+// 改 appConfig.siteBase 下的具体页面即可）
+const FEEDBACK_URL_ZH = appConfig.siteBase;
+const FEEDBACK_URL_EN = appConfig.siteBase;
 
 function AvatarView({
   size = "md",
@@ -379,9 +380,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
               )}
 
               <DropdownMenuItem
-                onClick={() =>
-                  openExternal("https://github.com/CodePhiliaX/XiaoJuClaw")
-                }
+                onClick={() => openExternal(appConfig.github)}
                 className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer"
               >
                 <Github className="h-4 w-4 text-muted-foreground" />

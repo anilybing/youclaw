@@ -4,9 +4,10 @@ import { useI18n } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Loader2, Mail, Github } from "lucide-react"
 import logoUrl from "@/assets/logo.png"
+import appConfig from "../../../app.config.ts"
 
-const GITHUB_URL = "https://github.com/CodePhiliaX/XiaoJuClaw"
-const SUPPORT_EMAIL = "support@chat2db-ai.com"
+const GITHUB_URL = appConfig.github
+const SUPPORT_EMAIL = appConfig.supportEmail
 
 interface StartupErrorProps {
   onRetry: () => void

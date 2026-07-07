@@ -10,8 +10,13 @@ const appConfig = {
   // ── App Info ──
   name: 'XiaoJuClaw',
   identifier: 'com.xiaojuclaw.app',
-  github: 'https://github.com/CodePhiliaX/youClaw',
-  supportEmail: 'support@chat2db-ai.com',
+  github: 'https://github.com/anilybing/youclaw',
+  supportEmail: 'support@xiaojuclaw.top',
+
+  // ── Website（官网 /site/ 与文档教程页，禁止指向管理后台）──
+  websiteUrl: 'https://www.xiaojuclaw.top',
+  siteBase: 'https://www.xiaojuclaw.top/site/',
+  docsBase: 'https://www.xiaojuclaw.top/site/tutorials.html',
 
   // ── Server Defaults ──
   defaultPort: 62601,
@@ -19,9 +24,9 @@ const appConfig = {
   defaultModel: 'minimax/MiniMax-M2.7-highspeed',
   defaultLogLevel: 'info' as const,
 
-  // ── CDN ──  https://cdn.chat2db-ai.com/youclaw/tools/git/Git-2.53.0.2-64-bit.exe.zip
-  cdnBase: 'https://cdn.chat2db-ai.com/youclaw',
-  toolsCdnBase: 'https://cdn.chat2db-ai.com/youclaw/tools',
+  // ── CDN ──  工具与安装包镜像（人类采购 CDN 后只改这两行）
+  cdnBase: 'https://cdn.xiaojuclaw.top/xiaojuclaw',
+  toolsCdnBase: 'https://cdn.xiaojuclaw.top/xiaojuclaw/tools',
 
   // ── External Tool Downloads ──
   tools: {
