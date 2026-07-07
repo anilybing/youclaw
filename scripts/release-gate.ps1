@@ -27,7 +27,9 @@ function Invoke-Step {
   $sw = [Diagnostics.Stopwatch]::StartNew()
   Push-Location $WorkDir
   try {
-    cmd /c $Command
+    # Out-Host：若让 stdout 流入函数返回值，返回值会变成「输出行数组 + 布尔」，
+    # 上层 `(Invoke-Step ...) -and $ok` 对非空数组恒为真 —— 失败步骤会被误判 PASS。
+    cmd /c $Command | Out-Host
     $code = $LASTEXITCODE
   } finally {
     Pop-Location
