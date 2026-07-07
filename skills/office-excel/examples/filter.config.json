@@ -1,0 +1,7 @@
+{
+  "sheet": "Sheet1",
+  "where": [
+    { "column": "地区", "op": "eq", "value": "华东" },
+    { "column": "销量", "op": "gt", "value": 100 }
+  ]
+}
