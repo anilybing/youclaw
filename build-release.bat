@@ -65,16 +65,9 @@ if not defined TAURI_SIGNING_PRIVATE_KEY (
   echo.
 )
 
-call :run_in "Root typecheck" "%ROOT%" "bun run typecheck"
-if errorlevel 1 goto :fail
-
-call :run_in "Web lint" "%WEB_DIR%" "bun run lint"
-if errorlevel 1 goto :fail
-
-call :run_in "Web typecheck" "%WEB_DIR%" "bun run typecheck"
-if errorlevel 1 goto :fail
-
-call :run_in "Brand audit" "%ROOT%" "bun run brand-audit"
+rem Release gate covers: root/web typecheck, web lint, brand audit,
+rem backend tests (baseline), skills golden tests, digital staff verify.
+call :run_in "Release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1"
 if errorlevel 1 goto :fail
 
 if /I not "%SKIP_RECOMMENDED_VALIDATION%"=="1" (
