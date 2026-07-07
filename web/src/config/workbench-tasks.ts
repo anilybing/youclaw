@@ -82,8 +82,8 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     title: { zh: '处理 Excel 表格', en: 'Process Excel' },
     desc: { zh: '清洗/汇总/透视/拆分表格文件', en: 'Clean / summarize / pivot / split' },
     promptTemplate: {
-      zh: '请帮我处理这个表格文件。我的要求：{{requirement}}。请先读取表头结构确认理解，再用 office-excel 技能处理并输出新文件到「办公产出」目录（不要改动原文件）。',
-      en: 'Please process the attached spreadsheet. Requirement: {{requirement}}. Inspect the headers first, then process via the office-excel skill into a new file (never modify the original).',
+      zh: '请帮我处理这个表格文件。我的要求：{{requirement}}。请先读取表头结构确认理解，再用 office-excel 技能处理并输出新文件到「办公产出」目录（不要改动原文件）。若表格很复杂或需多步深加工，可派表格专员（sheet-processor）分治处理。',
+      en: 'Please process the attached spreadsheet. Requirement: {{requirement}}. Inspect the headers first, then process via the office-excel skill into a new file (never modify the original). If the spreadsheet is complex or needs multi-step processing, delegate to the sheet-processor specialist.',
     },
     fields: [
       { key: 'file', kind: 'file', required: true, label: { zh: '表格文件', en: 'Spreadsheet' }, accept: '.xlsx,.csv' },
@@ -96,8 +96,8 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     title: { zh: 'PDF 摘要/拆分', en: 'PDF summary / split' },
     desc: { zh: '读 PDF 提要点，或合并拆分加水印', en: 'Summarize, merge, split, watermark' },
     promptTemplate: {
-      zh: '请帮我处理这个 PDF。我的要求：{{requirement}}。内容摘要直接用内置文档解析；合并/拆分/水印用 office-pdf 技能，产物放「办公产出」目录。',
-      en: 'Please handle the attached PDF. Requirement: {{requirement}}. Use built-in parsing for summaries; use the office-pdf skill for merge/split/watermark.',
+      zh: '请帮我处理这个 PDF。我的要求：{{requirement}}。内容摘要直接用内置文档解析；合并/拆分/水印用 office-pdf 技能，产物放「办公产出」目录。若文档很长（约 50 页以上），可派长文档专员（long-doc-processor）分段分治处理。',
+      en: 'Please handle the attached PDF. Requirement: {{requirement}}. Use built-in parsing for summaries; use the office-pdf skill for merge/split/watermark. If the document is very long (50+ pages), delegate to the long-doc-processor specialist for chunked processing.',
     },
     fields: [
       { key: 'file', kind: 'file', required: true, label: { zh: 'PDF 文件', en: 'PDF file' }, accept: '.pdf' },

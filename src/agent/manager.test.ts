@@ -1,6 +1,7 @@
 import { describe, test, expect, mock } from 'bun:test'
 import { parse as parseYaml } from 'yaml'
 import { AgentManager } from './manager.ts'
+import { AgentConfigSchema } from './schema.ts'
 import { OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD } from './templates.ts'
 
 // Minimal mock dependencies
@@ -90,5 +91,43 @@ describe('office-assistant preset template', () => {
   test('SOUL 模板包含产出目录与 dry-run 红线约定', () => {
     expect(OFFICE_ASSISTANT_SOUL_MD).toContain('办公产出')
     expect(OFFICE_ASSISTANT_SOUL_MD).toContain('dry-run')
+  })
+
+  // [XJC] T-G4 编排一期：内联专员子代理配置合法且 SOUL 带派生守则
+  test('agent.yaml 含 long-doc-processor 与 sheet-processor 两个内联子代理', () => {
+    const parsed = parseYaml(OFFICE_ASSISTANT_AGENT_YAML) as {
+      agents: Record<string, { description?: string; prompt?: string; tools?: string[]; disallowedTools?: string[] }>
+    }
+    expect(parsed.agents).toBeDefined()
+    expect(Object.keys(parsed.agents)).toEqual(['long-doc-processor', 'sheet-processor'])
+
+    const longDoc = parsed.agents['long-doc-processor']!
+    expect(longDoc.description).toContain('长文档')
+    expect(longDoc.prompt).toContain('分段')
+    expect(longDoc.tools).toContain('mcp__document__parse_document')
+    expect(longDoc.disallowedTools).toContain('WebSearch')
+
+    const sheet = parsed.agents['sheet-processor']!
+    expect(sheet.description).toContain('Excel')
+    expect(sheet.prompt).toContain('office-excel')
+    expect(sheet.tools).toContain('bash')
+    expect(sheet.disallowedTools).toContain('WebSearch')
+  })
+
+  test('agent.yaml 模板整体通过 AgentConfigSchema 校验（内联子代理合法可加载）', () => {
+    const parsed = parseYaml(OFFICE_ASSISTANT_AGENT_YAML)
+    const result = AgentConfigSchema.safeParse(parsed)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(Object.keys(result.data.agents ?? {})).toEqual(['long-doc-processor', 'sheet-processor'])
+    }
+  })
+
+  test('SOUL 模板包含派生守则与禁止套娃约束', () => {
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('派生')
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('禁止套娃')
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('不得再派生')
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('long-doc-processor')
+    expect(OFFICE_ASSISTANT_SOUL_MD).toContain('sheet-processor')
   })
 })
