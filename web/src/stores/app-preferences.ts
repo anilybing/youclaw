@@ -34,6 +34,10 @@ interface AppPreferencesState {
 
   skillsViewMode: SkillsViewMode
   setSkillsViewMode: (mode: SkillsViewMode) => void
+
+  // [XJC] 技能市场第三方源开关：默认关闭，小白用户只看自有「小橘技能库」
+  showThirdPartySkillSources: boolean
+  setShowThirdPartySkillSources: (show: boolean) => void
 }
 
 export const useAppPreferencesStore = create<AppPreferencesState>()(persist((set, get) => ({
@@ -69,6 +73,11 @@ export const useAppPreferencesStore = create<AppPreferencesState>()(persist((set
   skillsViewMode: 'grid',
   setSkillsViewMode: (skillsViewMode) => {
     set({ skillsViewMode })
+  },
+
+  showThirdPartySkillSources: false,
+  setShowThirdPartySkillSources: (showThirdPartySkillSources) => {
+    set({ showThirdPartySkillSources })
   },
 }), {
   name: APP_PREFERENCES_STORAGE_KEY,

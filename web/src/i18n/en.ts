@@ -635,6 +635,9 @@ export const en = {
     marketplace: 'Marketplace',
     marketplaceConfig: 'Marketplace Config',
     marketplaceHint: 'Configure the ClawHub access token used for marketplace installs and updates.',
+    // [XJC] 第三方技能源开关文案
+    showThirdPartySources: 'Show third-party skill sources',
+    showThirdPartySourcesDesc: 'Third-party sources are in English and not curated by the platform',
     marketplaceDefaultSource: 'Default marketplace source',
     marketplaceDefaultSourceHint: 'Choose a fixed default source, or follow the current locale.',
     marketplaceFollowLocale: 'Follow locale default',

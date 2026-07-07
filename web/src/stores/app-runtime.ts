@@ -20,7 +20,7 @@ import {
 import { getPortableDiskSpace, isTauri } from '@/api/transport'
 import { reportTelemetry } from '@/api/client'
 import { useRemoteConfigStore } from './remote-config'
-import { resolvePreferredRegistrySource } from '@/lib/registry-source'
+import { filterVisibleRegistrySources, isThirdPartySkillSourcesEnabled, resolvePreferredRegistrySource } from '@/lib/registry-source'
 import { getErrorMessage, logAuthClientEvent } from '@/lib/auth-debug'
 import { applyThemeToDOM } from '@/hooks/useTheme'
 import { toast, type ExternalToast } from 'sonner'
@@ -159,6 +159,14 @@ function navigateInApp(path: string): void {
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
+// [XJC] 解析默认选中源时按第三方源开关过滤，避免被隐藏的源（clawhub/tencent 等）
+// 静默成为当前源；完整列表仍存入 registrySources，由选择器按开关展示。
+function visibleRegistrySources(sources: RegistrySourceInfo[]): RegistrySourceInfo[] {
+  const showThirdParty = useAppPreferencesStore.getState().showThirdPartySkillSources
+  const remoteEnabled = useRemoteConfigStore.getState().flag('skills.thirdparty_enabled', false)
+  return filterVisibleRegistrySources(sources, isThirdPartySkillSourcesEnabled(showThirdParty, remoteEnabled))
+}
+
 // app_start 遥测：每次会话只上报一次（登录态确认后触发；失败静默）
 let appStartReported = false
 function reportAppStartOnce(): void {
@@ -243,7 +251,7 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
         getRegistrySources(),
       ])
       const locale = useAppPreferencesStore.getState().locale
-      const registrySource = resolvePreferredRegistrySource(sources, settings.defaultRegistrySource, locale)
+      const registrySource = resolvePreferredRegistrySource(visibleRegistrySources(sources), settings.defaultRegistrySource, locale)
       set({ registrySources: sources, registrySource })
       return sources
     } catch {
@@ -336,7 +344,7 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
       set({
         cloudEnabled: enabled,
         registrySources,
-        registrySource: resolvePreferredRegistrySource(registrySources, settings.defaultRegistrySource, locale),
+        registrySource: resolvePreferredRegistrySource(visibleRegistrySources(registrySources), settings.defaultRegistrySource, locale),
       })
 
       if (enabled) {

@@ -637,6 +637,9 @@ export const zh: Translations = {
     marketplace: '技能市场',
     marketplaceConfig: '技能市场配置',
     marketplaceHint: '配置 ClawHub 访问令牌，用于技能市场安装与更新。',
+    // [XJC] 第三方技能源开关文案
+    showThirdPartySources: '显示第三方技能源',
+    showThirdPartySourcesDesc: '第三方源为英文内容，质量与可用性不受平台保障',
     marketplaceDefaultSource: '默认市场来源',
     marketplaceDefaultSourceHint: '可以固定一个默认来源，或者跟随当前语言。',
     marketplaceFollowLocale: '跟随语言默认值',

@@ -30,7 +30,7 @@ export function resolvePreferredRemoteRegistrySource(
 }
 
 /**
- * 第三方源开关（remote flag 'skills.thirdparty_enabled'，默认 false）：
+ * 第三方源开关：
  * 关闭时源列表只保留自有 xiaojuclaw 源，clawhub / tencent / recommended 隐藏。
  */
 export function filterVisibleRegistrySources(
@@ -41,6 +41,20 @@ export function filterVisibleRegistrySources(
     return sources
   }
   return sources.filter((source) => FIRST_PARTY_REGISTRY_SOURCES.includes(source.id))
+}
+
+// [XJC] 第三方源可见性 = 用户本地偏好（设置页开关，默认关） OR 远程配置
+// 'skills.thirdparty_enabled'（运营侧强制放开，默认 false）。两者都关时只展示小橘技能库。
+export function isThirdPartySkillSourcesEnabled(
+  userPreference: boolean,
+  remoteFlagEnabled: boolean,
+): boolean {
+  return userPreference || remoteFlagEnabled
+}
+
+// [XJC] 自有源判定：第三方开关关闭后仅这些源可见/可选
+export function isFirstPartyRegistrySource(source: RegistrySelectableSource): boolean {
+  return FIRST_PARTY_REGISTRY_SOURCES.includes(source)
 }
 
 export function resolvePreferredRegistrySource(
