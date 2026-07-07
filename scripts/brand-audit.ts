@@ -29,6 +29,10 @@ const BANNED_KEYWORDS = [
   'UPDATER_ENDPOINT_PLACEHOLDER',
   'youclaw-builtin-cloud-model',
   'feishu.cn/share', // 上游反馈表单
+  // GPL-3.0 项目防误引入（只允许 clean-room 借鉴思想，
+  // 见 doc/数字员工能力增强规划（对标OpenHuman）.md §0）
+  'openhuman',
+  'tinyhumans',
 ]
 
 // clawhub：仅技能市场源实现与其 UI 表面允许出现
