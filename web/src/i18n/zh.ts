@@ -649,6 +649,7 @@ export const zh: Translations = {
     currentRegistrySource: '当前来源',
     registrySourceClawhub: 'ClawHub',
     registrySourceTencent: 'Tencent',
+    registrySourceXiaojuclaw: '小橘技能库',
     marketplaceEnabled: '启用',
     registryApiBaseUrl: 'API 地址',
     registryDownloadUrl: '下载地址',

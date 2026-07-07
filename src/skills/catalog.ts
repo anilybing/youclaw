@@ -8,7 +8,7 @@ import type {
   SkillRuntimeSource,
 } from './types.ts'
 
-const MARKETPLACE_INSTALL_SOURCES = new Set<SkillInstallSource>(['clawhub', 'tencent'])
+const MARKETPLACE_INSTALL_SOURCES = new Set<SkillInstallSource>(['xiaojuclaw', 'clawhub', 'tencent'])
 const URL_INSTALL_SOURCES = new Set<SkillInstallSource>(['raw-url', 'github'])
 const LOCAL_INSTALL_SOURCES = new Set<SkillInstallSource>(['zip-upload', 'folder-import'])
 

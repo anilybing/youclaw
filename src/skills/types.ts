@@ -9,6 +9,7 @@ export const SkillRuntimeSource = {
 export type SkillRuntimeSource = typeof SkillRuntimeSource[keyof typeof SkillRuntimeSource]
 
 export const RegistryMarketplaceSource = {
+  XiaoJuClaw: 'xiaojuclaw',
   ClawHub: 'clawhub',
   Tencent: 'tencent',
 } as const
@@ -25,6 +26,7 @@ export type SkillImportProvider = typeof SkillImportProvider[keyof typeof SkillI
 export const SKILL_IMPORT_PROVIDERS = Object.values(SkillImportProvider)
 
 export const SkillInstallSource = {
+  XiaoJuClaw: 'xiaojuclaw',
   ClawHub: 'clawhub',
   Tencent: 'tencent',
   RawUrl: 'raw-url',

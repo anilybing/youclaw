@@ -4,6 +4,9 @@ import type { MarketplaceOrder, MarketplaceSort, RegistrySelectableSource, Regis
 type RemoteRegistrySource = Exclude<RegistrySelectableSource, 'recommended'>
 const hiddenMarketplaceSorts: MarketplaceSort[] = ['name']
 
+// 自有私有源（第三方源开关关闭时仅保留这些源）
+const FIRST_PARTY_REGISTRY_SOURCES: readonly RegistrySelectableSource[] = ['xiaojuclaw']
+
 export function resolveLocaleDefaultRegistrySource(locale: Locale): RegistrySelectableSource {
   return locale === 'zh' ? 'tencent' : 'clawhub'
 }
@@ -12,6 +15,11 @@ export function resolvePreferredRemoteRegistrySource(
   availableSources: Array<Pick<RegistrySourceInfo, 'id'>>,
   locale: Locale,
 ): RemoteRegistrySource {
+  // 自有技能源存在即为默认源
+  if (availableSources.some((source) => source.id === 'xiaojuclaw')) {
+    return 'xiaojuclaw'
+  }
+
   const localeDefault = resolveLocaleDefaultRegistrySource(locale)
   if (localeDefault !== 'recommended' && availableSources.some((source) => source.id === localeDefault)) {
     return localeDefault
@@ -19,6 +27,20 @@ export function resolvePreferredRemoteRegistrySource(
 
   const firstRemote = availableSources.find((source) => source.id !== 'recommended')?.id
   return firstRemote === 'tencent' ? 'tencent' : 'clawhub'
+}
+
+/**
+ * 第三方源开关（remote flag 'skills.thirdparty_enabled'，默认 false）：
+ * 关闭时源列表只保留自有 xiaojuclaw 源，clawhub / tencent / recommended 隐藏。
+ */
+export function filterVisibleRegistrySources(
+  sources: RegistrySourceInfo[],
+  thirdPartyEnabled: boolean,
+): RegistrySourceInfo[] {
+  if (thirdPartyEnabled) {
+    return sources
+  }
+  return sources.filter((source) => FIRST_PARTY_REGISTRY_SOURCES.includes(source.id))
 }
 
 export function resolvePreferredRegistrySource(
@@ -34,7 +56,7 @@ export function resolvePreferredRegistrySource(
 
 export function getRegistrySourceLabel(source: RegistrySelectableSource, sources: RegistrySourceInfo[]): string {
   return sources.find((item) => item.id === source)?.label
-    ?? (source === 'recommended' ? 'Recommended' : source === 'tencent' ? 'Tencent' : 'ClawHub')
+    ?? (source === 'xiaojuclaw' ? '小橘技能库' : source === 'recommended' ? 'Recommended' : source === 'tencent' ? 'Tencent' : 'ClawHub')
 }
 
 export function getRegistrySourceInfo(source: RegistrySelectableSource, sources: RegistrySourceInfo[]): RegistrySourceInfo | undefined {

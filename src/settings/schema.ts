@@ -1,6 +1,6 @@
 import { z } from 'zod/v4'
 
-export const RegistrySourceSettingSchema = z.enum(['clawhub', 'recommended', 'tencent'])
+export const RegistrySourceSettingSchema = z.enum(['clawhub', 'recommended', 'tencent', 'xiaojuclaw'])
 export type RegistrySourceSetting = z.infer<typeof RegistrySourceSettingSchema>
 
 export const ActiveModelProvider = {

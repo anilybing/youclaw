@@ -232,7 +232,7 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
 
   modelReady: false,
 
-  registrySource: 'clawhub',
+  registrySource: 'xiaojuclaw',
   registrySources: [],
   setRegistrySource: (registrySource) => set({ registrySource }),
   setRegistrySources: (registrySources) => set({ registrySources }),

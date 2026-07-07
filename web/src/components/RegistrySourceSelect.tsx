@@ -1,7 +1,9 @@
+import { useEffect, useMemo } from 'react'
 import type { RegistrySelectableSource, RegistrySourceInfo } from '@/api/client'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useI18n } from '@/i18n'
-import { getRegistrySourceLabel } from '@/lib/registry-source'
+import { filterVisibleRegistrySources, getRegistrySourceLabel } from '@/lib/registry-source'
+import { useRemoteConfigStore } from '@/stores/remote-config'
 import { cn } from '@/lib/utils'
 
 export function RegistrySourceSelect({
@@ -18,6 +20,19 @@ export function RegistrySourceSelect({
   className?: string
 }) {
   const { t } = useI18n()
+  // 第三方源开关（T-C6）：关闭时只展示自有 xiaojuclaw 源
+  const thirdPartyEnabled = useRemoteConfigStore((s) => s.flag('skills.thirdparty_enabled', false))
+  const visibleSources = useMemo(
+    () => filterVisibleRegistrySources(sources, thirdPartyEnabled),
+    [sources, thirdPartyEnabled],
+  )
+
+  // 当前选中源被开关隐藏时自动切回自有源
+  useEffect(() => {
+    if (visibleSources.length > 0 && !visibleSources.some((source) => source.id === value)) {
+      onValueChange('xiaojuclaw')
+    }
+  }, [visibleSources, value, onValueChange])
 
   return (
     <Select value={value} onValueChange={(next) => onValueChange(next as RegistrySelectableSource)} disabled={disabled}>
@@ -25,9 +40,9 @@ export function RegistrySourceSelect({
         <SelectValue placeholder={t.skills.marketplaceSourceLabel} />
       </SelectTrigger>
       <SelectContent>
-        {sources.map((source) => (
+        {visibleSources.map((source) => (
           <SelectItem key={source.id} value={source.id}>
-            {getRegistrySourceLabel(source.id, sources)}
+            {getRegistrySourceLabel(source.id, visibleSources)}
           </SelectItem>
         ))}
       </SelectContent>

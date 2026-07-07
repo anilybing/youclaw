@@ -81,6 +81,24 @@ function createRegistryManager(
   })
 }
 
+const xiaojuclawApiUrl = 'https://xjc.test'
+const xiaojuclawIndexUrl = `${xiaojuclawApiUrl}/api/client/skills/index.json`
+
+function createXiaojuclawManager(
+  loader: SkillsLoader,
+  fetchImpl: typeof fetch,
+  token: string | null = 'xjc-token',
+) {
+  return new RegistryManager(loader, {
+    userSkillsDir: testUserSkillsDir,
+    tencentEnabled: true,
+    xiaojuclawApiUrl,
+    xiaojuclawTokenGetter: () => token,
+    fetchImpl,
+    sleep: async () => {},
+  })
+}
+
 describe('RegistryManager', () => {
   beforeEach(() => {
     rmSync(testUserSkillsDir, { recursive: true, force: true })
@@ -1574,6 +1592,239 @@ describe('RegistryManager', () => {
       })
 
       await expect(manager.updateSkill('coding')).rejects.toThrow('already up to date')
+    })
+  })
+
+  describe('xiaojuclaw source', () => {
+    test('lists index items with rdxtoken header, downloads-desc order and installed annotation', async () => {
+      const skillDir = getUserSkillDir('report-weekly')
+      mkdirSync(skillDir, { recursive: true })
+      writeFileSync(resolve(skillDir, 'SKILL.md'), '---\nname: report-weekly\ndescription: test\n---\n')
+      writeFileSync(resolve(skillDir, '.registry.json'), JSON.stringify({
+        source: 'xiaojuclaw',
+        slug: 'report-weekly',
+        installedAt: '2024-01-01T00:00:00.000Z',
+        displayName: '周报助手',
+        version: '1.0.0',
+      }))
+
+      const { loader } = createMockLoader()
+      const requests: Array<{ url: string; init?: RequestInit }> = []
+      const manager = createXiaojuclawManager(loader, async (url, init) => {
+        requests.push({ url: String(url), init })
+        if (String(url) === xiaojuclawIndexUrl) {
+          return Response.json({
+            schemaVersion: 1,
+            generatedAt: '2026-01-01T00:00:00.000Z',
+            items: [
+              {
+                slug: 'report-weekly',
+                displayName: '周报助手',
+                summary: '自动生成团队周报',
+                category: 'productivity',
+                version: '1.2.0',
+                sha256: 'a'.repeat(64),
+                sizeBytes: 1024,
+                minTier: '',
+                downloads: 5,
+                downloadUrl: `${xiaojuclawApiUrl}/api/client/skills/report-weekly/download`,
+              },
+              {
+                slug: 'ppt-builder',
+                displayName: 'PPT 助手',
+                summary: '一键生成演示文稿',
+                category: 'content-creation',
+                version: '0.9.0',
+                sha256: 'b'.repeat(64),
+                sizeBytes: 2048,
+                minTier: 'standard',
+                downloads: 42,
+                downloadUrl: `${xiaojuclawApiUrl}/api/client/skills/ppt-builder/download`,
+              },
+            ],
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      const result = await manager.listMarketplace({ source: 'xiaojuclaw', locale: 'zh' })
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.url).toBe(xiaojuclawIndexUrl)
+      expect((requests[0]?.init?.headers as Record<string, string>).rdxtoken).toBe('xjc-token')
+      expect(result.nextCursor).toBeNull()
+      expect(result.sort).toBe('downloads')
+      expect(result.items.map((item) => item.slug)).toEqual(['ppt-builder', 'report-weekly'])
+      expect(result.items[0]).toMatchObject({
+        slug: 'ppt-builder',
+        displayName: 'PPT 助手',
+        summary: '一键生成演示文稿',
+        latestVersion: '0.9.0',
+        downloads: 42,
+        stars: null,
+        installs: null,
+        category: 'content-creation',
+        ownerName: null,
+        url: null,
+        installed: false,
+        hasUpdate: false,
+      })
+      expect(result.items[1]).toMatchObject({
+        slug: 'report-weekly',
+        latestVersion: '1.2.0',
+        installed: true,
+        installedSkillName: 'report-weekly',
+        installedVersion: '1.0.0',
+        hasUpdate: true,
+      })
+    })
+
+    test('filters index items by query against slug, display name and summary', async () => {
+      const { loader } = createMockLoader()
+      let indexRequests = 0
+      const manager = createXiaojuclawManager(loader, async (url) => {
+        if (String(url) === xiaojuclawIndexUrl) {
+          indexRequests += 1
+          return Response.json({
+            schemaVersion: 1,
+            generatedAt: '2026-01-01T00:00:00.000Z',
+            items: [
+              { slug: 'report-weekly', displayName: '周报助手', summary: '自动生成团队周报', version: '1.0.0', downloads: 5 },
+              { slug: 'ppt-builder', displayName: '演示文稿', summary: '一键生成 PPT', version: '1.0.0', downloads: 9 },
+              { slug: 'browser-use', displayName: '网页浏览', summary: '自动化访问网页', version: '1.0.0', downloads: 1 },
+            ],
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      const byDisplayName = await manager.listMarketplace({ source: 'xiaojuclaw', query: '周报' })
+      expect(byDisplayName.items.map((item) => item.slug)).toEqual(['report-weekly'])
+
+      const bySlug = await manager.listMarketplace({ source: 'xiaojuclaw', query: 'builder' })
+      expect(bySlug.items.map((item) => item.slug)).toEqual(['ppt-builder'])
+
+      const bySummary = await manager.listMarketplace({ source: 'xiaojuclaw', query: 'ppt' })
+      expect(bySummary.items.map((item) => item.slug)).toEqual(['ppt-builder'])
+
+      // 30 秒 TTL 内存缓存：多次查询只拉一次 index
+      expect(indexRequests).toBe(1)
+    })
+
+    test('returns an empty page without remote calls when no auth token is available', async () => {
+      const { loader } = createMockLoader()
+      const manager = createXiaojuclawManager(loader, async () => {
+        throw new Error('should not fetch the xiaojuclaw index without a token')
+      }, null)
+
+      const result = await manager.listMarketplace({ source: 'xiaojuclaw', query: 'anything' })
+
+      expect(result.items).toHaveLength(0)
+      expect(result.nextCursor).toBeNull()
+    })
+
+    test('reads detail from the cached index and reports missing slugs', async () => {
+      const { loader } = createMockLoader()
+      let indexRequests = 0
+      const manager = createXiaojuclawManager(loader, async (url) => {
+        if (String(url) === xiaojuclawIndexUrl) {
+          indexRequests += 1
+          return Response.json({
+            schemaVersion: 1,
+            generatedAt: '2026-01-01T00:00:00.000Z',
+            items: [
+              { slug: 'report-weekly', displayName: '周报助手', summary: '自动生成团队周报', category: 'productivity', version: '1.2.0', downloads: 5 },
+            ],
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await manager.listMarketplace({ source: 'xiaojuclaw' })
+      const detail = await manager.getMarketplaceSkill('report-weekly', 'xiaojuclaw', 'zh')
+
+      expect(indexRequests).toBe(1)
+      expect(detail).toMatchObject({
+        slug: 'report-weekly',
+        displayName: '周报助手',
+        summary: '自动生成团队周报',
+        latestVersion: '1.2.0',
+        category: 'productivity',
+        moderation: null,
+      })
+
+      await expect(manager.getMarketplaceSkill('missing-skill', 'xiaojuclaw', 'zh'))
+        .rejects.toThrow('Skill "missing-skill" was not found')
+    })
+
+    test('installs from the xiaojuclaw source with the rdxtoken download header', async () => {
+      const { loader, getRefreshCount } = createMockLoader()
+      const zip = createSkillZip({
+        'report-weekly/SKILL.md': '---\nname: report-weekly\ndescription: 自动生成团队周报\n---\n',
+      })
+      const downloadRequests: Array<{ url: string; init?: RequestInit }> = []
+      const manager = createXiaojuclawManager(loader, async (url, init) => {
+        if (String(url) === xiaojuclawIndexUrl) {
+          return Response.json({
+            schemaVersion: 1,
+            generatedAt: '2026-01-01T00:00:00.000Z',
+            items: [
+              { slug: 'report-weekly', displayName: '周报助手', summary: '自动生成团队周报', version: '1.2.0', downloads: 5 },
+            ],
+          })
+        }
+        if (String(url) === `${xiaojuclawApiUrl}/api/client/skills/report-weekly/download`) {
+          downloadRequests.push({ url: String(url), init })
+          return new Response(zip, {
+            status: 200,
+            headers: {
+              'content-length': String(zip.byteLength),
+              'X-Checksum-Sha256': 'c'.repeat(64),
+            },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await manager.installSkill('report-weekly', 'xiaojuclaw')
+
+      expect(downloadRequests).toHaveLength(1)
+      expect((downloadRequests[0]?.init?.headers as Record<string, string>).rdxtoken).toBe('xjc-token')
+
+      const skillDir = getUserSkillDir('report-weekly')
+      expect(existsSync(resolve(skillDir, 'SKILL.md'))).toBe(true)
+      const meta = JSON.parse(readFileSync(resolve(skillDir, '.registry.json'), 'utf-8')) as SkillRegistryMeta
+      expect(meta.source).toBe('xiaojuclaw')
+      expect(meta.slug).toBe('report-weekly')
+      expect(meta.version).toBe('1.2.0')
+      expect(getRefreshCount()).toBe(1)
+    })
+
+    test('surfaces a readable plan-required message on 403 PLAN_REQUIRED downloads', async () => {
+      const { loader } = createMockLoader()
+      const manager = createXiaojuclawManager(loader, async (url) => {
+        if (String(url) === xiaojuclawIndexUrl) {
+          return Response.json({
+            schemaVersion: 1,
+            generatedAt: '2026-01-01T00:00:00.000Z',
+            items: [
+              { slug: 'premium-skill', displayName: '高级技能', summary: '仅高级套餐可用', version: '1.0.0', minTier: 'premium', downloads: 3 },
+            ],
+          })
+        }
+        if (String(url) === `${xiaojuclawApiUrl}/api/client/skills/premium-skill/download`) {
+          return Response.json({
+            success: false,
+            requestId: 'req_test',
+            errorCode: 'PLAN_REQUIRED',
+            errorMessage: '当前套餐不包含该技能，请升级套餐',
+          }, { status: 403 })
+        }
+        return new Response('not found', { status: 404 })
+      })
+
+      await expect(manager.installSkill('premium-skill', 'xiaojuclaw'))
+        .rejects.toThrow('当前套餐不包含该技能')
     })
   })
 

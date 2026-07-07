@@ -384,7 +384,7 @@ export class SkillProjectService {
     const meta = this.readProjectMeta(rootDir)
     const origin = meta?.origin
       ?? (skill.source === 'user'
-        ? (skill.registryMeta?.source === 'clawhub' || skill.registryMeta?.source === 'tencent' ? 'marketplace' : 'manual')
+        ? (skill.registryMeta?.source === 'xiaojuclaw' || skill.registryMeta?.source === 'clawhub' || skill.registryMeta?.source === 'tencent' ? 'marketplace' : 'manual')
         : 'builtin')
 
     return {

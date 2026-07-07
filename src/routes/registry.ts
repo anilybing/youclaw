@@ -78,7 +78,7 @@ function readSource(input: string | undefined | null): RegistrySelectableSource 
   if (input == null || input === '') {
     return 'clawhub'
   }
-  if (input === 'clawhub' || input === 'recommended' || input === 'tencent') {
+  if (input === 'clawhub' || input === 'recommended' || input === 'tencent' || input === 'xiaojuclaw') {
     return input
   }
   return null

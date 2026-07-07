@@ -297,6 +297,7 @@ export interface EligibilityDetail {
 }
 
 export const RegistryMarketplaceSource = {
+  XiaoJuClaw: 'xiaojuclaw',
   ClawHub: 'clawhub',
   Tencent: 'tencent',
 } as const
@@ -311,6 +312,7 @@ export const SkillImportProvider = {
 export type SkillImportProvider = typeof SkillImportProvider[keyof typeof SkillImportProvider]
 
 export const SkillInstallSource = {
+  XiaoJuClaw: 'xiaojuclaw',
   ClawHub: 'clawhub',
   Tencent: 'tencent',
   RawUrl: 'raw-url',
@@ -701,7 +703,7 @@ export type MarketplaceCategory =
   | 'search'
   | 'browser'
 
-export type RegistrySourceId = 'clawhub' | 'recommended' | 'tencent'
+export type RegistrySourceId = 'clawhub' | 'recommended' | 'tencent' | 'xiaojuclaw'
 export type RegistrySelectableSource = RegistrySourceId
 
 export interface RegistrySourceInfo {

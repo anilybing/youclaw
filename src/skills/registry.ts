@@ -9,8 +9,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { resolve } from 'node:path'
-import { getPaths } from '../config/index.ts'
+import { getEnv, getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
+import { getAuthToken } from '../routes/auth.ts'
 import { getSettings } from '../settings/manager.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import type { SkillsLoader } from './loader.ts'
@@ -71,7 +72,7 @@ export type MarketplaceCategory =
   | 'search'
   | 'browser'
 
-export type RegistrySourceId = 'clawhub' | 'recommended' | 'tencent'
+export type RegistrySourceId = 'clawhub' | 'recommended' | 'tencent' | 'xiaojuclaw'
 export type RegistrySelectableSource = RegistrySourceId
 
 export interface RegistrySourceInfo {
@@ -162,6 +163,8 @@ interface RegistryManagerOptions {
   tencentDownloadUrl?: string
   tencentIndexUrl?: string
   tencentEnabled?: boolean
+  xiaojuclawApiUrl?: string
+  xiaojuclawTokenGetter?: () => string | null | undefined
 }
 
 interface TencentSourceConfig {
@@ -169,6 +172,11 @@ interface TencentSourceConfig {
   indexUrl: string
   searchUrl: string
   downloadUrl: string
+}
+
+interface XiaoJuClawSourceConfig {
+  apiUrl: string
+  token: string
 }
 
 interface NormalizedMarketplaceQuery {
@@ -395,6 +403,34 @@ interface TencentSearchPage {
   page: number
 }
 
+interface XiaoJuClawIndexItem {
+  slug?: string
+  displayName?: string
+  summary?: string | null
+  category?: string | null
+  version?: string | null
+  sha256?: string
+  sizeBytes?: number
+  minTier?: string
+  downloads?: number | null
+  downloadUrl?: string
+}
+
+interface XiaoJuClawIndexResponse {
+  schemaVersion?: number
+  generatedAt?: string
+  items?: XiaoJuClawIndexItem[] | null
+}
+
+interface XiaoJuClawSkillItem {
+  slug: string
+  displayName: string
+  summary: string
+  category: MarketplaceCategory
+  version: string | null
+  downloads: number | null
+}
+
 const CLAWHUB_API_BASE = 'https://clawhub.ai/api/v1'
 const CLAWHUB_DOWNLOAD_URL = `${CLAWHUB_API_BASE}/download`
 const CLAWHUB_CONVEX_QUERY_URL = 'https://wry-manatee-359.convex.cloud/api/query'
@@ -409,6 +445,10 @@ const SEARCH_CURSOR_PREFIX = 'search:'
 const REMOTE_CACHE_TTL = 60_000
 const CLAWHUB_SORTS: MarketplaceSort[] = ['newest', 'updated', 'downloads', 'installs', 'stars', 'name']
 const TENCENT_SORTS: MarketplaceSort[] = ['score', 'downloads', 'stars', 'installs']
+const XIAOJUCLAW_SORTS: MarketplaceSort[] = ['downloads']
+const XIAOJUCLAW_INDEX_CACHE_TTL = 30_000
+const XIAOJUCLAW_LOGIN_REQUIRED_MESSAGE = '请先登录后再使用小橘技能库'
+const XIAOJUCLAW_PLAN_REQUIRED_MESSAGE = '当前套餐不包含该技能，请升级套餐'
 
 class RegistryHttpClient {
   constructor(
@@ -1080,6 +1120,189 @@ class TencentSource implements RegistrySource {
   }
 }
 
+class XiaoJuClawQueryLayer implements MarketplaceSourceQueryLayer<XiaoJuClawSkillItem, XiaoJuClawSkillItem> {
+  private indexCache: { items: XiaoJuClawSkillItem[]; fetchedAt: number } | null = null
+
+  constructor(
+    private readonly http: RegistryHttpClient,
+    private readonly getConfig: () => XiaoJuClawSourceConfig,
+  ) {}
+
+  hasCredentials(): boolean {
+    const { apiUrl, token } = this.getConfig()
+    return Boolean(apiUrl && token)
+  }
+
+  async search(query: NormalizedMarketplaceQuery): Promise<XiaoJuClawSkillItem[]> {
+    const needle = query.query.toLowerCase()
+    const items = await this.loadIndex()
+    if (!needle) {
+      return items
+    }
+    return items.filter((item) => (
+      [item.slug, item.displayName, item.summary].some((text) => text.toLowerCase().includes(needle))
+    ))
+  }
+
+  async getDetail(slug: string): Promise<XiaoJuClawSkillItem> {
+    const matched = (await this.loadIndex()).find((item) => item.slug === slug)
+    if (!matched) {
+      throw new Error(`Skill "${slug}" was not found`)
+    }
+    return matched
+  }
+
+  async download(slug: string): Promise<ArrayBuffer> {
+    const { apiUrl, token } = this.getConfig()
+    if (!apiUrl || !token) {
+      throw new Error(XIAOJUCLAW_LOGIN_REQUIRED_MESSAGE)
+    }
+
+    try {
+      return await this.http.fetchBuffer(`${apiUrl}/api/client/skills/${encodeURIComponent(slug)}/download`, {
+        headers: {
+          rdxtoken: token,
+          Accept: 'application/zip,application/octet-stream,*/*',
+        },
+      }, 'XiaoJuClaw archive download failed')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('PLAN_REQUIRED')) {
+        throw new Error(XIAOJUCLAW_PLAN_REQUIRED_MESSAGE)
+      }
+      throw error
+    }
+  }
+
+  private async loadIndex(): Promise<XiaoJuClawSkillItem[]> {
+    if (this.indexCache && Date.now() - this.indexCache.fetchedAt <= XIAOJUCLAW_INDEX_CACHE_TTL) {
+      return this.indexCache.items
+    }
+
+    const { apiUrl, token } = this.getConfig()
+    const payload = await this.http.fetchJson<XiaoJuClawIndexResponse>(`${apiUrl}/api/client/skills/index.json`, {
+      headers: {
+        rdxtoken: token,
+        Accept: 'application/json',
+      },
+    })
+
+    const items = (payload.items ?? [])
+      .filter((item): item is XiaoJuClawIndexItem & { slug: string } => (
+        typeof item.slug === 'string' && item.slug.length > 0
+      ))
+      .map((item) => ({
+        slug: item.slug,
+        displayName: item.displayName || item.slug,
+        summary: item.summary ?? '',
+        category: normalizeTencentMarketplaceCategory(item.category),
+        version: item.version ?? null,
+        downloads: typeof item.downloads === 'number' && Number.isFinite(item.downloads) ? item.downloads : null,
+      }))
+
+    this.indexCache = { items, fetchedAt: Date.now() }
+    return items
+  }
+}
+
+class XiaoJuClawAdapterLayer implements MarketplaceSourceAdapterLayer<XiaoJuClawSkillItem, XiaoJuClawSkillItem> {
+  adaptSearchItem(item: XiaoJuClawSkillItem, _locale: MarketplaceLocale, installedState?: InstalledSkillState): MarketplaceSkill {
+    return buildNormalizedMarketplaceSkill({
+      slug: item.slug,
+      displayName: item.displayName,
+      summary: item.summary,
+      installedState,
+      latestVersion: item.version,
+      updatedAt: null,
+      downloads: item.downloads,
+      stars: null,
+      installs: null,
+      category: item.category,
+      ownerName: null,
+      url: null,
+    })
+  }
+
+  adaptDetail(slug: string, payload: XiaoJuClawSkillItem, locale: MarketplaceLocale, installedState?: InstalledSkillState): MarketplaceSkillDetail {
+    return {
+      ...this.adaptSearchItem(payload, locale, installedState),
+      slug: payload.slug || slug,
+      author: undefined,
+      moderation: null,
+    }
+  }
+}
+
+class XiaoJuClawSource implements RegistrySource {
+  readonly info: RegistrySourceInfo = {
+    id: 'xiaojuclaw',
+    label: '小橘技能库',
+    description: 'XiaoJuClaw Skills official registry (login required).',
+    capabilities: {
+      search: true,
+      list: true,
+      detail: true,
+      download: true,
+      update: true,
+      auth: 'required',
+      cursorPagination: false,
+      defaultSort: 'downloads',
+      sortDirection: false,
+      sorts: XIAOJUCLAW_SORTS,
+    },
+  }
+
+  private readonly queryLayer: XiaoJuClawQueryLayer
+  private readonly adapterLayer = new XiaoJuClawAdapterLayer()
+
+  constructor(
+    http: RegistryHttpClient,
+    getConfig: () => XiaoJuClawSourceConfig,
+  ) {
+    this.queryLayer = new XiaoJuClawQueryLayer(http, getConfig)
+  }
+
+  async list(query: NormalizedMarketplaceQuery, installed: Map<string, InstalledSkillState>): Promise<MarketplacePage> {
+    // index 无分页：一次全量返回，cursor 恒为 null；无登录态时返回空页（UI 提示走登录引导）
+    if (!this.queryLayer.hasCredentials()) {
+      getLogger().warn({ source: 'xiaojuclaw' }, 'XiaoJuClaw skills source requires login; returning an empty marketplace page')
+      return {
+        items: [],
+        nextCursor: null,
+        query: query.query,
+        sort: query.sort,
+        order: query.order,
+      }
+    }
+
+    const direction = query.order === 'asc' ? 1 : -1
+    const items = (await this.queryLayer.search(query))
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => compareNullableNumber(a.item.downloads, b.item.downloads, direction) || a.index - b.index)
+      .map(({ item }) => this.adapterLayer.adaptSearchItem(item, query.locale, installed.get(item.slug)))
+
+    return {
+      items,
+      nextCursor: null,
+      query: query.query,
+      sort: query.sort,
+      order: query.order,
+    }
+  }
+
+  async getDetail(slug: string, installed: Map<string, InstalledSkillState>, locale: MarketplaceLocale): Promise<MarketplaceSkillDetail> {
+    if (!this.queryLayer.hasCredentials()) {
+      throw new Error(XIAOJUCLAW_LOGIN_REQUIRED_MESSAGE)
+    }
+    const payload = await this.queryLayer.getDetail(slug)
+    return this.adapterLayer.adaptDetail(slug, payload, locale, installed.get(slug))
+  }
+
+  async download(slug: string): Promise<ArrayBuffer> {
+    return this.queryLayer.download(slug)
+  }
+}
+
 export class RegistryManager {
   private recommended: RecommendedEntry[] = []
   private readonly http: RegistryHttpClient
@@ -1092,6 +1315,7 @@ export class RegistryManager {
     this.loadRecommendedList()
     this.http = new RegistryHttpClient(this.fetchImpl(), this.sleep.bind(this))
     this.sources = new Map<RegistrySelectableSource, RegistrySource>([
+      ['xiaojuclaw', new XiaoJuClawSource(this.http, () => this.resolveXiaojuclawConfig())],
       ['recommended', new RecommendedSource(() => this.recommended)],
       ['clawhub', new ClawHubSource(this.http, () => this.resolveClawhubToken())],
       ['tencent', new TencentSource(this.http, () => this.resolveTencentConfig())],
@@ -1410,6 +1634,34 @@ export class RegistryManager {
       indexUrl: this.options.tencentIndexUrl ?? settings?.indexUrl ?? TENCENT_INDEX_URL,
       searchUrl: this.options.tencentSearchUrl ?? settings?.searchUrl ?? TENCENT_SEARCH_URL,
       downloadUrl: this.options.tencentDownloadUrl ?? settings?.downloadUrl ?? TENCENT_DOWNLOAD_URL,
+    }
+  }
+
+  private resolveXiaojuclawConfig(): XiaoJuClawSourceConfig {
+    const apiUrl = this.options.xiaojuclawApiUrl ?? this.readCloudApiUrl()
+    const token = this.options.xiaojuclawTokenGetter
+      ? this.options.xiaojuclawTokenGetter()
+      : this.readCloudAuthToken()
+    return {
+      apiUrl: (apiUrl ?? '').trim().replace(/\/+$/, ''),
+      token: (token ?? '').trim(),
+    }
+  }
+
+  private readCloudApiUrl(): string | undefined {
+    try {
+      return getEnv().XiaoJuClaw_API_URL
+    } catch {
+      return undefined
+    }
+  }
+
+  private readCloudAuthToken(): string | null {
+    try {
+      return getAuthToken()
+    } catch {
+      // 数据库未初始化（如早期启动阶段）时按未登录处理
+      return null
     }
   }
 
@@ -1792,9 +2044,18 @@ function resolveTencentSortParams(sort: MarketplaceSort, requestedOrder?: Market
 }
 
 function compareRegistrySourceInfo(a: RegistrySourceInfo, b: RegistrySourceInfo): number {
-  if (a.id === 'recommended') return -1
-  if (b.id === 'recommended') return 1
+  const rankDiff = registrySourceRank(a.id) - registrySourceRank(b.id)
+  if (rankDiff !== 0) {
+    return rankDiff
+  }
   return a.id.localeCompare(b.id)
+}
+
+// 自有源排第一（默认源），推荐榜其次，第三方源按字母序垫后
+function registrySourceRank(id: RegistrySelectableSource): number {
+  if (id === 'xiaojuclaw') return 0
+  if (id === 'recommended') return 1
+  return 2
 }
 
 function normalizeStats(stats: unknown): MarketplaceStats {

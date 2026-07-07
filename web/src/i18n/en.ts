@@ -647,6 +647,7 @@ export const en = {
     currentRegistrySource: 'Current source',
     registrySourceClawhub: 'ClawHub',
     registrySourceTencent: 'Tencent',
+    registrySourceXiaojuclaw: 'XiaoJuClaw Skills',
     marketplaceEnabled: 'Enabled',
     registryApiBaseUrl: 'API base URL',
     registryDownloadUrl: 'Download URL',

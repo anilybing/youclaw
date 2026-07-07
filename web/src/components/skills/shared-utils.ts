@@ -22,6 +22,7 @@ export function getExternalSkillSourceLabel(skill: Skill | ManagedSkill, t: Retu
   const source = skill.registryMeta?.source
 
   if (skill.externalSource === 'marketplace') {
+    if (source === 'xiaojuclaw') return t.settings.registrySourceXiaojuclaw
     if (source === 'clawhub') return t.settings.registrySourceClawhub
     if (source === 'tencent') return t.settings.registrySourceTencent
     return t.skills.sourceMarketplace
