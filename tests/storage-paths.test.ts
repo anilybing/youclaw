@@ -47,12 +47,12 @@ describe('storage paths', () => {
   })
 
   afterEach(() => {
-    process.env.DATA_DIR = originalEnv.DATA_DIR
-    process.env.HOME = originalEnv.HOME
-    process.env.USERPROFILE = originalEnv.USERPROFILE
-    process.env.WORKSPACE_DIR = originalEnv.WORKSPACE_DIR
-    process.env.APPDATA = originalEnv.APPDATA
-    process.env.XDG_DATA_HOME = originalEnv.XDG_DATA_HOME
+    // 注意：process.env.X = undefined 会写成字符串 "undefined"（Node/Bun 语义），
+    // 后续 getPaths() 会把它当相对路径在仓库根创建 undefined/ 目录——必须 delete。
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
     resetPathsCache()
 
     while (tempDirs.length > 0) {

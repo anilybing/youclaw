@@ -29,9 +29,12 @@ describe('SkillsWatcher', () => {
   })
 
   afterEach(() => {
-    process.env.DATA_DIR = originalEnv.DATA_DIR
-    process.env.WORKSPACE_DIR = originalEnv.WORKSPACE_DIR
-    process.env.RESOURCES_DIR = originalEnv.RESOURCES_DIR
+    // 注意：process.env.X = undefined 会写成字符串 "undefined"（Node/Bun 语义），
+    // 后续 getPaths() 会把它当相对路径在仓库根创建 undefined/ 目录——必须 delete。
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
     resetPathsCache()
     resetSkillsSnapshotVersion()
 
