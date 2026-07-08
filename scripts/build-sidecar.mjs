@@ -106,6 +106,33 @@ export const BUILD_CONSTANTS: Record<string, string> = ${JSON.stringify(entries,
   console.log(`Generated build-constants.ts: ${summary}`)
 }
 
+// Generate the package.json that Tauri bundles next to the sidecar binary.
+//
+// pi-coding-agent reads package.json from dirname(process.execPath) at
+// module-load time (for name/version/piConfig); if it is missing the sidecar
+// crashes immediately with ENOENT and the desktop app shows "后端服务无法启动".
+// Tauri only bundles this file (bundle.resources -> "package.json") when it
+// exists at build time, and SILENTLY skips it otherwise (no build error). It
+// must therefore be (re)generated on every build so it always ships next to the
+// installed exe — the install dir (e.g. C:\Program Files) is read-only, so the
+// runtime fallback in src-tauri/src/lib.rs cannot create it there.
+function generateSidecarPackageJson() {
+  let name = 'XiaoJuClaw'
+  let version = '1.0.0'
+  try {
+    const rootPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'))
+    if (typeof rootPkg.name === 'string' && rootPkg.name.trim()) name = rootPkg.name.trim()
+    if (typeof rootPkg.version === 'string' && rootPkg.version.trim()) version = rootPkg.version.trim()
+  } catch {
+    // Fall back to defaults if the desktop package.json cannot be read.
+  }
+
+  const sidecarPkgPath = resolve(root, 'src-tauri', 'package.json')
+  const content = `${JSON.stringify({ name, version, type: 'module', private: true })}\n`
+  writeFileSync(sidecarPkgPath, content, 'utf-8')
+  console.log(`Generated src-tauri/package.json: name=${name}, version=${version}`)
+}
+
 function build(bunTarget, outName) {
   const outPath = resolve(binDir, outName)
   console.log(`Building: ${bunTarget} → ${outName}`)
@@ -117,16 +144,36 @@ function build(bunTarget, outName) {
     )
     console.log(`  Done: ${outPath}`)
   } catch (err) {
-    if (process.platform === 'win32' && bunTarget === 'bun-windows-x64-baseline') {
-      console.warn(`  Target build failed, retrying with native Bun compile: ${err.message}`)
+    // The baseline target needs bun to download a cross-compile runtime, which
+    // can fail with an incomplete download. Falling back to a native compile
+    // produces an AVX2-requiring binary that crashes on older CPUs — so it is
+    // only allowed as an explicit, dev-only opt-in (XJC_ALLOW_NATIVE_SIDECAR=1).
+    // Production builds MUST fail here rather than silently ship a native binary.
+    const allowNativeFallback = process.env.XJC_ALLOW_NATIVE_SIDECAR === '1'
+    if (process.platform === 'win32' && bunTarget === 'bun-windows-x64-baseline' && allowNativeFallback) {
+      console.warn('')
+      console.warn('  ================================================================')
+      console.warn('  [WARN] baseline target failed and XJC_ALLOW_NATIVE_SIDECAR=1 →')
+      console.warn('         building a NATIVE (AVX2-only) sidecar. DO NOT SHIP this to')
+      console.warn('         end users; it will crash on CPUs without AVX2.')
+      console.warn(`         Reason: ${err.message}`)
+      console.warn('  ================================================================')
+      console.warn('')
       execSync(
         `bun build --compile src/index.ts --outfile "${outPath}"`,
         { cwd: root, stdio: 'inherit' }
       )
-      console.log(`  Done: ${outPath}`)
+      console.log(`  Done (NATIVE, non-baseline): ${outPath}`)
       return
     }
-    console.error(`  Failed to build ${bunTarget}:`, err.message)
+    console.error('')
+    console.error(`  [ERROR] Failed to build sidecar target "${bunTarget}": ${err.message}`)
+    if (process.platform === 'win32' && bunTarget === 'bun-windows-x64-baseline') {
+      console.error('          bun could not produce the baseline (no-AVX) runtime, likely')
+      console.error('          an incomplete target download. Just re-run the build — bun')
+      console.error('          re-fetches the target. For a LOCAL dev build only, you may')
+      console.error('          set XJC_ALLOW_NATIVE_SIDECAR=1 to allow a native fallback.')
+    }
     process.exit(1)
   }
 }
@@ -136,6 +183,10 @@ mkdirSync(binDir, { recursive: true })
 
 // Generate compile-time constants
 generateBuildConstants()
+
+// Generate the package.json Tauri ships next to the sidecar binary (required at
+// sidecar startup; must exist before `tauri build` bundles resources).
+generateSidecarPackageJson()
 
 const buildAll = process.argv.includes('--all')
 const platformFlagIndex = process.argv.indexOf('--platform')

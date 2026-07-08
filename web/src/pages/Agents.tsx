@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { getAgents, getAgentDocs, updateAgentDoc, createAgent, deleteAgent, getAgentConfig, updateAgentConfig, getSkills, getMarketplaceSkill, installRecommendedSkill } from '../api/client'
-import type { BrowserProfileDTO, Skill, MarketplaceSkill, MarketplaceSkillDetail } from '../api/client'
+import { getAgents, getAgentDocs, updateAgentDoc, createAgent, deleteAgent, getAgentConfig, updateAgentConfig, getSkills, getMarketplaceSkill, installRecommendedSkill, getSettings, ActiveModelProvider } from '../api/client'
+import type { BrowserProfileDTO, Skill, MarketplaceSkill, MarketplaceSkillDetail, CustomModelDTO } from '../api/client'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, FolderOpen, MessageSquare, Plus, Trash2,
@@ -61,10 +61,52 @@ type Agent = {
   id: string
   name: string
   model?: string
+  hasExplicitModel?: boolean
   workspaceDir: string
   status?: string
   hasConfig?: boolean
   state?: AgentState | null
+}
+
+type ActiveModelRef = { provider: ActiveModelProvider; id?: string }
+
+// 视为「跟随全局设置」的模型值：空 / default / inherit / settings
+function isInheritModelValue(model?: string): boolean {
+  const m = (model || '').trim().toLowerCase()
+  return m === '' || m === 'default' || m === 'inherit' || m === 'settings'
+}
+
+function findCustomModel(models: CustomModelDTO[], modelRef?: string): CustomModelDTO | undefined {
+  if (!modelRef) return undefined
+  const ref = modelRef.trim()
+  return models.find(
+    (c) => c.id === ref || c.modelId === ref || `${c.provider}/${c.modelId}` === ref,
+  )
+}
+
+// 全局「当前模型」的可读名称
+function activeModelLabel(active: ActiveModelRef, models: CustomModelDTO[]): string {
+  if (active.provider === ActiveModelProvider.Custom && active.id) {
+    const m = models.find((c) => c.id === active.id)
+    if (m) return m.name || m.modelId
+  }
+  return 'XiaoJuClaw 内置'
+}
+
+// Agent 实际会使用的模型（可读标签）：无显式模型时=跟随全局设置。
+function effectiveModelLabel(agent: Agent, active: ActiveModelRef, models: CustomModelDTO[]): string {
+  if (!agent.hasExplicitModel || isInheritModelValue(agent.model)) {
+    return `跟随设置 · ${activeModelLabel(active, models)}`
+  }
+  const m = findCustomModel(models, agent.model)
+  return m ? (m.name || m.modelId) : (agent.model || '—')
+}
+
+// 模型下拉的当前值：'default' 表示跟随全局设置，否则为自定义模型 id。
+function modelSelectValue(agent: Agent, models: CustomModelDTO[]): string {
+  if (!agent.hasExplicitModel || isInheritModelValue(agent.model)) return 'default'
+  const m = findCustomModel(models, agent.model)
+  return m ? m.id : 'default'
 }
 
 type SubAgentDef = {
@@ -132,12 +174,26 @@ export function Agents() {
   const [allSkills, setAllSkills] = useState<Skill[]>([])
   const [agentSkills, setAgentSkills] = useState<string[] | undefined>(undefined)
 
+  // 模型设置（用于 Agent 模型选择 + "实际使用模型" 展示）
+  const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
+  const [activeModel, setActiveModel] = useState<ActiveModelRef>({ provider: ActiveModelProvider.Builtin })
+
   const loadAgents = useCallback(() => {
     getAgents().then((list) => setAgents(list as Agent[])).catch(() => {})
   }, [])
 
+  const loadModelSettings = useCallback(() => {
+    getSettings()
+      .then((s) => {
+        setCustomModels(s.customModels || [])
+        setActiveModel(s.activeModel || { provider: ActiveModelProvider.Builtin })
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     loadAgents()
+    loadModelSettings()
     refreshBrowserProfiles()
     getSkills().then(setAllSkills).catch(() => {})
 
@@ -146,8 +202,14 @@ export function Agents() {
       getSkills().then(setAllSkills).catch(() => {})
     }
     window.addEventListener('skills-changed', handleSkillsChanged)
-    return () => window.removeEventListener('skills-changed', handleSkillsChanged)
-  }, [loadAgents, refreshBrowserProfiles])
+    // 全局模型设置变化（Settings → Models 保存后广播）时刷新，保证"跟随设置"展示实时
+    const handleSettingsChanged = () => loadModelSettings()
+    window.addEventListener('settings-changed', handleSettingsChanged)
+    return () => {
+      window.removeEventListener('skills-changed', handleSkillsChanged)
+      window.removeEventListener('settings-changed', handleSettingsChanged)
+    }
+  }, [loadAgents, loadModelSettings, refreshBrowserProfiles])
 
   // Load documents for the selected agent
   useEffect(() => {
@@ -202,6 +264,21 @@ export function Agents() {
       },
       browserProfile: null,
     })
+  }
+
+  // 切换 Agent 使用的模型：'default' = 跟随全局设置，否则为自定义模型 id。
+  // 运行时 resolveRuntimeModelConfig 会把 'default' 归一为"继承全局 activeModel"，
+  // 自定义 id 则精确匹配 customModels 中的条目（见 src/agent/runtime-model.ts）。
+  const handleChangeAgentModel = async (value: string) => {
+    if (!selected) return
+    try {
+      await updateAgentConfig(selected, { model: value || 'default' })
+      loadAgents()
+      refreshChatAgents?.()
+      notify.success('已更新 Agent 模型')
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : '更新模型失败')
+    }
   }
 
   // Rename Agent
@@ -326,6 +403,8 @@ export function Agents() {
             setNewName={setNewName}
             newModel={newModel}
             setNewModel={setNewModel}
+            customModels={customModels}
+            activeModel={activeModel}
             isCreating={isCreating}
             onCreate={handleCreate}
             onCancel={() => {
@@ -339,6 +418,9 @@ export function Agents() {
           <AgentDetail
             t={t}
             agent={selectedAgent}
+            customModels={customModels}
+            activeModel={activeModel}
+            onChangeModel={handleChangeAgentModel}
             docs={docs}
             editingDoc={editingDoc}
             editContent={editContent}
@@ -402,6 +484,8 @@ function CreateAgentForm({
   setNewName,
   newModel,
   setNewModel,
+  customModels,
+  activeModel,
   isCreating,
   onCreate,
   onCancel,
@@ -411,6 +495,8 @@ function CreateAgentForm({
   setNewName: (v: string) => void
   newModel: string
   setNewModel: (v: string) => void
+  customModels: CustomModelDTO[]
+  activeModel: ActiveModelRef
   isCreating: boolean
   onCreate: () => void
   onCancel: () => void
@@ -433,12 +519,25 @@ function CreateAgentForm({
 
         <div>
           <label className="block text-sm font-medium mb-1.5">{t.agents.model}</label>
-          <input
-            data-testid="agent-input-model"
-            value={newModel}
-            onChange={(e) => setNewModel(e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
+          <Select value={newModel || 'default'} onValueChange={setNewModel}>
+            <SelectTrigger
+              data-testid="agent-input-model"
+              className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">{`跟随全局设置（当前：${activeModelLabel(activeModel, customModels)}）`}</SelectItem>
+              {customModels.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {(m.name || m.modelId)}{m.name && m.modelId && m.name !== m.modelId ? ` · ${m.modelId}` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            默认跟随「设置 → 模型」中当前选择的模型；也可在此为该 Agent 单独指定自定义模型。
+          </p>
         </div>
 
         <div className="flex gap-2 pt-2">
@@ -467,6 +566,9 @@ function CreateAgentForm({
 function AgentDetail({
   t,
   agent,
+  customModels,
+  activeModel,
+  onChangeModel,
   docs,
   editingDoc,
   editContent,
@@ -491,6 +593,9 @@ function AgentDetail({
 }: {
   t: ReturnType<typeof useI18n>['t']
   agent: Agent
+  customModels: CustomModelDTO[]
+  activeModel: ActiveModelRef
+  onChangeModel: (value: string) => void | Promise<void>
   docs: Record<string, string>
   editingDoc: string | null
   editContent: string
@@ -563,7 +668,23 @@ function AgentDetail({
                 </>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">{agent.id} · {agent.model}</p>
+            <p className="text-sm text-muted-foreground">{agent.id} · {effectiveModelLabel(agent, activeModel, customModels)}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground shrink-0">{t.agents.model}</span>
+              <Select value={modelSelectValue(agent, customModels)} onValueChange={(v) => { void onChangeModel(v) }}>
+                <SelectTrigger className="h-7 w-[260px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">{`跟随全局设置（当前：${activeModelLabel(activeModel, customModels)}）`}</SelectItem>
+                  {customModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {(m.name || m.modelId)}{m.name && m.modelId && m.name !== m.modelId ? ` · ${m.modelId}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">

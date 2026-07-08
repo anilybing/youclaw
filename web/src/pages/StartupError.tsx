@@ -2,11 +2,10 @@
 import { useState } from "react"
 import { useI18n } from "@/i18n"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, Loader2, Mail, Github } from "lucide-react"
+import { AlertTriangle, Loader2, Mail } from "lucide-react"
 import logoUrl from "@/assets/logo.png"
 import appConfig from "../../../app.config.ts"
 
-const GITHUB_URL = appConfig.github
 const SUPPORT_EMAIL = appConfig.supportEmail
 
 interface StartupErrorProps {
@@ -79,15 +78,6 @@ export function StartupError({ onRetry }: StartupErrorProps) {
                 >
                   <Mail size={14} />
                   <span>{SUPPORT_EMAIL}</span>
-                </a>
-                <a
-                  href={GITHUB_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Github size={14} />
-                  <span>GitHub</span>
                 </a>
               </div>
             </div>

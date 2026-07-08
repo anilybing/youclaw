@@ -12,8 +12,11 @@ import {
   WORKBENCH_AGENT_ID,
   WORKBENCH_TASKS,
   WORKBENCH_CRON_PRESETS,
+  WORKBENCH_CATEGORIES,
+  getTaskCategory,
   type WorkbenchLocale,
   type WorkbenchTask,
+  type WorkbenchCategoryId,
 } from '@/config/workbench-tasks'
 import type { Attachment } from '@/types/attachment'
 
@@ -51,7 +54,7 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
   const navigate = useNavigate()
   // 每张卡可绑定不同数字员工（电商卡→电商助理），缺省用工作台默认（办公助理）
   const agentId = task.agentId ?? WORKBENCH_AGENT_ID
-  const { send } = useChatActions(agentId)
+  const { send, newChat } = useChatActions(agentId)
   const [values, setValues] = useState<Record<string, string>>({})
   const [files, setFiles] = useState<Record<string, File | null>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -102,6 +105,10 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
         if (!file) continue
         attachments.push(await uploadChatAttachment(file))
       }
+      // 每次派发都开一个「全新对话」再发送：避免复用当前(常是第一个)会话，
+      // 否则不同任务/技能的上下文会互相污染。newChat() 把 activeChatId 置空，
+      // send() 随即创建独立的新会话并绑定该数字员工。
+      newChat()
       await send(prompt, attachments.length ? attachments : undefined)
       void reportTelemetry('skill_run', { skill: task.id, ok: true })
       navigate('/')
@@ -218,9 +225,30 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
   )
 }
 
+function CategoryTab({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-all ${
+        active
+          ? 'bg-primary text-primary-foreground shadow-sm'
+          : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`text-xs tabular-nums ${active ? 'text-primary-foreground/70' : 'text-muted-foreground/60'}`}>{count}</span>
+    </button>
+  )
+}
+
 export function Workbench() {
   const locale = useWorkbenchLocale()
   const [activeTask, setActiveTask] = useState<WorkbenchTask | null>(null)
+  const [activeCategory, setActiveCategory] = useState<'all' | WorkbenchCategoryId>('all')
+
+  const countFor = (id: WorkbenchCategoryId) =>
+    WORKBENCH_TASKS.filter((task) => getTaskCategory(task) === id).length
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -232,15 +260,59 @@ export function Workbench() {
             <h2 className="text-xl font-bold">{locale === 'zh' ? '数字员工' : 'Digital Staff'}</h2>
             <p className="text-sm text-muted-foreground mt-1">
               {locale === 'zh'
-                ? '选一个任务，填两三个空，剩下交给小橘办公助理。产出文件在工作区「办公产出」目录。'
-                : 'Pick a task, fill a couple of fields, and the office assistant handles the rest.'}
+                ? '选一个任务，填两三个空，剩下交给数字员工。每次派发会开一个独立对话，产出文件在对应产出目录。'
+                : 'Pick a task, fill a couple of fields, and the digital staff handles the rest in a dedicated conversation.'}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {WORKBENCH_TASKS.map((task) => (
-              <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
+
+          {/* 分类 Tab —— 按类型划分，未来新增能力自动出现在对应 tab */}
+          <div className="flex flex-wrap items-center gap-2">
+            <CategoryTab
+              active={activeCategory === 'all'}
+              label={locale === 'zh' ? '全部' : 'All'}
+              count={WORKBENCH_TASKS.length}
+              onClick={() => setActiveCategory('all')}
+            />
+            {WORKBENCH_CATEGORIES.map((cat) => (
+              <CategoryTab
+                key={cat.id}
+                active={activeCategory === cat.id}
+                label={`${cat.icon} ${cat.label[locale]}`}
+                count={countFor(cat.id)}
+                onClick={() => setActiveCategory(cat.id)}
+              />
             ))}
           </div>
+
+          {/* 全部：按类型分组展示；单类：平铺该类 */}
+          {activeCategory === 'all' ? (
+            <div className="space-y-8">
+              {WORKBENCH_CATEGORIES.map((cat) => {
+                const tasks = WORKBENCH_TASKS.filter((task) => getTaskCategory(task) === cat.id)
+                if (tasks.length === 0) return null
+                return (
+                  <section key={cat.id} className="space-y-3">
+                    <h3 className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+                      <span aria-hidden>{cat.icon}</span>
+                      {cat.label[locale]}
+                      <span className="text-xs font-normal text-muted-foreground/60">{tasks.length}</span>
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                      {tasks.map((task) => (
+                        <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {WORKBENCH_TASKS.filter((task) => getTaskCategory(task) === activeCategory).map((task) => (
+                <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

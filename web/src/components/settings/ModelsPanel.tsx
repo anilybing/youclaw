@@ -29,6 +29,10 @@ const BUILTIN_MODELS = [
   },
 ] as const
 
+// [XJC] 暂时隐藏「云服务·按积分计费」的内置模型：默认引导用户使用自定义 API（自带 Key）。
+// 恢复云积分计费模式时改回 true 即可（其余逻辑均以此常量为开关）。
+const CLOUD_BILLING_ENABLED = false
+
 const CUSTOM_MODEL_DOCS_URL = getOfficialDocsUrl('custom-models')
 const CUSTOM_MODEL_PROVIDER_META: Record<CustomModelDTO['provider'], { label: string; defaultBaseUrl: string; modelIdExample?: string }> = {
   anthropic: {
@@ -176,6 +180,8 @@ export function ModelsPanel() {
   // Form validation errors (shown only after field is touched)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const isBuiltinActive = activeModel.provider === ActiveModelProvider.Builtin
+  // 是否展示内置(云积分)模型：需云端启用 且 未关闭云积分计费开关
+  const showBuiltin = cloudEnabled && CLOUD_BILLING_ENABLED
   const currentProviderMeta = CUSTOM_MODEL_PROVIDER_META[formProvider]
 
   // Load from backend API
@@ -185,6 +191,17 @@ export function ModelsPanel() {
       setCustomModels(settings.customModels)
       if (settings.builtinModelId) {
         setBuiltinModelId(settings.builtinModelId)
+      }
+      // 云积分计费隐藏时：若当前落在内置(积分)且已有自定义模型，默认切到自定义 API
+      if (!CLOUD_BILLING_ENABLED && settings.activeModel.provider === ActiveModelProvider.Builtin) {
+        const [first] = settings.customModels
+        if (first) {
+          const newActive: ActiveModel = { provider: ActiveModelProvider.Custom, id: first.id }
+          setActiveModel(newActive)
+          apiUpdateSettings({ activeModel: newActive })
+            .then(() => useAppRuntimeStore.setState({ modelReady: true }))
+            .catch(console.error)
+        }
       }
     }).catch(console.error)
   }, [])
@@ -364,9 +381,9 @@ export function ModelsPanel() {
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           {t.settings.activeModel}
         </h4>
-        <div className={cn("grid gap-3", cloudEnabled ? "grid-cols-2" : "grid-cols-1")}>
-          {/* Built-in model (cloud service) card -- hidden in offline mode */}
-          {cloudEnabled && (
+        <div className={cn("grid gap-3", showBuiltin ? "grid-cols-2" : "grid-cols-1")}>
+          {/* Built-in model (cloud service) card -- hidden when cloud billing is off */}
+          {showBuiltin && (
             <button
               onClick={() => handleSetActiveProvider(ActiveModelProvider.Builtin)}
               className={cn(
@@ -427,8 +444,8 @@ export function ModelsPanel() {
         </div>
       </div>
 
-      {/* Built-in model list -- hidden in offline mode */}
-      {cloudEnabled && (
+      {/* Built-in model list -- hidden when cloud billing is off */}
+      {showBuiltin && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
             {t.settings.builtinModels}

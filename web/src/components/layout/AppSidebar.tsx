@@ -29,7 +29,6 @@ import {
   Brain,
   BriefcaseBusiness,
   CalendarClock,
-  Github,
   LogIn,
   LogOut,
   Mail,
@@ -38,7 +37,6 @@ import {
   Puzzle,
   ScrollText,
   Settings2,
-  Sparkles,
   KeyRound,
   SquarePen,
   User,
@@ -122,7 +120,9 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     { to: "/agents", icon: Bot, label: t.nav.agents },
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },
     { to: "/skills", icon: Puzzle, label: t.nav.skills },
-    { to: "/templates", icon: Sparkles, label: "模板中心" },
+    // [XJC] 模板中心暂时隐藏：积分变现方向未定，且与「数字员工」功能重叠。
+    // 恢复方法：取消下一行注释，并把 `Sparkles` 加回上面的 lucide-react 导入。
+    // { to: "/templates", icon: Sparkles, label: "模板中心" },
     { to: "/activation", icon: KeyRound, label: "激活与设备" },
     { to: "/memory", icon: Brain, label: t.nav.memory },
     { to: "/logs", icon: ScrollText, label: t.nav.logs },
@@ -380,14 +380,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                   </NavLink>
                 </DropdownMenuItem>
               )}
-
-              <DropdownMenuItem
-                onClick={() => openExternal(appConfig.github)}
-                className="gap-3 px-3 py-2.5 rounded-lg cursor-pointer"
-              >
-                <Github className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">GitHub</span>
-              </DropdownMenuItem>
 
               <DropdownMenuItem
                 onClick={() => onOpenSettings("about")}

@@ -40,7 +40,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
     { id: "general", label: t.settings.general, icon: Palette },
     { id: "models", label: t.settings.models, icon: Cpu },
     { id: "marketplace", label: t.settings.marketplaceConfig, icon: Store, enabled: flag("features.skill_market_enabled", true) },
-    { id: "channels", label: t.nav.channels, icon: Radio, enabled: flag("features.channels_enabled", false) },
+    { id: "channels", label: t.nav.channels, icon: Radio, enabled: flag("features.channels_enabled", true) },
     { id: "browser", label: t.nav.browser, icon: Globe, enabled: flag("features.browser_enabled", false) },
     { id: "environment", label: t.settings.environment, icon: Terminal },
     // Invitation/referral tab hidden — not applicable for USB activation model

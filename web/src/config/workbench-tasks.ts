@@ -4,6 +4,9 @@
 
 export type WorkbenchLocale = 'zh' | 'en'
 
+/** 工作台任务分类（按类型分 tab；未来新增能力扩展此联合类型 + WORKBENCH_CATEGORIES 即可） */
+export type WorkbenchCategoryId = 'office' | 'ecom'
+
 export interface WorkbenchField {
   key: string
   kind: 'text' | 'textarea' | 'file'
@@ -32,11 +35,31 @@ export interface WorkbenchTask {
    * 电商能力包卡片绑定 ecommerce-assistant（电商助理）。
    */
   agentId?: string
+  /** 任务分类；缺省按 agentId 归类（见 getTaskCategory），未来能力可显式指定 */
+  category?: WorkbenchCategoryId
 }
 
 export const WORKBENCH_AGENT_ID = 'office-assistant'
 /** 电商能力包卡片绑定的数字员工 */
 export const ECOMMERCE_AGENT_ID = 'ecommerce-assistant'
+
+/** 工作台分类定义（数组顺序即 tab 展示顺序） */
+export interface WorkbenchCategory {
+  id: WorkbenchCategoryId
+  label: Record<WorkbenchLocale, string>
+  icon: string
+}
+
+export const WORKBENCH_CATEGORIES: WorkbenchCategory[] = [
+  { id: 'office', label: { zh: '办公', en: 'Office' }, icon: '🗂️' },
+  { id: 'ecom', label: { zh: '电商', en: 'E-commerce' }, icon: '🛒' },
+]
+
+/** 归类一个任务：优先显式 category，其次按绑定的数字员工推断 */
+export function getTaskCategory(task: WorkbenchTask): WorkbenchCategoryId {
+  if (task.category) return task.category
+  return task.agentId === ECOMMERCE_AGENT_ID ? 'ecom' : 'office'
+}
 
 /** 定时执行的 cron 预设（T-G5，工作台友好选项，避免让小白写 cron 表达式） */
 export interface CronPreset {

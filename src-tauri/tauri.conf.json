@@ -45,6 +45,7 @@
       "bin/XiaoJuClaw-server"
     ],
     "resources": [
+      "package.json",
       "../agents/**/*",
       "../skills/**/*",
       "../prompts/**/*",
@@ -72,7 +73,7 @@
     },
     "updater": {
       "endpoints": [
-        "https://api.xiaojuclaw.top/api/client/releases/latest.json?current={{current_version}}&platform={{target}}-{{arch}}"
+        "https://www.xiaojuclaw.top/api/client/releases/latest.json?current={{current_version}}&platform={{target}}-{{arch}}"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBMUNCNzUwMDZGRUMxNDMKUldSRHdmNEdVTGNjS2p2TWNSaFlsYVUvVFVxNEVENy9lS1BUakxyT2lUUkQvangzTmhrSUJnVzEK"
     }

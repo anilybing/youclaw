@@ -32,5 +32,17 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["web", "tests", "data", "**/*.test.ts", "src-tauri/target", "skills-dev"]
+  "exclude": [
+    "web",
+    "tests",
+    "data",
+    "**/*.test.ts",
+    "src-tauri/target",
+    "skills-dev",
+    "release",
+    "tool-cache",
+    "usb-payload",
+    "dist",
+    "out"
+  ]
 }

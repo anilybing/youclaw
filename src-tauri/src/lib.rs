@@ -1007,13 +1007,22 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
-            // Load template icon for tray (auto-adapts to macOS dark/light mode)
+            // Tray icon.
+            //  - macOS: monochrome "template" image the OS recolors for the
+            //    light/dark menu bar (icon_as_template = true).
+            //  - Windows/Linux: template mode is NOT honored there and renders
+            //    the monochrome image as an unrecognizable black blob, so ship
+            //    the full-color app icon instead.
+            #[cfg(target_os = "macos")]
             let tray_icon = Image::from_bytes(include_bytes!("../icons/trayTemplate@2x.png"))
+                .expect("failed to load tray icon");
+            #[cfg(not(target_os = "macos"))]
+            let tray_icon = Image::from_bytes(include_bytes!("../icons/64x64.png"))
                 .expect("failed to load tray icon");
 
             let _tray = TrayIconBuilder::new()
                 .icon(tray_icon)
-                .icon_as_template(true)
+                .icon_as_template(cfg!(target_os = "macos"))
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
                     match event.id.as_ref() {
