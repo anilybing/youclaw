@@ -1,8 +1,11 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useI18n } from "@/i18n"
 import { useAppRuntimeStore } from "@/stores/app"
-import { mvpLogin } from "@/api/client"
+import { mvpLogin, syncRemoteStaff } from "@/api/client"
+import { ApiError } from "@/lib/api-error"
+import { useWorkbenchCardsStore } from "@/stores/workbench-cards"
 import { LogIn, Loader2, Calendar, MessageSquare, ShieldCheck, Settings2, Phone, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,7 +21,8 @@ const LOGIN_SETTINGS_TABS: SettingsTab[] = ["general", "models", "environment", 
 
 export function Login() {
   const { t } = useI18n()
-  const { authLoading, fetchUser, fetchCreditBalance } = useAppRuntimeStore()
+  const { authLoading, fetchUser, fetchCreditBalance, enterOfflineFallback } = useAppRuntimeStore()
+  const navigate = useNavigate()
   const [version, setVersion] = useState("")
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [loginMethod, setLoginMethod] = useState<"mobile" | "email">("mobile")
@@ -59,11 +63,26 @@ export function Login() {
       await fetchUser()
       await fetchCreditBalance()
       notify.success("登录成功")
+      // 登录后拉取服务端下发的能力（数字员工 + 工作台卡），首登即可用，无需重启
+      void syncRemoteStaff().catch(() => {})
+      void useWorkbenchCardsStore.getState().fetchCards()
     } catch (err) {
+      // 连不上远程服务器（网络失败 / 代理层 5xx）：不困在登录页，直接降级为离线可用。
+      const unreachable = err instanceof ApiError && (err.status === 0 || err.status >= 500 || err.errorCode === 'NETWORK_ERROR')
+      if (unreachable) {
+        notify.info("暂时无法连接服务器，已进入离线模式", { description: "可用本地模型与内置数字员工；联网后可在登录页登录以使用云端功能" })
+        goOffline()
+        return
+      }
       notify.error(err instanceof Error ? err.message : "登录失败")
     } finally {
       setLoginInProgress(false)
     }
+  }
+
+  function goOffline() {
+    enterOfflineFallback()
+    navigate("/workbench", { replace: true })
   }
 
   const isLoading = authLoading || loginInProgress
@@ -217,6 +236,16 @@ export function Login() {
             <p className="text-center text-xs text-muted-foreground">
               首次登录将自动创建账号
             </p>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={goOffline}
+                className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline transition-colors"
+              >
+                连不上服务器？离线使用（本地模型 + 内置数字员工）
+              </button>
+            </div>
 
             <div className="pt-6 border-t border-border/50 text-center">
               <Button

@@ -5,6 +5,7 @@ import { Shell } from './components/layout/Shell'
 import { Chat } from './pages/Chat'
 import { Agents } from './pages/Agents'
 import { Memory } from './pages/Memory'
+import { Knowledge } from './pages/Knowledge'
 import { Tasks } from './pages/Tasks'
 import { Logs } from './pages/Logs'
 import { Skills } from './pages/Skills'
@@ -29,8 +30,10 @@ import { getErrorMessage, logAuthClientEvent, maskToken, sanitizeDeepLink } from
 function AuthGuard() {
   const isLoggedIn = useAppRuntimeStore((s) => s.isLoggedIn)
   const cloudEnabled = useAppRuntimeStore((s) => s.cloudEnabled)
-  // Offline mode does not require login
-  if (!cloudEnabled || isLoggedIn) return <Shell><Outlet /></Shell>
+  const offlineFallback = useAppRuntimeStore((s) => s.offlineFallback)
+  // 离线模式无需登录；线上版连不上远程服务器时也降级放行（offlineFallback），
+  // 避免把用户挡在登录页外无法使用。
+  if (!cloudEnabled || isLoggedIn || offlineFallback) return <Shell><Outlet /></Shell>
   return <Navigate to="/login" replace />
 }
 
@@ -39,12 +42,13 @@ export default function App() {
   useTheme()
   const isLoggedIn = useAppRuntimeStore((s) => s.isLoggedIn)
   const cloudEnabled = useAppRuntimeStore((s) => s.cloudEnabled)
+  const offlineFallback = useAppRuntimeStore((s) => s.offlineFallback)
   const envReady = useAppRuntimeStore((s) => s.envReady)
   const envChecked = useAppRuntimeStore((s) => s.envChecked)
   const envDependencies = useAppRuntimeStore((s) => s.envDependencies)
   const fetchUser = useAppRuntimeStore((s) => s.fetchUser)
   const fetchCreditBalance = useAppRuntimeStore((s) => s.fetchCreditBalance)
-  const canPass = !cloudEnabled || isLoggedIn
+  const canPass = !cloudEnabled || isLoggedIn || offlineFallback
   const [portConflict, setPortConflict] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
   // 后端（sidecar）不可用：'error' = 启动/健康检查失败；'terminated' = 进程崩溃退出。
@@ -336,14 +340,17 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* 登录后默认落地数字员工工作台（商业版主入口） */}
-        <Route path="/login" element={canPass ? <Navigate to="/workbench" replace /> : <Login />} />
+        {/* 登录后默认落地数字员工工作台（商业版主入口）。
+            注意用 isLoggedIn 而非 canPass：离线降级用户未真正登录，仍应能进入登录页，
+            以便远程服务器恢复后主动登录使用云功能。 */}
+        <Route path="/login" element={isLoggedIn ? <Navigate to="/workbench" replace /> : <Login />} />
         <Route element={<AuthGuard />}>
           <Route path="/" element={<Chat />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/cron" element={<Tasks />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/memory" element={<Memory />} />
+          <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/activation" element={<Activation />} />
