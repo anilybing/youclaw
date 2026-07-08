@@ -54,6 +54,27 @@ const SKILLS = [
   { slug: 'web-monitor', script: null },
   // 数据分析可视化（纯 prompt 技能）
   { slug: 'data-report', script: null },
+  // 财务记账能力包（纯 prompt 技能）
+  { slug: 'finance-bookkeeping', script: null },
+  { slug: 'finance-invoice', script: null },
+  { slug: 'finance-report', script: null },
+  { slug: 'finance-budget', script: null },
+  // 人事 HR 能力包（纯 prompt 技能）
+  { slug: 'hr-jd', script: null },
+  { slug: 'hr-resume-screen', script: null },
+  { slug: 'hr-interview', script: null },
+  { slug: 'hr-docs', script: null },
+  // 客服能力包（纯 prompt 技能）
+  { slug: 'support-reply', script: null },
+  { slug: 'support-faq', script: null },
+  { slug: 'support-ticket', script: null },
+  { slug: 'support-review', script: null },
+  // 研究/知识工作能力包（纯 prompt 技能）
+  { slug: 'doc-summarize', script: null },
+  { slug: 'research-report', script: null },
+  { slug: 'translate', script: null },
+  { slug: 'web-extract', script: null },
+  { slug: 'mind-map', script: null },
 ]
 
 // 各预置数字员工的技能白名单（与 templates.ts 的 agent.yaml 对齐）
@@ -68,6 +89,18 @@ const ECOMMERCE_ASSISTANT_SKILLS = [
 ]
 const CONTENT_CREATOR_SKILLS = [
   'content-article', 'content-xiaohongshu', 'content-video-script', 'content-calendar', 'web-search',
+]
+const FINANCE_ASSISTANT_SKILLS = [
+  'finance-bookkeeping', 'finance-invoice', 'finance-report', 'finance-budget', 'office-excel',
+]
+const HR_ASSISTANT_SKILLS = [
+  'hr-jd', 'hr-resume-screen', 'hr-interview', 'hr-docs',
+]
+const SUPPORT_ASSISTANT_SKILLS = [
+  'support-reply', 'support-faq', 'support-ticket', 'support-review',
+]
+const RESEARCH_ASSISTANT_SKILLS = [
+  'doc-summarize', 'research-report', 'translate', 'web-extract', 'mind-map', 'web-search', 'agent-browser',
 ]
 
 for (const skill of SKILLS) {
@@ -134,6 +167,26 @@ try {
     check('content-creator 模板', parsed?.id === 'content-creator' && missing.length === 0,
       missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
   }
+
+  // 后台职能能力包：财务/人事/客服助理模板 id + 技能白名单齐全
+  const backOffice = [
+    { name: 'FINANCE_ASSISTANT', id: 'finance-assistant', skills: FINANCE_ASSISTANT_SKILLS },
+    { name: 'HR_ASSISTANT', id: 'hr-assistant', skills: HR_ASSISTANT_SKILLS },
+    { name: 'SUPPORT_ASSISTANT', id: 'support-assistant', skills: SUPPORT_ASSISTANT_SKILLS },
+    { name: 'RESEARCH_ASSISTANT', id: 'research-assistant', skills: RESEARCH_ASSISTANT_SKILLS },
+  ]
+  for (const staff of backOffice) {
+    const m = templates.match(new RegExp(`${staff.name}_AGENT_YAML = \`\\\\?\\n?([\\s\\S]*?)\``))
+    if (!m) {
+      check(`${staff.id} 模板`, false, `未找到 ${staff.name}_AGENT_YAML`)
+      continue
+    }
+    const parsed = parse(m[1].replace(/\\`/g, '`'))
+    const skills = Array.isArray(parsed?.skills) ? parsed.skills : []
+    const missing = staff.skills.filter((s) => !skills.includes(s))
+    check(`${staff.id} 模板`, parsed?.id === staff.id && missing.length === 0,
+      missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
+  }
 } catch (err) {
   check('数字员工模板', false, String(err))
 }
@@ -142,7 +195,7 @@ try {
 try {
   const cardsSrc = readFileSync(resolve(REPO, 'web/src/config/workbench-tasks.ts'), 'utf8')
   const cardIds = [...cardsSrc.matchAll(/^\s{4}id:\s*'([a-z-]+)'/gm)].map((m) => m[1])
-  check('工作台任务卡数量(22)', cardIds.length === 22, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
+  check('工作台任务卡数量(38)', cardIds.length === 38, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
   check('工作台绑定 office-assistant', /WORKBENCH_AGENT_ID = 'office-assistant'/.test(cardsSrc))
   check('电商卡绑定 ecommerce-assistant', /ECOMMERCE_AGENT_ID = 'ecommerce-assistant'/.test(cardsSrc))
   check('创作卡绑定 content-creator', /CONTENT_AGENT_ID = 'content-creator'/.test(cardsSrc))

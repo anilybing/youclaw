@@ -23,6 +23,14 @@ import {
   ECOMMERCE_ASSISTANT_IDENTITY_MD, ECOMMERCE_ASSISTANT_BOOTSTRAP_MD,
   CONTENT_CREATOR_AGENT_YAML, CONTENT_CREATOR_SOUL_MD,
   CONTENT_CREATOR_IDENTITY_MD, CONTENT_CREATOR_BOOTSTRAP_MD,
+  FINANCE_ASSISTANT_AGENT_YAML, FINANCE_ASSISTANT_SOUL_MD,
+  FINANCE_ASSISTANT_IDENTITY_MD, FINANCE_ASSISTANT_BOOTSTRAP_MD,
+  HR_ASSISTANT_AGENT_YAML, HR_ASSISTANT_SOUL_MD,
+  HR_ASSISTANT_IDENTITY_MD, HR_ASSISTANT_BOOTSTRAP_MD,
+  SUPPORT_ASSISTANT_AGENT_YAML, SUPPORT_ASSISTANT_SOUL_MD,
+  SUPPORT_ASSISTANT_IDENTITY_MD, SUPPORT_ASSISTANT_BOOTSTRAP_MD,
+  RESEARCH_ASSISTANT_AGENT_YAML, RESEARCH_ASSISTANT_SOUL_MD,
+  RESEARCH_ASSISTANT_IDENTITY_MD, RESEARCH_ASSISTANT_BOOTSTRAP_MD,
 } from './templates.ts'
 import { ensureAgentWorkspace } from './workspace.ts'
 
@@ -130,10 +138,134 @@ export class AgentManager {
       ensurePromptsDir: true,
     })
 
+    // [XJC] 预置数字员工「小橘财务助理/人事助理/客服助理」（后台职能能力包）：
+    // 与既有能力包同款种子逻辑——agent.yaml 为哨兵，用户改过不覆盖；技能全部纯 SKILL.md。
+    const backOfficeSeeds: Array<{ id: string; yaml: string; soul: string; identity: string; bootstrap: string }> = [
+      { id: 'finance-assistant', yaml: FINANCE_ASSISTANT_AGENT_YAML, soul: FINANCE_ASSISTANT_SOUL_MD, identity: FINANCE_ASSISTANT_IDENTITY_MD, bootstrap: FINANCE_ASSISTANT_BOOTSTRAP_MD },
+      { id: 'hr-assistant', yaml: HR_ASSISTANT_AGENT_YAML, soul: HR_ASSISTANT_SOUL_MD, identity: HR_ASSISTANT_IDENTITY_MD, bootstrap: HR_ASSISTANT_BOOTSTRAP_MD },
+      { id: 'support-assistant', yaml: SUPPORT_ASSISTANT_AGENT_YAML, soul: SUPPORT_ASSISTANT_SOUL_MD, identity: SUPPORT_ASSISTANT_IDENTITY_MD, bootstrap: SUPPORT_ASSISTANT_BOOTSTRAP_MD },
+      { id: 'research-assistant', yaml: RESEARCH_ASSISTANT_AGENT_YAML, soul: RESEARCH_ASSISTANT_SOUL_MD, identity: RESEARCH_ASSISTANT_IDENTITY_MD, bootstrap: RESEARCH_ASSISTANT_BOOTSTRAP_MD },
+    ]
+    for (const seed of backOfficeSeeds) {
+      const dir = resolve(paths.agents, seed.id)
+      if (!existsSync(resolve(dir, 'agent.yaml'))) {
+        logger.info(`Initializing ${seed.id} digital staff template...`)
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(resolve(dir, 'agent.yaml'), seed.yaml)
+        writeFileSync(resolve(dir, 'SOUL.md'), seed.soul)
+        writeFileSync(resolve(dir, 'IDENTITY.md'), seed.identity)
+        writeFileSync(resolve(dir, 'BOOTSTRAP.md'), seed.bootstrap)
+      }
+      ensureAgentWorkspace(dir, {
+        ensureBootstrap: false,
+        ensureSkillsDir: true,
+        ensurePromptsDir: true,
+      })
+    }
+
     if (!existsSync(resolve(globalDir, 'memory', 'MEMORY.md'))) {
       mkdirSync(resolve(globalDir, 'memory'), { recursive: true })
       writeFileSync(resolve(globalDir, 'memory', 'MEMORY.md'), GLOBAL_MEMORY_MD)
     }
+  }
+
+  /**
+   * 服务端下发的数字员工定义落地（能力与时俱进 · 阶段三）。
+   * 与内置种子同款「哨兵」逻辑：agent.yaml 已存在则跳过（尊重用户改动/已有员工）；仅为新的
+   * 远程员工创建目录、写人设文档、由 yaml 库安全生成 agent.yaml，并尽力从私有源装配其声明的
+   * 技能。防御性校验：坏定义整条跳过、装配失败静默，绝不抛断整体。有落地则热重载。
+   */
+  async seedRemoteStaff(
+    defs: unknown[],
+    installSkill?: (slug: string) => Promise<void>,
+  ): Promise<{ seeded: string[]; skipped: number }> {
+    // 串行化：syncRemoteStaff 可能被 hydrate/登录/激活/断线恢复并发触发，并发 reloadAgents
+    // 会破坏 agents 表，故用 promise 链保证逐个执行（每次拿到各自的 defs，不丢种子）。
+    const run = this.remoteStaffSeedChain.then(() => this.seedRemoteStaffInner(defs, installSkill))
+    this.remoteStaffSeedChain = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  private remoteStaffSeedChain: Promise<unknown> = Promise.resolve()
+
+  private async seedRemoteStaffInner(
+    defs: unknown[],
+    installSkill?: (slug: string) => Promise<void>,
+  ): Promise<{ seeded: string[]; skipped: number }> {
+    const logger = getLogger()
+    const paths = getPaths()
+    const AGENT_ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/
+    const SKILL_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
+    // 内置/保留 id：远程定义不得覆盖（与 MVP capabilityAgentService 保持一致）
+    const RESERVED = new Set([
+      'default', '_global',
+      'office-assistant', 'ecommerce-assistant', 'content-creator',
+      'finance-assistant', 'hr-assistant', 'support-assistant', 'research-assistant',
+    ])
+    const seeded: string[] = []
+    let skipped = 0
+    const skillsToInstall = new Set<string>()
+
+    for (const raw of Array.isArray(defs) ? defs : []) {
+      try {
+        if (!raw || typeof raw !== 'object') { skipped++; continue }
+        const def = raw as Record<string, unknown>
+        const agentId = typeof def.agentId === 'string' ? def.agentId.trim().toLowerCase() : ''
+        if (!AGENT_ID_RE.test(agentId) || RESERVED.has(agentId)) { skipped++; continue }
+        const name = typeof def.name === 'string' ? def.name.trim() : ''
+        const soul = typeof def.soul === 'string' ? def.soul : ''
+        const identity = typeof def.identity === 'string' ? def.identity : ''
+        if (!name || !soul || !identity) { skipped++; continue }
+        const bootstrap = typeof def.bootstrap === 'string' ? def.bootstrap : ''
+        const model = typeof def.model === 'string' ? def.model.trim() : ''
+        const skills: string[] = []
+        if (Array.isArray(def.skills)) {
+          for (const s of def.skills) {
+            const slug = String(s || '').trim().toLowerCase()
+            if (slug && SKILL_SLUG_RE.test(slug)) skills.push(slug)
+          }
+        }
+
+        const dir = resolve(paths.agents, agentId)
+        const alreadyExists = existsSync(resolve(dir, 'agent.yaml'))
+        if (!alreadyExists) {
+          logger.info(`Seeding remote digital staff: ${agentId}`)
+          mkdirSync(dir, { recursive: true })
+          const yamlObj: Record<string, unknown> = {
+            id: agentId,
+            name,
+            memory: {
+              enabled: true, recentDays: 2, archiveConversations: true,
+              maxLogEntryLength: 500, historyFallbackMessages: 12, maxSessionBytes: 262144,
+            },
+          }
+          if (model) yamlObj.model = model
+          if (skills.length) yamlObj.skills = skills
+          yamlObj.disallowedTools = ['WebSearch']
+          writeFileSync(resolve(dir, 'agent.yaml'), stringifyYaml(yamlObj))
+          writeFileSync(resolve(dir, 'SOUL.md'), soul)
+          writeFileSync(resolve(dir, 'IDENTITY.md'), identity)
+          if (bootstrap) writeFileSync(resolve(dir, 'BOOTSTRAP.md'), bootstrap)
+          seeded.push(agentId)
+          for (const slug of skills) skillsToInstall.add(slug)
+        }
+        ensureAgentWorkspace(dir, { ensureBootstrap: false, ensureSkillsDir: true, ensurePromptsDir: true })
+      } catch (err) {
+        skipped++
+        logger.warn({ error: String(err), category: 'commercial' }, 'Seed remote staff entry failed')
+      }
+    }
+
+    // 尽力装配技能（失败不影响员工可用；员工也可后续对话式安装）
+    if (installSkill && skillsToInstall.size > 0) {
+      for (const slug of skillsToInstall) {
+        try { await installSkill(slug) }
+        catch (err) { logger.warn({ slug, error: String(err), category: 'commercial' }, 'Install remote staff skill failed') }
+      }
+    }
+
+    if (seeded.length > 0) await this.reloadAgents()
+    return { seeded, skipped }
   }
 
   /**

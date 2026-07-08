@@ -6,6 +6,10 @@ import {
   OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD,
   ECOMMERCE_ASSISTANT_AGENT_YAML, ECOMMERCE_ASSISTANT_SOUL_MD,
   CONTENT_CREATOR_AGENT_YAML, CONTENT_CREATOR_SOUL_MD,
+  FINANCE_ASSISTANT_AGENT_YAML, FINANCE_ASSISTANT_SOUL_MD,
+  HR_ASSISTANT_AGENT_YAML, HR_ASSISTANT_SOUL_MD,
+  SUPPORT_ASSISTANT_AGENT_YAML, SUPPORT_ASSISTANT_SOUL_MD,
+  RESEARCH_ASSISTANT_AGENT_YAML, RESEARCH_ASSISTANT_SOUL_MD,
 } from './templates.ts'
 
 // Minimal mock dependencies
@@ -194,5 +198,41 @@ describe('content-creator preset template', () => {
     expect(CONTENT_CREATOR_SOUL_MD).toContain('创作产出')
     expect(CONTENT_CREATOR_SOUL_MD).toContain('不抄袭')
     expect(CONTENT_CREATOR_SOUL_MD).toContain('需核实')
+  })
+})
+
+// [XJC] 后台职能能力包：财务/人事/客服助理模板必须是合法可加载配置
+describe('back-office preset templates (finance/hr/support)', () => {
+  const cases = [
+    { name: 'finance-assistant', yaml: FINANCE_ASSISTANT_AGENT_YAML, skills: ['finance-bookkeeping', 'finance-invoice', 'finance-report', 'finance-budget', 'office-excel'] },
+    { name: 'hr-assistant', yaml: HR_ASSISTANT_AGENT_YAML, skills: ['hr-jd', 'hr-resume-screen', 'hr-interview', 'hr-docs'] },
+    { name: 'support-assistant', yaml: SUPPORT_ASSISTANT_AGENT_YAML, skills: ['support-reply', 'support-faq', 'support-ticket', 'support-review'] },
+    { name: 'research-assistant', yaml: RESEARCH_ASSISTANT_AGENT_YAML, skills: ['doc-summarize', 'research-report', 'translate', 'web-extract', 'mind-map', 'web-search', 'agent-browser'] },
+  ]
+
+  for (const c of cases) {
+    test(`${c.name} agent.yaml 可解析且挂载预期技能`, () => {
+      const parsed = parseYaml(c.yaml) as { id: string; skills: string[]; memory: { enabled: boolean } }
+      expect(parsed.id).toBe(c.name)
+      expect(parsed.memory.enabled).toBe(true)
+      expect(parsed.skills).toEqual(c.skills)
+    })
+
+    test(`${c.name} agent.yaml 通过 AgentConfigSchema 校验`, () => {
+      expect(AgentConfigSchema.safeParse(parseYaml(c.yaml)).success).toBe(true)
+    })
+  }
+
+  test('三个后台助理 SOUL 均含产出目录与红线', () => {
+    expect(FINANCE_ASSISTANT_SOUL_MD).toContain('财务产出')
+    expect(FINANCE_ASSISTANT_SOUL_MD).toContain('需核实')
+    expect(HR_ASSISTANT_SOUL_MD).toContain('人事产出')
+    expect(HR_ASSISTANT_SOUL_MD).toContain('反歧视')
+    expect(SUPPORT_ASSISTANT_SOUL_MD).toContain('客服产出')
+  })
+
+  test('研究助理 SOUL 含产出目录与来源可追溯红线', () => {
+    expect(RESEARCH_ASSISTANT_SOUL_MD).toContain('研究产出')
+    expect(RESEARCH_ASSISTANT_SOUL_MD).toContain('来源')
   })
 })
