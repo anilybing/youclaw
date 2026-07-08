@@ -68,9 +68,17 @@ export function Knowledge() {
     loadDocs()
   }, [loadDocs])
 
-  // 输入防抖搜索：300ms 无新输入才发请求；清空输入即清空结果
-  useEffect(() => {
-    const trimmed = query.trim()
+  // 输入防抖搜索：在事件处理器内调度（而非 effect 内同步 setState，规避 react-hooks/set-state-in-effect），
+  // 300ms 无新输入才发请求；清空输入即清空结果。
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleQueryChange = useCallback((value: string) => {
+    setQuery(value)
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current)
+      searchTimerRef.current = null
+    }
+    const trimmed = value.trim()
     if (!trimmed) {
       setHits([])
       setIsSearching(false)
@@ -78,7 +86,7 @@ export function Knowledge() {
       return
     }
     setIsSearching(true)
-    const timer = setTimeout(() => {
+    searchTimerRef.current = setTimeout(() => {
       searchKnowledge(trimmed, 8)
         .then((res) => {
           setHits(res.hits)
@@ -90,8 +98,11 @@ export function Knowledge() {
         })
         .finally(() => setIsSearching(false))
     }, 300)
-    return () => clearTimeout(timer)
-  }, [query])
+  }, [])
+
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+  }, [])
 
   // 多文件上传（选择/拖拽共用）：逐个上传，成功/失败分别计数提示
   const handleUpload = async (files: File[]) => {
@@ -208,14 +219,14 @@ export function Knowledge() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => handleQueryChange(e.target.value)}
               placeholder={t.knowledge.searchPlaceholder}
               className="pl-9 pr-9"
               data-testid="knowledge-search-input"
             />
             {query && (
               <button
-                onClick={() => setQuery('')}
+                onClick={() => handleQueryChange('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 aria-label={t.common.close}
               >

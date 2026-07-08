@@ -19,7 +19,7 @@ import {
 import { ApiError } from '@/lib/api-error'
 import { useI18n } from '@/i18n'
 import { notify } from '@/stores/app'
-import { invalidateTtsStatusCache } from '@/components/chat/TtsPlayButton'
+import { invalidateTtsStatusCache } from '@/lib/tts-status'
 
 type VoiceProvider = VoiceEndpointConfigDTO['provider']
 type AsrForm = VoiceEndpointConfigDTO

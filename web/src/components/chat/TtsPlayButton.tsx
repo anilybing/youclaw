@@ -3,32 +3,13 @@
 // T-A3 子代理只需把 <TtsPlayButton text={...} /> 挂进 AssistantMessage 的 MessageActions。
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, Square, Volume2 } from 'lucide-react'
-import { getVoiceStatus, speakText } from '@/api/client'
+import { speakText } from '@/api/client'
 import { VOICE_ENABLED } from '@/config/features'
+import { isTtsConfigured } from '@/lib/tts-status'
 import { useI18n } from '@/i18n'
 import { notify } from '@/stores/app-runtime'
 
 const MAX_TTS_CHARS = 2000
-
-/** 模块级缓存 TTS 配置状态，避免每条消息都打一次 /voice/status */
-let ttsConfiguredCache: boolean | null = null
-let ttsStatusPromise: Promise<boolean> | null = null
-
-async function isTtsConfigured(): Promise<boolean> {
-  if (ttsConfiguredCache !== null) return ttsConfiguredCache
-  if (!ttsStatusPromise) {
-    ttsStatusPromise = getVoiceStatus()
-      .then((s) => { ttsConfiguredCache = s.ttsConfigured; return s.ttsConfigured })
-      .catch(() => false)
-      .finally(() => { ttsStatusPromise = null })
-  }
-  return ttsStatusPromise
-}
-
-/** 语音设置变化后由 VoicePanel 调用，下次渲染重新探测 */
-export function invalidateTtsStatusCache() {
-  ttsConfiguredCache = null
-}
 
 export function TtsPlayButton({ text }: { text: string }) {
   const { t } = useI18n()
