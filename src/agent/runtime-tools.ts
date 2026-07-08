@@ -4,6 +4,7 @@ import { createBuiltinImageTool, isVlmAvailable } from './builtin-mcp.ts'
 import { createMessageTool } from './message-mcp.ts'
 import { createDocumentTools } from './document-mcp.ts'
 import { createTaskTools } from './task-mcp.ts'
+import { createSkillsTools } from './skills-mcp.ts'
 import type { BrowserManager, BrowserTarget } from '../browser/index.ts'
 import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
 import type { SecretsManager } from './secrets.ts'
@@ -52,9 +53,11 @@ export async function buildRuntimeCustomTools(params: {
   const customTools: ToolDefinition[] = [
     // Image tool requires a configured VLM endpoint; skip registration when absent
     ...(isVlmAvailable() ? [createBuiltinImageTool()] : []),
-    createMessageTool(params.chatId),
+    createMessageTool(params.chatId, params.agentId),
     ...createDocumentTools(params.chatId),
     ...createTaskTools({ chatId: params.chatId, agentId: params.agentId }),
+    // [XJC] 对话式技能自管理：依赖在 index.ts 启动时经 configureSkillsMcpRuntime 注入
+    ...createSkillsTools({ agentId: params.agentId }),
   ]
   let externalMcpDispose: (() => Promise<void>) | undefined
 

@@ -1,6 +1,7 @@
 import { Type } from '@mariozechner/pi-ai'
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
 import { getLogger } from '../logger/index.ts'
+import { inferChannelType } from '../channel/config-schema.ts'
 import { listTasksForAgent, applyTaskAction, TaskServiceError } from '../task/index.ts'
 import type { TaskActionInput, TaskActionResult, TaskListFilters, TaskStatus, TaskWriteAction } from '../task/index.ts'
 
@@ -67,9 +68,18 @@ const UpdateTaskParams = Type.Object({
   schedule_type: Type.Optional(Type.String({ description: 'Schedule type: cron, interval, or once' })),
   schedule_value: Type.Optional(Type.String({ description: 'Cron expression, interval milliseconds, or future ISO timestamp' })),
   timezone: Type.Optional(Type.String({ description: 'Optional IANA timezone for cron schedules' })),
-  delivery_mode: Type.Optional(Type.String({ description: 'Optional delivery mode: none or push' })),
-  delivery_target: Type.Optional(Type.String({ description: 'Optional push delivery target' })),
+  delivery_mode: Type.Optional(Type.String({ description: 'Optional delivery mode: none or push. Defaults to push when creating from a channel chat; pass "none" to disable delivery.' })),
+  delivery_target: Type.Optional(Type.String({ description: 'Optional push delivery target chat id, e.g. "tg:123456". Defaults to the effective chat when creating from a channel chat.' })),
 })
+
+/**
+ * A chat is a channel chat when its prefix matches a registered IM channel
+ * type (tg:/feishu:/qq:/...). Desktop chats (web:) and scheduler-generated
+ * chats (task:) resolve to 'web' in inferChannelType and are not channel chats.
+ */
+function isChannelChatId(chatId: string): boolean {
+  return inferChannelType(chatId) !== 'web'
+}
 
 function ensureCreateInput(args: Pick<UpdateTaskArgs, 'prompt' | 'schedule_type' | 'schedule_value'>): string | null {
   if (!args.prompt) return 'create action requires prompt'
@@ -140,9 +150,35 @@ export function createTaskMcpServer(context: TaskToolContext, options?: TaskMcpO
             if (error) return textResult(error, true)
           }
 
+          const effectiveChatId = args.chat_id ?? context.chatId
+          let deliveryMode = args.delivery_mode
+          let deliveryTarget = args.delivery_target
+
+          // Channel users (Telegram/Feishu/...) never see the desktop app, so a
+          // task whose result is only written to the chat history is invisible to
+          // them. Default create to pushing the result back into the originating
+          // channel chat; explicit delivery_mode/delivery_target from the caller
+          // (including 'none') always wins. web:/task: chats keep the old default.
+          if (
+            args.action === 'create' &&
+            deliveryMode === undefined &&
+            deliveryTarget === undefined &&
+            isChannelChatId(effectiveChatId)
+          ) {
+            deliveryMode = 'push'
+            deliveryTarget = effectiveChatId
+          }
+
+          // A create that names a delivery_target without a mode clearly intends
+          // to push; otherwise the service defaults the mode to 'none' and the
+          // target would be silently ignored.
+          if (args.action === 'create' && deliveryMode === undefined && deliveryTarget !== undefined) {
+            deliveryMode = 'push'
+          }
+
           const result = await service.applyTaskAction({
             agentId: context.agentId,
-            chatId: args.chat_id ?? context.chatId,
+            chatId: effectiveChatId,
             action: args.action,
             name: args.name,
             prompt: args.prompt,
@@ -150,8 +186,8 @@ export function createTaskMcpServer(context: TaskToolContext, options?: TaskMcpO
             scheduleType: args.schedule_type,
             scheduleValue: args.schedule_value,
             timezone: args.timezone,
-            deliveryMode: args.delivery_mode,
-            deliveryTarget: args.delivery_target,
+            deliveryMode,
+            deliveryTarget,
           })
 
           return textResult(JSON.stringify({ action: args.action, result }, null, 2))
@@ -206,13 +242,13 @@ export function createTaskTools(context: TaskToolContext, options?: TaskMcpOptio
   return [
     createJsonTaskTool(
       'list_tasks',
-      'List scheduled tasks for the current agent. Always call this before creating, updating, pausing, resuming, or deleting a task.',
+      'List scheduled tasks for the current agent. Always call this before creating, updating, pausing, resuming, or deleting a task. Tasks created from a channel chat (Telegram/Feishu/etc.) push their results back to that chat by default.',
       ListTasksParams,
       (args) => listTasksHandler(args),
     ),
     createJsonTaskTool(
       'update_task',
-      'Create, update, pause, resume, or delete a scheduled task for the current agent.',
+      'Create, update, pause, resume, or delete a scheduled task for the current agent. When creating from a channel chat (Telegram/Feishu/etc.), task results are pushed back to the current chat by default; pass delivery_mode "none" to disable, or set delivery_target to push to a different chat.',
       UpdateTaskParams,
       (args) => updateTaskHandler(args),
     ),

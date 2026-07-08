@@ -2,12 +2,15 @@
 // office-assistant 的对话流。复用 Chat 的发送链路（useChatActions + 附件上传）。
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, Clock, Loader2, Send, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { TaskDeliveryFields } from '@/components/tasks/TaskDeliveryFields'
+import { isDeliveryTargetComplete, type TaskDeliveryMode } from '@/lib/task-delivery'
 import { useChatActions } from '@/hooks/useChat'
 import { uploadChatAttachment, reportTelemetry, createScheduledTask } from '@/api/client'
 import { useAppPreferencesStore } from '@/stores/app-preferences'
+import { useI18n } from '@/i18n'
 import {
   WORKBENCH_AGENT_ID,
   WORKBENCH_TASKS,
@@ -52,6 +55,7 @@ function TaskCard({ task, locale, onSelect }: { task: WorkbenchTask; locale: Wor
 
 function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: WorkbenchLocale; onBack: () => void }) {
   const navigate = useNavigate()
+  const { t } = useI18n()
   // 每张卡可绑定不同数字员工（电商卡→电商助理），缺省用工作台默认（办公助理）
   const agentId = task.agentId ?? WORKBENCH_AGENT_ID
   const { send, newChat } = useChatActions(agentId)
@@ -62,6 +66,9 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
   // T-G5：定时执行——'' 表示立即执行，否则为选中的 cron 预设 id
   const [cronPreset, setCronPreset] = useState('')
   const [scheduled, setScheduled] = useState(false)
+  // 定时任务的结果投递：默认仅记录到会话，选推送时需填渠道会话 ID
+  const [deliveryMode, setDeliveryMode] = useState<TaskDeliveryMode>('none')
+  const [deliveryTarget, setDeliveryTarget] = useState('')
 
   const canSubmit = useMemo(() => (
     task.fields.every((field) => {
@@ -69,7 +76,8 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
       if (field.kind === 'file') return !!files[field.key]
       return !!(values[field.key] ?? '').trim()
     })
-  ), [task, values, files])
+    && (!cronPreset || deliveryMode !== 'push' || isDeliveryTargetComplete(deliveryTarget))
+  ), [task, values, files, cronPreset, deliveryMode, deliveryTarget])
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting) return
@@ -82,6 +90,9 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
       if (task.schedulable && cronPreset) {
         const preset = WORKBENCH_CRON_PRESETS.find((p) => p.id === cronPreset)
         if (!preset) throw new Error('invalid schedule preset')
+        if (deliveryMode === 'push' && !isDeliveryTargetComplete(deliveryTarget)) {
+          throw new Error(t.tasks.deliveryTargetRequired)
+        }
         await createScheduledTask({
           agentId,
           chatId: `workbench:${task.id}`,
@@ -90,6 +101,8 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
           scheduleValue: preset.cron,
           name: `${task.title[locale]} · ${preset.label[locale]}`,
           description: locale === 'zh' ? '数字员工定时任务（工作台创建）' : 'Digital staff scheduled task',
+          deliveryMode,
+          deliveryTarget: deliveryMode === 'push' ? deliveryTarget.trim() : undefined,
         })
         void reportTelemetry('skill_run', { skill: task.id, ok: true, scheduled: true })
         setScheduled(true)
@@ -129,6 +142,12 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
             ? '小橘办公助理会按计划自动执行，产物放入「办公产出」目录并通知你。可在「定时任务」页查看或取消。'
             : 'The office assistant will run it on schedule. Manage it in the Cron Jobs page.'}
         </p>
+        {deliveryMode === 'push' && deliveryTarget.trim() && (
+          <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Send size={12} />
+            {t.tasks.deliveryPushShort} → <span className="font-mono">{deliveryTarget.trim()}</span>
+          </p>
+        )}
         <div className="flex justify-center gap-3">
           <Button variant="outline" className="rounded-xl" onClick={onBack}>{locale === 'zh' ? '返回任务列表' : 'Back'}</Button>
           <Button className="rounded-xl" onClick={() => navigate('/cron')}>{locale === 'zh' ? '查看定时任务' : 'View schedule'}</Button>
@@ -207,6 +226,22 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
                 ? '数字员工会按计划自动执行，附件类输入在定时模式下不生效。'
                 : 'Runs automatically on schedule; file inputs are ignored in scheduled mode.'}
             </p>
+          )}
+          {/* 定时执行时可选：把每次运行结果推送到 IM 渠道 */}
+          {cronPreset && (
+            <div className="space-y-2 border-t border-border pt-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Send size={14} />
+                {t.tasks.delivery}
+              </div>
+              <TaskDeliveryFields
+                mode={deliveryMode}
+                target={deliveryTarget}
+                onModeChange={setDeliveryMode}
+                onTargetChange={setDeliveryTarget}
+                disabled={submitting}
+              />
+            </div>
           )}
         </div>
       )}

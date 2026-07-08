@@ -184,6 +184,165 @@ describe('task-mcp tools', () => {
     expect(result.content[0]?.text).toContain('Task not found')
   })
 
+  test('create from channel chat defaults delivery to push back to that chat', async () => {
+    const listTasksForAgent = mock(async () => [])
+    const applyTaskAction = mock(async () => ({ action: 'create', matchedTaskId: 't1', task: null }))
+
+    const server = createTaskMcpServer(
+      { agentId: 'agent-tg', chatId: 'tg:123' },
+      { service: { listTasksForAgent, applyTaskAction } },
+    ) as any
+
+    const handler = getToolHandler(server, 'update_task')
+    await handler({
+      action: 'create',
+      name: 'Daily briefing',
+      prompt: 'Send the daily briefing',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *',
+    })
+
+    expect(applyTaskAction).toHaveBeenCalledTimes(1)
+    expect(applyTaskAction.mock.calls[0]?.[0]).toMatchObject({
+      chatId: 'tg:123',
+      action: 'create',
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:123',
+    })
+  })
+
+  test('create from web chat keeps delivery undefined (old behavior)', async () => {
+    const listTasksForAgent = mock(async () => [])
+    const applyTaskAction = mock(async () => ({ action: 'create', matchedTaskId: 't1', task: null }))
+
+    const server = createTaskMcpServer(
+      { agentId: 'agent-web', chatId: 'web:abc-123' },
+      { service: { listTasksForAgent, applyTaskAction } },
+    ) as any
+
+    const handler = getToolHandler(server, 'update_task')
+    await handler({
+      action: 'create',
+      name: 'Daily briefing',
+      prompt: 'Send the daily briefing',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *',
+    })
+
+    expect(applyTaskAction).toHaveBeenCalledTimes(1)
+    expect(applyTaskAction.mock.calls[0]?.[0]).toMatchObject({
+      chatId: 'web:abc-123',
+      deliveryMode: undefined,
+      deliveryTarget: undefined,
+    })
+  })
+
+  test('create from channel chat respects explicit delivery_mode none', async () => {
+    const listTasksForAgent = mock(async () => [])
+    const applyTaskAction = mock(async () => ({ action: 'create', matchedTaskId: 't1', task: null }))
+
+    const server = createTaskMcpServer(
+      { agentId: 'agent-tg', chatId: 'tg:123' },
+      { service: { listTasksForAgent, applyTaskAction } },
+    ) as any
+
+    const handler = getToolHandler(server, 'update_task')
+    await handler({
+      action: 'create',
+      name: 'Silent task',
+      prompt: 'Run silently',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *',
+      delivery_mode: 'none',
+    })
+
+    expect(applyTaskAction).toHaveBeenCalledTimes(1)
+    expect(applyTaskAction.mock.calls[0]?.[0]).toMatchObject({
+      deliveryMode: 'none',
+      deliveryTarget: undefined,
+    })
+  })
+
+  test('create respects explicit delivery_target pointing to another chat', async () => {
+    const listTasksForAgent = mock(async () => [])
+    const applyTaskAction = mock(async () => ({ action: 'create', matchedTaskId: 't1', task: null }))
+
+    const server = createTaskMcpServer(
+      { agentId: 'agent-tg', chatId: 'tg:123' },
+      { service: { listTasksForAgent, applyTaskAction } },
+    ) as any
+
+    const handler = getToolHandler(server, 'update_task')
+    await handler({
+      action: 'create',
+      name: 'Cross-chat report',
+      prompt: 'Send report elsewhere',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *',
+      delivery_mode: 'push',
+      delivery_target: 'feishu:999',
+    })
+
+    expect(applyTaskAction).toHaveBeenCalledTimes(1)
+    expect(applyTaskAction.mock.calls[0]?.[0]).toMatchObject({
+      deliveryMode: 'push',
+      deliveryTarget: 'feishu:999',
+    })
+  })
+
+  test('create with delivery_target but no delivery_mode defaults mode to push', async () => {
+    const listTasksForAgent = mock(async () => [])
+    const applyTaskAction = mock(async () => ({ action: 'create', matchedTaskId: 't1', task: null }))
+
+    const server = createTaskMcpServer(
+      { agentId: 'agent-web', chatId: 'web:abc-123' },
+      { service: { listTasksForAgent, applyTaskAction } },
+    ) as any
+
+    const handler = getToolHandler(server, 'update_task')
+    await handler({
+      action: 'create',
+      name: 'Push-by-target',
+      prompt: 'Report to feishu',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *',
+      delivery_target: 'feishu:999',
+    })
+
+    expect(applyTaskAction).toHaveBeenCalledTimes(1)
+    expect(applyTaskAction.mock.calls[0]?.[0]).toMatchObject({
+      deliveryMode: 'push',
+      deliveryTarget: 'feishu:999',
+    })
+  })
+
+  test('create defaults delivery from explicit channel chat_id even when context chat is web', async () => {
+    const listTasksForAgent = mock(async () => [])
+    const applyTaskAction = mock(async () => ({ action: 'create', matchedTaskId: 't1', task: null }))
+
+    const server = createTaskMcpServer(
+      { agentId: 'agent-web', chatId: 'web:abc-123' },
+      { service: { listTasksForAgent, applyTaskAction } },
+    ) as any
+
+    const handler = getToolHandler(server, 'update_task')
+    await handler({
+      action: 'create',
+      name: 'Channel task from web',
+      prompt: 'Send the daily briefing',
+      schedule_type: 'cron',
+      schedule_value: '0 8 * * *',
+      chat_id: 'tg:456',
+    })
+
+    expect(applyTaskAction).toHaveBeenCalledTimes(1)
+    expect(applyTaskAction.mock.calls[0]?.[0]).toMatchObject({
+      chatId: 'tg:456',
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:456',
+    })
+  })
+
   test('createTaskTools exposes runtime tool names', () => {
     const tools = createTaskTools(
       { agentId: 'agent-runtime', chatId: 'chat-runtime' },

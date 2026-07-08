@@ -6,6 +6,7 @@ export interface InboundMessage {
   content: string
   timestamp: string
   isGroup: boolean
+  groupName?: string      // 群聊时的真实群名/群标题，仅在渠道能从入站原始负载拿到时才填
   channel?: string        // "telegram" | "web" | "api"
   agentId?: string        // target agent (Web API scenario)
   tags?: string[]         // routing tags from web frontend

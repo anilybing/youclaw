@@ -1,13 +1,17 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+// （渠道会话标题不再落原始 type/首条消息：好友昵称 → 实例自定义名 → 类型中文名）
 import { AgentManager } from '../agent/manager.ts'
 import { AgentQueue } from '../agent/queue.ts'
 import { EventBus } from '../events/bus.ts'
-import { saveMessage, upsertChat, getDatabase } from '../db/index.ts'
+import { saveMessage, upsertChat, getDatabase, getChannelRecord } from '../db/index.ts'
 import { randomUUID } from 'node:crypto'
 import { getLogger } from '../logger/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { SkillsLoader } from '../skills/index.ts'
 import { injectMessageTimestamp } from '../agent/message-timestamp.ts'
 import { parseSkillInvocations } from '../skills/invoke.ts'
+import { inferChannelType } from './config-schema.ts'
+import { deriveChannelChatTitle } from './naming.ts'
 import type { InboundMessage, Channel } from './types.ts'
 import type { AgentToolUse } from '../events/types.ts'
 
@@ -32,7 +36,12 @@ export class MessageRouter {
     this.eventBus.subscribe({ types: ['complete'] }, (event) => {
       if (event.type === 'complete') {
         this.persistCompletedReply(event.chatId, event.agentId, event.fullText, event.sessionId, event.turnId, event.toolUse)
-        this.handleOutbound(event.chatId, event.fullText)
+        // [XJC] 调度器发起的运行 suppressOutbound=true：仍落库,但不由此处向渠道发送,
+        // 渠道投递统一交给 scheduler.deliver()（cleanText + 📎，且尊重 delivery_mode）。
+        // 否则渠道会话上的定时任务会「双发」，且 delivery_mode='none' 也会泄漏原始结果。
+        if (!event.suppressOutbound) {
+          this.handleOutbound(event.chatId, event.fullText)
+        }
       }
     })
     this.eventBus.subscribe({ types: ['error'] }, (event) => {
@@ -88,7 +97,18 @@ export class MessageRouter {
     }
 
     // Check if chat already exists (for new_chat event)
-    const chatTitle = message.content.replace(/\n/g, ' ').slice(0, 50)
+    // [XJC] 渠道会话标题：好友昵称 → 实例自定义名 → 类型中文名（web 会话仍用首条消息）
+    const chatIdType = inferChannelType(message.chatId)
+    const chatTitle = chatIdType === 'web'
+      ? message.content.replace(/\n/g, ' ').slice(0, 50)
+      : deriveChannelChatTitle({
+          channelType: chatIdType,
+          sender: message.sender,
+          senderName: message.senderName,
+          isGroup: message.isGroup,
+          groupName: message.groupName,
+          instanceLabel: this.resolveChannelInstanceLabel(message.chatId),
+        })
     const db = getDatabase()
     const existingChat = db.query("SELECT 1 FROM chats WHERE chat_id = ?").get(message.chatId)
 
@@ -204,6 +224,18 @@ export class MessageRouter {
       if (ch.ownsChatId(chatId)) return ch.name
     }
     return 'web'
+  }
+
+  // [XJC] 查这条消息归属的渠道实例的自定义名称（实例 name 即 channels 表主键 id）
+  private resolveChannelInstanceLabel(chatId: string): string | undefined {
+    for (const ch of this.channels) {
+      if (ch.ownsChatId(chatId)) {
+        const record = getChannelRecord(ch.name)
+        const label = record?.label?.trim()
+        if (label) return label
+      }
+    }
+    return undefined
   }
 
   // Handle outbound messages (send to the corresponding channel)

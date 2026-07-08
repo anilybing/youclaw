@@ -1,11 +1,69 @@
+import { createReadStream, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import * as Lark from '@larksuiteoapi/node-sdk'
 import { getLogger } from '../logger/index.ts'
+import { fetchRemoteMediaToBuffer } from './media-fetch.ts'
 import type { EventBus } from '../events/bus.ts'
 import type { Channel, InboundMessage, OnInboundMessage } from './types.ts'
 
 const FEISHU_TEXT_CHUNK_LIMIT = 4000
 // Interactive cards have stricter limits due to JSON wrapper overhead (~200 bytes)
 const FEISHU_CARD_CHUNK_LIMIT = 3500
+// Feishu OpenAPI limits: images up to 10MB, files up to 30MB
+const FEISHU_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+const FEISHU_FILE_MAX_BYTES = 30 * 1024 * 1024
+
+// Formats accepted by im.image.create (JPEG/PNG/WEBP/GIF/TIFF/BMP/ICO)
+const FEISHU_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff', 'bmp', 'ico'])
+
+type FeishuFileType = 'opus' | 'mp4' | 'pdf' | 'doc' | 'xls' | 'ppt' | 'stream'
+
+const FEISHU_FILE_TYPE_BY_EXTENSION: Record<string, FeishuFileType> = {
+  opus: 'opus',
+  mp4: 'mp4',
+  pdf: 'pdf',
+  doc: 'doc',
+  docx: 'doc',
+  xls: 'xls',
+  xlsx: 'xls',
+  ppt: 'ppt',
+  pptx: 'ppt',
+}
+
+/** Map a file extension to the file_type expected by im.file.create. */
+export function mapFeishuFileType(extension: string): FeishuFileType {
+  return FEISHU_FILE_TYPE_BY_EXTENSION[extension.toLowerCase()] ?? 'stream'
+}
+
+function feishuExtensionOf(fileName: string): string {
+  const dot = fileName.lastIndexOf('.')
+  if (dot <= 0 || dot === fileName.length - 1) return ''
+  return fileName.slice(dot + 1).toLowerCase()
+}
+
+function inferRemoteFileName(url: string): string {
+  try {
+    const name = decodeURIComponent(basename(new URL(url).pathname))
+    if (name) return name
+  } catch {
+    // fall through to the generated name
+  }
+  return `media-${Date.now()}`
+}
+
+/** SDK typings expose upload results unwrapped, but stay defensive about {data:{...}} wrappers. */
+function extractUploadKey(res: unknown, key: 'image_key' | 'file_key'): string | undefined {
+  if (!res || typeof res !== 'object') return undefined
+  const direct = (res as Record<string, unknown>)[key]
+  if (typeof direct === 'string') return direct
+  const data = (res as Record<string, unknown>).data
+  if (data && typeof data === 'object') {
+    const nested = (data as Record<string, unknown>)[key]
+    if (typeof nested === 'string') return nested
+  }
+  return undefined
+}
 
 export interface FeishuChannelOpts {
   onMessage: OnInboundMessage
@@ -290,6 +348,108 @@ export class FeishuChannel implements Channel {
     } catch (err) {
       logger.error({ chatId, error: err }, 'Feishu message send failed')
       throw err  // Re-throw so caller knows the send failed
+    }
+  }
+
+  async sendMedia(chatId: string, text: string, mediaUrl: string): Promise<void> {
+    const logger = getLogger()
+    const feishuChatId = chatId.replace(/^feishu:/, '')
+    const isRemote = /^https?:\/\//i.test(mediaUrl)
+
+    let tempDir: string | null = null
+    try {
+      let localPath = mediaUrl
+      let fileName: string
+
+      if (isRemote) {
+        // Remote media must be downloaded first: im.image/file.create only accept binary uploads.
+        // 大小上限按扩展名区分（图片 10MB / 文件 30MB），经 media-fetch 做 SSRF 校验 + 下载即限流。
+        fileName = inferRemoteFileName(mediaUrl)
+        const remoteMax = FEISHU_IMAGE_EXTENSIONS.has(feishuExtensionOf(fileName))
+          ? FEISHU_IMAGE_MAX_BYTES
+          : FEISHU_FILE_MAX_BYTES
+        const remote = await fetchRemoteMediaToBuffer(mediaUrl, { maxBytes: remoteMax })
+        tempDir = mkdtempSync(join(tmpdir(), 'xiaojuclaw-feishu-media-'))
+        localPath = join(tempDir, fileName)
+        writeFileSync(localPath, remote.buffer)
+      } else {
+        if (!existsSync(mediaUrl)) {
+          throw new Error(`媒体文件不存在：${mediaUrl}`)
+        }
+        fileName = basename(mediaUrl)
+      }
+
+      const extension = feishuExtensionOf(fileName)
+      const size = statSync(localPath).size
+      if (size === 0) {
+        throw new Error(`媒体文件为空，飞书不支持发送空文件：${fileName}`)
+      }
+
+      if (FEISHU_IMAGE_EXTENSIONS.has(extension)) {
+        if (size > FEISHU_IMAGE_MAX_BYTES) {
+          throw new Error(
+            `图片大小 ${(size / 1024 / 1024).toFixed(1)}MB 超过飞书图片上限 10MB，已取消发送`,
+          )
+        }
+        const uploaded = await this.client.im.image.create({
+          data: { image_type: 'message', image: createReadStream(localPath) },
+        })
+        const imageKey = extractUploadKey(uploaded, 'image_key')
+        if (!imageKey) {
+          throw new Error('飞书图片上传失败：接口未返回 image_key')
+        }
+        await this.client.im.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: feishuChatId,
+            msg_type: 'image',
+            content: JSON.stringify({ image_key: imageKey }),
+          },
+        })
+      } else {
+        if (size > FEISHU_FILE_MAX_BYTES) {
+          throw new Error(
+            `文件大小 ${(size / 1024 / 1024).toFixed(1)}MB 超过飞书文件上限 30MB，已取消发送`,
+          )
+        }
+        const uploaded = await this.client.im.file.create({
+          data: {
+            file_type: mapFeishuFileType(extension),
+            file_name: fileName,
+            file: createReadStream(localPath),
+          },
+        })
+        const fileKey = extractUploadKey(uploaded, 'file_key')
+        if (!fileKey) {
+          throw new Error('飞书文件上传失败：接口未返回 file_key')
+        }
+        await this.client.im.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: feishuChatId,
+            msg_type: 'file',
+            content: JSON.stringify({ file_key: fileKey }),
+          },
+        })
+      }
+
+      // Feishu media messages carry no caption; send accompanying text separately
+      if (text.trim()) {
+        await this.sendMessage(chatId, text)
+      }
+
+      logger.debug({ chatId, fileName, size }, 'Feishu media sent')
+    } catch (err) {
+      logger.error({ chatId, error: err }, 'Feishu media send failed')
+      throw err  // Re-throw so caller knows the send failed
+    } finally {
+      if (tempDir) {
+        try {
+          rmSync(tempDir, { recursive: true, force: true })
+        } catch {
+          // ignore temp cleanup errors
+        }
+      }
     }
   }
 

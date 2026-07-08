@@ -36,6 +36,9 @@ describe('runtime-tools', () => {
     const names = (result.tools as ToolDefinition[]).map((tool) => tool.name)
     expect(names).toContain('mcp__task__list_tasks')
     expect(names).toContain('mcp__task__update_task')
+    expect(names).toContain('mcp__skills__list_skills')
+    expect(names).toContain('mcp__skills__set_skill_enabled')
+    expect(names).toContain('mcp__skills__install_skill')
 
     await result.dispose()
   })

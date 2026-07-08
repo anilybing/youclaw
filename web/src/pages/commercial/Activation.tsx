@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Loader2, KeyRound, Monitor, Smartphone, Unplug, Coins, Gift, ShieldCheck } from 'lucide-react'
 
 export function Activation() {
-  const { user, isLoggedIn, creditBalance, fetchUser, fetchCreditBalance } = useAppRuntimeStore()
+  const { user, isLoggedIn, creditBalance, fetchUser, fetchCreditBalance, cloudEnabled } = useAppRuntimeStore()
   const [code, setCode] = useState('')
   const [redeemLoading, setRedeemLoading] = useState(false)
   const [devices, setDevices] = useState<DeviceItem[]>([])
@@ -74,6 +74,20 @@ export function Activation() {
   }
 
   const activated = isLoggedIn && Boolean((user as { activated?: boolean } | null)?.activated)
+
+  // 离线模式（云服务未配置）：激活码/设备绑定均依赖云端，给友好提示而非可交互
+  // 却必然失败的兑换表单（本页入口在侧边栏已隐藏，这里兜底直接输入 URL 的情况）。
+  if (!cloudEnabled) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center space-y-2">
+          <ShieldCheck className="h-8 w-8 text-muted-foreground mx-auto" />
+          <p className="text-sm font-medium">离线版无需激活</p>
+          <p className="text-xs text-muted-foreground">当前版本不依赖云端服务，激活码与设备管理不可用</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">

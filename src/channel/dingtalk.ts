@@ -1,9 +1,19 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import { getLogger } from '../logger/index.ts'
+import { fetchRemoteMediaToBuffer } from './media-fetch.ts'
 import type { EventBus } from '../events/bus.ts'
 import type { Channel, InboundMessage, OnInboundMessage } from './types.ts'
 
 const DINGTALK_API_BASE = 'https://api.dingtalk.com'
+// Legacy endpoint used for media upload; accepts the same enterprise-app accessToken
+const DINGTALK_OAPI_BASE = 'https://oapi.dingtalk.com'
 const DINGTALK_TEXT_CHUNK_LIMIT = 4000
+// DingTalk media upload limits: image/file both capped at 20MB
+const DINGTALK_MEDIA_MAX_BYTES = 20 * 1024 * 1024
+
+// media/upload type=image accepted formats
+const DINGTALK_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'gif', 'png', 'bmp'])
 
 export interface DingTalkChannelOpts {
   onMessage: OnInboundMessage
@@ -55,6 +65,19 @@ export function isTokenValid(token: AccessToken | null, bufferMs: number = 30000
   if (!token) return false
   const elapsed = Date.now() - token.fetchedAt
   return elapsed < token.expires_in * 1000 - bufferMs
+}
+
+/**
+ * Map a file extension to the DingTalk media upload type
+ */
+export function mapDingTalkMediaType(extension: string): 'image' | 'file' {
+  return DINGTALK_IMAGE_EXTENSIONS.has(extension.toLowerCase()) ? 'image' : 'file'
+}
+
+function dingtalkExtensionOf(fileName: string): string {
+  const dot = fileName.lastIndexOf('.')
+  if (dot <= 0 || dot === fileName.length - 1) return ''
+  return fileName.slice(dot + 1).toLowerCase()
 }
 
 export class DingTalkChannel implements Channel {
@@ -153,6 +176,12 @@ export class DingTalkChannel implements Channel {
       chatId = `dingtalk:user:${data.senderStaffId || data.senderId}`
     }
 
+    // 群聊回调自带群名 conversationTitle，直接采用
+    const groupName =
+      isGroup && typeof data.conversationTitle === 'string' && data.conversationTitle.trim().length > 0
+        ? data.conversationTitle
+        : undefined
+
     const inbound: InboundMessage = {
       id: data.msgId || `dingtalk-${Date.now()}`,
       chatId,
@@ -162,6 +191,7 @@ export class DingTalkChannel implements Channel {
       timestamp: new Date().toISOString(),
       isGroup,
       channel: 'dingtalk',
+      ...(groupName ? { groupName } : {}),
     }
 
     this.opts.onMessage(inbound)
@@ -182,10 +212,10 @@ export class DingTalkChannel implements Channel {
       for (const chunk of chunks) {
         if (chatId.startsWith('dingtalk:user:')) {
           const userId = chatId.slice('dingtalk:user:'.length)
-          await this.sendUserMessage(userId, chunk)
+          await this.sendUserMessage(userId, 'sampleText', JSON.stringify({ content: chunk }))
         } else if (chatId.startsWith('dingtalk:group:')) {
           const conversationId = chatId.slice('dingtalk:group:'.length)
-          await this.sendGroupMessage(conversationId, chunk)
+          await this.sendGroupMessage(conversationId, 'sampleText', JSON.stringify({ content: chunk }))
         } else {
           logger.warn({ chatId }, 'DingTalk: unknown chatId format')
           return
@@ -198,7 +228,94 @@ export class DingTalkChannel implements Channel {
     }
   }
 
-  private async sendUserMessage(userId: string, text: string): Promise<void> {
+  async sendMedia(chatId: string, text: string, mediaUrl: string): Promise<void> {
+    const logger = getLogger()
+
+    try {
+      // Ensure token is valid
+      if (!isTokenValid(this.accessToken)) {
+        await this.refreshToken()
+      }
+
+      const isRemote = /^https?:\/\//i.test(mediaUrl)
+      let buffer: Buffer
+      let fileName: string
+      if (isRemote) {
+        // SSRF 校验 + 下载时即按 20MB 上限限流（不再整包读入后再判大小）
+        const remote = await fetchRemoteMediaToBuffer(mediaUrl, {
+          maxBytes: DINGTALK_MEDIA_MAX_BYTES,
+          fetchFn: this.fetchFn,
+        })
+        buffer = remote.buffer
+        fileName = remote.fileName
+      } else {
+        if (!existsSync(mediaUrl)) {
+          throw new Error(`媒体文件不存在：${mediaUrl}`)
+        }
+        buffer = readFileSync(mediaUrl)
+        fileName = basename(mediaUrl)
+      }
+      const extension = dingtalkExtensionOf(fileName)
+      const mediaType = mapDingTalkMediaType(extension)
+
+      if (buffer.length > DINGTALK_MEDIA_MAX_BYTES) {
+        throw new Error(
+          `文件大小 ${(buffer.length / 1024 / 1024).toFixed(1)}MB 超过钉钉媒体上限 20MB，已取消发送`,
+        )
+      }
+
+      const mediaId = await this.uploadMedia(buffer, fileName, mediaType)
+
+      const msgKey = mediaType === 'image' ? 'sampleImageMsg' : 'sampleFile'
+      const msgParam = mediaType === 'image'
+        ? JSON.stringify({ photoURL: mediaId })
+        : JSON.stringify({ mediaId, fileName, fileType: extension || 'file' })
+
+      if (chatId.startsWith('dingtalk:user:')) {
+        const userId = chatId.slice('dingtalk:user:'.length)
+        await this.sendUserMessage(userId, msgKey, msgParam)
+      } else if (chatId.startsWith('dingtalk:group:')) {
+        const conversationId = chatId.slice('dingtalk:group:'.length)
+        await this.sendGroupMessage(conversationId, msgKey, msgParam)
+      } else {
+        throw new Error(`未知的钉钉会话 ID 格式：${chatId}`)
+      }
+
+      // DingTalk media messages carry no caption; send accompanying text separately
+      if (text.trim()) {
+        await this.sendMessage(chatId, text)
+      }
+
+      logger.debug({ chatId, fileName, mediaType }, 'DingTalk media sent')
+    } catch (err) {
+      logger.error({ chatId, error: err }, 'DingTalk media send error')
+      throw err // Re-throw so caller knows the send failed
+    }
+  }
+
+  /**
+   * Upload media via the legacy oapi endpoint (v1.0 accessToken is accepted there),
+   * returns a reusable media_id
+   */
+  private async uploadMedia(buffer: Buffer, fileName: string, type: 'image' | 'file'): Promise<string> {
+    const form = new FormData()
+    form.append('media', new Blob([buffer]), fileName)
+
+    const res = await this.fetchFn(
+      `${DINGTALK_OAPI_BASE}/media/upload?access_token=${encodeURIComponent(this.accessToken!.access_token)}&type=${type}`,
+      { method: 'POST', body: form },
+    )
+    if (!res.ok) {
+      throw new Error(`钉钉媒体上传失败：HTTP ${res.status}`)
+    }
+    const data = (await res.json()) as { errcode?: number; errmsg?: string; media_id?: string }
+    if ((data.errcode && data.errcode !== 0) || !data.media_id) {
+      throw new Error(`钉钉媒体上传失败：${data.errcode ?? ''} ${data.errmsg ?? '未返回 media_id'}`)
+    }
+    return data.media_id
+  }
+
+  private async sendUserMessage(userId: string, msgKey: string, msgParam: string): Promise<void> {
     const res = await this.fetchFn(`${DINGTALK_API_BASE}/v1.0/robot/oToMessages/batchSend`, {
       method: 'POST',
       headers: {
@@ -208,8 +325,8 @@ export class DingTalkChannel implements Channel {
       body: JSON.stringify({
         robotCode: this.appKey,
         userIds: [userId],
-        msgKey: 'sampleText',
-        msgParam: JSON.stringify({ content: text }),
+        msgKey,
+        msgParam,
       }),
     })
 
@@ -219,7 +336,7 @@ export class DingTalkChannel implements Channel {
     }
   }
 
-  private async sendGroupMessage(conversationId: string, text: string): Promise<void> {
+  private async sendGroupMessage(conversationId: string, msgKey: string, msgParam: string): Promise<void> {
     const res = await this.fetchFn(`${DINGTALK_API_BASE}/v1.0/robot/groupMessages/send`, {
       method: 'POST',
       headers: {
@@ -229,8 +346,8 @@ export class DingTalkChannel implements Channel {
       body: JSON.stringify({
         robotCode: this.appKey,
         openConversationId: conversationId,
-        msgKey: 'sampleText',
-        msgParam: JSON.stringify({ content: text }),
+        msgKey,
+        msgParam,
       }),
     })
 

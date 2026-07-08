@@ -78,7 +78,7 @@ export function AssistantMessage({ message }: { message: Message }) {
               ) : (
                 <>
                   <MessageContent>
-                    <MessageResponse>{message.content}</MessageResponse>
+                    <MessageResponse className="chat-prose">{message.content}</MessageResponse>
                   </MessageContent>
                   <MessageActions className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <MessageAction

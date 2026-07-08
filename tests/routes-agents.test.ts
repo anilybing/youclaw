@@ -255,6 +255,9 @@ describe('agents routes', () => {
 
   test('PUT /agents/:id normalizes legacy registry slugs to local skill names', async () => {
     const skillsLoader = {
+      // loadAgents() 会先取全量技能再归一化；mock 需与 SkillsLoader 接口保持同步，
+      // 否则 loadAgents 内部抛错导致所有 agent 加载失败（PUT 404）
+      loadAllSkillsForAgent: () => [],
       normalizeAgentSkillNames: (skills?: string[]) => ({
         skills: skills?.map((skill) => skill === 'self-improving-agent' ? 'self-improvement' : skill),
         changed: Boolean(skills?.includes('self-improving-agent')),

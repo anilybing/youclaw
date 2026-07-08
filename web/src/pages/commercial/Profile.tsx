@@ -11,7 +11,7 @@ import { formatApiError } from '@/lib/api-error'
 import { UserAiKeyCard } from '@/components/commercial/UserAiKeyCard'
 
 export function Profile() {
-  const { user, isLoggedIn, creditBalance } = useAppRuntimeStore()
+  const { user, isLoggedIn, creditBalance, cloudEnabled } = useAppRuntimeStore()
   const navigate = useNavigate()
   const mvpUser = user as typeof user & { activated?: boolean; mobile?: string }
   const [exportingDiag, setExportingDiag] = useState(false)
@@ -33,9 +33,10 @@ export function Profile() {
   }
 
   if (!isLoggedIn || !user) {
+    // 离线模式没有登录能力（/login 会被重定向），提示「请先登录」会误导用户。
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">请先登录</p>
+        <p className="text-muted-foreground">{cloudEnabled ? '请先登录' : '离线版不提供账号功能'}</p>
       </div>
     )
   }

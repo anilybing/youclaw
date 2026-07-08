@@ -4,11 +4,13 @@
  * 用法：bun scripts/verify-digital-staff.mjs
  *
  * 检查项（全部通过退出码 0，任一失败退出码 1 并列出明细）：
- *   1. 12 个内置技能目录齐全：SKILL.md 存在且 frontmatter 含 name/description
+ *   1. 19 个内置技能目录齐全：SKILL.md 存在且 frontmatter 含 name/description
  *   2. 6 个脚本技能的构建产物 .mjs 存在且非空
  *   3. skills-dev golden 测试全绿（bun test）
- *   4. 预置数字员工模板：office-assistant（8 办公技能）与 ecommerce-assistant（6 电商技能）agent.yaml 可解析、白名单齐全
- *   5. 工作台任务卡配置：15 张卡、promptTemplate 双语、办公卡绑定 office-assistant、电商卡绑定 ecommerce-assistant
+ *   4. 预置数字员工模板：office-assistant（10 办公/简报技能）、ecommerce-assistant（7 电商技能）、
+ *      content-creator（4 创作技能 + web-search）agent.yaml 可解析、白名单齐全
+ *   5. 工作台任务卡配置：22 张卡、promptTemplate 双语、办公卡绑定 office-assistant、
+ *      电商卡绑定 ecommerce-assistant、创作卡绑定 content-creator
  *
  * 不覆盖（需人工/真机，见 doc/数字员工验收清单.md）：
  *   真实模型端到端产出、打包后资源加载、U 盘断网场景。
@@ -42,15 +44,30 @@ const SKILLS = [
   { slug: 'ecom-compliance', script: null },
   { slug: 'ecom-analytics', script: null },
   { slug: 'ecom-image', script: 'scripts/image.mjs' },
+  // 内容创作能力包（纯 prompt 技能）
+  { slug: 'content-article', script: null },
+  { slug: 'content-xiaohongshu', script: null },
+  { slug: 'content-video-script', script: null },
+  { slug: 'content-calendar', script: null },
+  // 情报简报能力包（纯 prompt 技能）
+  { slug: 'daily-briefing', script: null },
+  { slug: 'web-monitor', script: null },
+  // 数据分析可视化（纯 prompt 技能）
+  { slug: 'data-report', script: null },
 ]
 
 // 各预置数字员工的技能白名单（与 templates.ts 的 agent.yaml 对齐）
 const OFFICE_ASSISTANT_SKILLS = [
   'office-ppt', 'office-doc', 'office-excel', 'office-pdf',
   'meeting-notes', 'weekly-report', 'email-draft', 'file-organizer',
+  'daily-briefing', 'web-monitor',
 ]
 const ECOMMERCE_ASSISTANT_SKILLS = [
   'ecom-copywriter', 'ecom-compliance', 'ecom-image', 'ecom-analytics', 'office-excel', 'office-doc',
+  'web-monitor',
+]
+const CONTENT_CREATOR_SKILLS = [
+  'content-article', 'content-xiaohongshu', 'content-video-script', 'content-calendar', 'web-search',
 ]
 
 for (const skill of SKILLS) {
@@ -94,7 +111,7 @@ try {
       missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
   }
 
-  // 电商助理模板：id + 6 技能白名单齐全
+  // 电商助理模板：id + 7 技能白名单齐全
   const ecomMatch = templates.match(/ECOMMERCE_ASSISTANT_AGENT_YAML = `\\?\n?([\s\S]*?)`/)
   if (!ecomMatch) {
     check('ecommerce-assistant 模板', false, '未找到 ECOMMERCE_ASSISTANT_AGENT_YAML')
@@ -105,6 +122,18 @@ try {
     check('ecommerce-assistant 模板', parsed?.id === 'ecommerce-assistant' && missing.length === 0,
       missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
   }
+
+  // 创作助理模板：id + 4 创作技能 + web-search 白名单齐全
+  const contentMatch = templates.match(/CONTENT_CREATOR_AGENT_YAML = `\\?\n?([\s\S]*?)`/)
+  if (!contentMatch) {
+    check('content-creator 模板', false, '未找到 CONTENT_CREATOR_AGENT_YAML')
+  } else {
+    const parsed = parse(contentMatch[1].replace(/\\`/g, '`'))
+    const skills = Array.isArray(parsed?.skills) ? parsed.skills : []
+    const missing = CONTENT_CREATOR_SKILLS.filter((s) => !skills.includes(s))
+    check('content-creator 模板', parsed?.id === 'content-creator' && missing.length === 0,
+      missing.length ? `缺技能: ${missing.join(',')}` : 'id 不匹配')
+  }
 } catch (err) {
   check('数字员工模板', false, String(err))
 }
@@ -113,14 +142,20 @@ try {
 try {
   const cardsSrc = readFileSync(resolve(REPO, 'web/src/config/workbench-tasks.ts'), 'utf8')
   const cardIds = [...cardsSrc.matchAll(/^\s{4}id:\s*'([a-z-]+)'/gm)].map((m) => m[1])
-  check('工作台任务卡数量(15)', cardIds.length === 15, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
+  check('工作台任务卡数量(22)', cardIds.length === 22, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
   check('工作台绑定 office-assistant', /WORKBENCH_AGENT_ID = 'office-assistant'/.test(cardsSrc))
   check('电商卡绑定 ecommerce-assistant', /ECOMMERCE_AGENT_ID = 'ecommerce-assistant'/.test(cardsSrc))
+  check('创作卡绑定 content-creator', /CONTENT_AGENT_ID = 'content-creator'/.test(cardsSrc))
   // 每张 ecom-* 卡都必须显式绑定 agentId: ECOMMERCE_AGENT_ID（漏绑会误派给办公助理）
   const ecomCardIds = cardIds.filter((id) => id.startsWith('ecom-'))
   const agentBindCount = (cardsSrc.match(/agentId:\s*ECOMMERCE_AGENT_ID/g) ?? []).length
   check('电商卡均显式绑定 ecommerce-assistant', ecomCardIds.length > 0 && agentBindCount === ecomCardIds.length,
     `电商卡 ${ecomCardIds.length} 张 / agentId 绑定 ${agentBindCount} 处`)
+  // 每张 content-* 卡都必须显式绑定 agentId: CONTENT_AGENT_ID（漏绑会误派给办公助理）
+  const contentCardIds = cardIds.filter((id) => id.startsWith('content-'))
+  const contentBindCount = (cardsSrc.match(/agentId:\s*CONTENT_AGENT_ID/g) ?? []).length
+  check('创作卡均显式绑定 content-creator', contentCardIds.length > 0 && contentBindCount === contentCardIds.length,
+    `创作卡 ${contentCardIds.length} 张 / agentId 绑定 ${contentBindCount} 处`)
   const zhCount = (cardsSrc.match(/zh:/g) ?? []).length
   const enCount = (cardsSrc.match(/en:/g) ?? []).length
   check('任务卡双语文案', zhCount > 20 && enCount > 20 && zhCount === enCount, `zh=${zhCount} en=${enCount}`)

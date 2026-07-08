@@ -1,9 +1,19 @@
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import { getLogger } from '../logger/index.ts'
+import { fetchRemoteMediaToBuffer, inferMediaFileNameFromUrl } from './media-fetch.ts'
 import type { Channel, InboundMessage, OnInboundMessage } from './types.ts'
 
 const WECOM_API_BASE = 'https://qyapi.weixin.qq.com'
 const WECOM_TEXT_CHUNK_LIMIT = 2048
+// WeCom temporary material (素材) limits: image/video 10MB, regular file 20MB
+const WECOM_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+const WECOM_VIDEO_MAX_BYTES = 10 * 1024 * 1024
+const WECOM_FILE_MAX_BYTES = 20 * 1024 * 1024
+
+// media/upload type=image only accepts JPG/PNG
+const WECOM_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png'])
 
 export interface WeComChannelOpts {
   onMessage: OnInboundMessage
@@ -116,6 +126,22 @@ export function chunkText(text: string, limit: number): string[] {
     chunks.push(text.slice(i, i + limit))
   }
   return chunks
+}
+
+/**
+ * Map a file extension to the WeCom temporary material type
+ */
+export function mapWeComMediaType(extension: string): 'image' | 'video' | 'file' {
+  const ext = extension.toLowerCase()
+  if (WECOM_IMAGE_EXTENSIONS.has(ext)) return 'image'
+  if (ext === 'mp4') return 'video'
+  return 'file'
+}
+
+function wecomExtensionOf(fileName: string): string {
+  const dot = fileName.lastIndexOf('.')
+  if (dot <= 0 || dot === fileName.length - 1) return ''
+  return fileName.slice(dot + 1).toLowerCase()
 }
 
 export class WeComChannel implements Channel {
@@ -287,6 +313,101 @@ export class WeComChannel implements Channel {
     } catch (err) {
       logger.error({ chatId, error: err }, 'WeCom message send error')
     }
+  }
+
+  async sendMedia(chatId: string, text: string, mediaUrl: string): Promise<void> {
+    const logger = getLogger()
+
+    try {
+      // Ensure token is valid
+      if (!this.accessToken || this.isTokenExpired()) {
+        await this.refreshToken()
+      }
+
+      const toUser = chatId.replace(/^wecom:/, '')
+      const isRemote = /^https?:\/\//i.test(mediaUrl)
+      const fileName = isRemote ? inferMediaFileNameFromUrl(mediaUrl) : basename(mediaUrl)
+      const mediaType = mapWeComMediaType(wecomExtensionOf(fileName))
+
+      const maxBytes = mediaType === 'image'
+        ? WECOM_IMAGE_MAX_BYTES
+        : mediaType === 'video' ? WECOM_VIDEO_MAX_BYTES : WECOM_FILE_MAX_BYTES
+
+      let buffer: Buffer
+      if (isRemote) {
+        // SSRF 校验 + 下载时即按渠道上限限流（不再整包读入后再判大小）
+        buffer = (await fetchRemoteMediaToBuffer(mediaUrl, { maxBytes, fetchFn: this.fetchFn })).buffer
+      } else {
+        if (!existsSync(mediaUrl)) {
+          throw new Error(`媒体文件不存在：${mediaUrl}`)
+        }
+        buffer = readFileSync(mediaUrl)
+      }
+      if (buffer.length > maxBytes) {
+        const label = mediaType === 'image' ? '图片' : mediaType === 'video' ? '视频' : '文件'
+        throw new Error(
+          `${label}大小 ${(buffer.length / 1024 / 1024).toFixed(1)}MB 超过企业微信${label}上限 ${maxBytes / 1024 / 1024}MB，已取消发送`,
+        )
+      }
+
+      const mediaId = await this.uploadTempMedia(buffer, fileName, mediaType)
+
+      const res = await this.fetchFn(
+        `${WECOM_API_BASE}/cgi-bin/message/send?access_token=${this.accessToken!.access_token}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            touser: toUser,
+            msgtype: mediaType,
+            agentid: parseInt(this.agentId, 10),
+            [mediaType]: { media_id: mediaId },
+          }),
+        },
+      )
+      if (!res.ok) {
+        throw new Error(`企业微信媒体消息发送失败：HTTP ${res.status}`)
+      }
+      const data = (await res.json()) as { errcode?: number; errmsg?: string }
+      if (data.errcode && data.errcode !== 0) {
+        throw new Error(`企业微信媒体消息发送失败：${data.errcode} ${data.errmsg ?? ''}`)
+      }
+
+      // WeCom media messages carry no caption; send accompanying text separately
+      if (text.trim()) {
+        await this.sendMessage(chatId, text)
+      }
+
+      logger.debug({ chatId, fileName, mediaType }, 'WeCom media sent')
+    } catch (err) {
+      logger.error({ chatId, error: err }, 'WeCom media send error')
+      throw err // Re-throw so caller knows the send failed
+    }
+  }
+
+  /**
+   * Upload temporary material (临时素材), returns media_id (valid for 3 days)
+   */
+  private async uploadTempMedia(
+    buffer: Buffer,
+    fileName: string,
+    type: 'image' | 'video' | 'file',
+  ): Promise<string> {
+    const form = new FormData()
+    form.append('media', new Blob([buffer]), fileName)
+
+    const res = await this.fetchFn(
+      `${WECOM_API_BASE}/cgi-bin/media/upload?access_token=${this.accessToken!.access_token}&type=${type}`,
+      { method: 'POST', body: form },
+    )
+    if (!res.ok) {
+      throw new Error(`企业微信素材上传失败：HTTP ${res.status}`)
+    }
+    const data = (await res.json()) as { errcode?: number; errmsg?: string; media_id?: string }
+    if ((data.errcode && data.errcode !== 0) || !data.media_id) {
+      throw new Error(`企业微信素材上传失败：${data.errcode ?? ''} ${data.errmsg ?? '未返回 media_id'}`)
+    }
+    return data.media_id
   }
 
   isConnected(): boolean {

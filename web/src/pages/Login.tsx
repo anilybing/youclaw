@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isTauri } from "@/api/transport"
+import { WindowsTitleBar } from "@/components/layout/WindowsTitleBar"
 import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog"
 import { notify } from "@/stores/app-runtime"
 import logoUrl from "@/assets/logo.png"
@@ -69,6 +70,8 @@ export function Login() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
+      {/* 无边框窗口下登录页也需要可拖拽/关闭（组件自守卫，仅 Windows 桌面渲染） */}
+      <WindowsTitleBar />
       <div className="flex-1 flex overflow-hidden">
         {/* Left hero area - large screens only */}
         <section

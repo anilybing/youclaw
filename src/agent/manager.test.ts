@@ -5,6 +5,7 @@ import { AgentConfigSchema } from './schema.ts'
 import {
   OFFICE_ASSISTANT_AGENT_YAML, OFFICE_ASSISTANT_SOUL_MD,
   ECOMMERCE_ASSISTANT_AGENT_YAML, ECOMMERCE_ASSISTANT_SOUL_MD,
+  CONTENT_CREATOR_AGENT_YAML, CONTENT_CREATOR_SOUL_MD,
 } from './templates.ts'
 
 // Minimal mock dependencies
@@ -76,7 +77,7 @@ describe('AgentManager.resolveAgent', () => {
 
 // [XJC] T-D7：预置数字员工模板本身必须是合法可加载的配置
 describe('office-assistant preset template', () => {
-  test('agent.yaml 模板可解析且挂载全部 8 个办公技能', () => {
+  test('agent.yaml 模板可解析且挂载全部 13 个办公/简报/数据/联网技能', () => {
     const parsed = parseYaml(OFFICE_ASSISTANT_AGENT_YAML) as {
       id: string
       name: string
@@ -88,6 +89,7 @@ describe('office-assistant preset template', () => {
     expect(parsed.skills).toEqual([
       'office-ppt', 'office-doc', 'office-excel', 'office-pdf',
       'meeting-notes', 'weekly-report', 'email-draft', 'file-organizer',
+      'daily-briefing', 'web-monitor', 'data-report', 'web-search', 'agent-browser',
     ])
   })
 
@@ -137,7 +139,7 @@ describe('office-assistant preset template', () => {
 
 // [XJC] 电商能力包：预置数字员工「小橘电商助理」模板必须是合法可加载配置
 describe('ecommerce-assistant preset template', () => {
-  test('agent.yaml 模板可解析且挂载 6 个电商/复用技能', () => {
+  test('agent.yaml 模板可解析且挂载 7 个电商/复用技能', () => {
     const parsed = parseYaml(ECOMMERCE_ASSISTANT_AGENT_YAML) as {
       id: string
       name: string
@@ -148,7 +150,7 @@ describe('ecommerce-assistant preset template', () => {
     expect(parsed.memory.enabled).toBe(true)
     expect(parsed.skills).toEqual([
       'ecom-copywriter', 'ecom-compliance', 'ecom-image', 'ecom-analytics',
-      'office-excel', 'office-doc',
+      'office-excel', 'office-doc', 'web-monitor', 'agent-browser',
     ])
   })
 
@@ -162,5 +164,35 @@ describe('ecommerce-assistant preset template', () => {
     expect(ECOMMERCE_ASSISTANT_SOUL_MD).toContain('电商产出')
     expect(ECOMMERCE_ASSISTANT_SOUL_MD).toContain('ecom-compliance')
     expect(ECOMMERCE_ASSISTANT_SOUL_MD).toContain('不覆盖原图')
+  })
+})
+
+// [XJC] 内容创作能力包：预置数字员工「小橘创作助理」模板必须是合法可加载配置
+describe('content-creator preset template', () => {
+  test('agent.yaml 模板可解析且挂载 4 个创作技能 + web-search', () => {
+    const parsed = parseYaml(CONTENT_CREATOR_AGENT_YAML) as {
+      id: string
+      name: string
+      skills: string[]
+      memory: { enabled: boolean }
+    }
+    expect(parsed.id).toBe('content-creator')
+    expect(parsed.memory.enabled).toBe(true)
+    expect(parsed.skills).toEqual([
+      'content-article', 'content-xiaohongshu', 'content-video-script', 'content-calendar',
+      'web-search',
+    ])
+  })
+
+  test('agent.yaml 模板整体通过 AgentConfigSchema 校验', () => {
+    const parsed = parseYaml(CONTENT_CREATOR_AGENT_YAML)
+    const result = AgentConfigSchema.safeParse(parsed)
+    expect(result.success).toBe(true)
+  })
+
+  test('SOUL 模板包含创作产出目录与原创红线约定', () => {
+    expect(CONTENT_CREATOR_SOUL_MD).toContain('创作产出')
+    expect(CONTENT_CREATOR_SOUL_MD).toContain('不抄袭')
+    expect(CONTENT_CREATOR_SOUL_MD).toContain('需核实')
   })
 })

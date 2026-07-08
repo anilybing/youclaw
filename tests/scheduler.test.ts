@@ -13,7 +13,9 @@
  * - start/stop lifecycle
  */
 
-import { describe, test, expect, beforeEach, beforeAll, mock } from 'bun:test'
+import { describe, test, expect, beforeEach, beforeAll, afterEach, mock } from 'bun:test'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { cleanTables } from './setup.ts'
 import {
   createTask,
@@ -28,6 +30,8 @@ import {
   saveTaskRunLog,
 } from '../src/db/index.ts'
 import { Scheduler } from '../src/scheduler/scheduler.ts'
+import { registerChannelOutboundService, resetChannelOutboundService } from '../src/channel/outbound-service.ts'
+import { getPaths } from '../src/config/index.ts'
 
 // mock eventBus, providing an emit method
 const mockEventBus = { emit: mock(() => {}) } as any
@@ -310,6 +314,57 @@ describe('Scheduler.executeTask — successful execution', () => {
     expect(logs.length).toBe(1)
     expect(logs[0].status).toBe('success')
     expect(logs[0].result).toBe('Report result')
+  })
+
+  // [XJC] B1 回归：调度器 enqueue 必须带 suppressOutbound=true，否则渠道会话上的定时任务
+  // 会被 runtime.complete → MessageRouter.handleOutbound 再发一次（双发 + delivery_mode 失效）。
+  test('executeTask enqueues with suppressOutbound=true (no double-delivery via router)', async () => {
+    const chatId = 'tg:999888'
+    createTask({
+      id: 'exec-suppress',
+      agentId: 'agent-1',
+      chatId,
+      prompt: 'daily brief',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      name: 'Suppress Task',
+    })
+
+    const enqueue = mock(() => Promise.resolve('result'))
+    const scheduler = new Scheduler({ enqueue } as any, {} as any, mockEventBus)
+    await scheduler.executeTask(getTask('exec-suppress')!)
+
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    const options = enqueue.mock.calls[0]?.[3] as { suppressOutbound?: boolean } | undefined
+    expect(options?.suppressOutbound).toBe(true)
+  })
+
+  // [XJC] M1 回归：同一任务在本进程已在途时，重复 executeTask 直接跳过（不重复入队/并发执行）。
+  test('executeTask skips duplicate concurrent execution of the same task (in-flight guard)', async () => {
+    createTask({
+      id: 'exec-inflight',
+      agentId: 'agent-1',
+      chatId: 'task:inflight',
+      prompt: 'slow task',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      name: 'Inflight Task',
+    })
+
+    let releaseFirst: (v: string) => void = () => {}
+    const gate = new Promise<string>((resolve) => { releaseFirst = resolve })
+    const enqueue = mock(() => gate)
+    const scheduler = new Scheduler({ enqueue } as any, {} as any, mockEventBus)
+    const task = getTask('exec-inflight')!
+
+    const first = scheduler.executeTask(task) // 占住在途，enqueue 挂起
+    const second = scheduler.executeTask(task) // 应被在途守卫直接跳过
+    await second
+    expect(enqueue).toHaveBeenCalledTimes(1) // 第二次未进入执行体
+    releaseFirst('done')
+    await first
   })
 
   test('chat name uses truncated prompt when no name is set', async () => {
@@ -642,6 +697,84 @@ describe('Scheduler.executeTask — consecutive failures and auto-pause', () => 
 
     const task = getTask('last-result-ok')!
     expect(task.last_result!.length).toBe(500)
+  })
+})
+
+// ===== persisted result strips internal [[attach:]] markers =====
+
+describe('Scheduler — lastResult / run-log strip [[attach:]] markers', () => {
+  beforeEach(() => cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs'))
+
+  test('executeTask persists 📎 lines (not [[attach:]]) in lastResult and run log', async () => {
+    createTask({
+      id: 'persist-att',
+      agentId: 'agent-1',
+      chatId: 'task:persist-att',
+      prompt: 'generate report',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+    })
+
+    const result = '报告已生成。\n[[attach:D:\\ws\\agents\\agent-1\\报告.pptx]]'
+    const mockQueue = { enqueue: mock(() => Promise.resolve(result)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('persist-att')!)
+
+    // task lastResult: 展示口径，无原始标记、有 📎 行
+    const task = getTask('persist-att')!
+    expect(task.last_result).not.toContain('[[attach:')
+    expect(task.last_result).toContain('📎')
+    expect(task.last_result).toContain('报告已生成。')
+
+    // run-log result: 同口径
+    const logs = getTaskRunLogs('persist-att')
+    expect(logs[0].result).not.toContain('[[attach:')
+    expect(logs[0].result).toContain('📎')
+  })
+
+  test('runManually persists 📎 lines (not [[attach:]]) in run log', async () => {
+    createTask({
+      id: 'persist-att-manual',
+      agentId: 'agent-1',
+      chatId: 'task:persist-att-manual',
+      prompt: 'generate report',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() + 60000).toISOString(),
+    })
+
+    const result = '手动结果\n[[attach:D:\\ws\\agents\\agent-1\\手动.pptx]]'
+    const mockQueue = { enqueue: mock(() => Promise.resolve(result)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.runManually(getTask('persist-att-manual')!)
+
+    const logs = getTaskRunLogs('persist-att-manual')
+    expect(logs[0].result).toContain('[manual]')
+    expect(logs[0].result).not.toContain('[[attach:')
+    expect(logs[0].result).toContain('📎')
+  })
+
+  test('result without markers is persisted unchanged', async () => {
+    createTask({
+      id: 'persist-plain',
+      agentId: 'agent-1',
+      chatId: 'task:persist-plain',
+      prompt: 'plain result',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+    })
+
+    const mockQueue = { enqueue: mock(() => Promise.resolve('纯文本结果，无附件')) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('persist-plain')!)
+
+    expect(getTask('persist-plain')!.last_result).toBe('纯文本结果，无附件')
+    expect(getTaskRunLogs('persist-plain')[0].result).toBe('纯文本结果，无附件')
   })
 })
 
@@ -1215,13 +1348,45 @@ describe('Scheduler.runManually', () => {
 
 // ===== Delivery =====
 
+/** Register a fake channel manager on the outbound service; returns the sendMessage spy. */
+function registerFakeChannel(
+  sendMessage = mock(async (_chatId: string, _text: string) => {}),
+  sendMedia?: (chatId: string, text: string, mediaUrl: string) => Promise<void>,
+) {
+  registerChannelOutboundService({
+    getChannelForChat: () => ({
+      name: 'fake',
+      connect: async () => {},
+      sendMessage,
+      ...(sendMedia ? { sendMedia } : {}),
+      isConnected: () => true,
+      ownsChatId: () => true,
+      disconnect: async () => {},
+    }),
+  } as any)
+  return sendMessage
+}
+
+/** Create a real file inside the (test DATA_DIR sandboxed) agent workspace; returns its absolute path. */
+function createAgentWorkspaceFile(agentId: string, fileName: string): string {
+  const dir = resolve(getPaths().agents, agentId)
+  mkdirSync(dir, { recursive: true })
+  const filePath = resolve(dir, fileName)
+  writeFileSync(filePath, 'attachment content')
+  return filePath
+}
+
 describe('Scheduler.executeTask — Delivery', () => {
   beforeEach(() => {
     cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs')
     mockEventBus.emit.mockClear()
+    resetChannelOutboundService()
   })
 
-  test('delivery_mode=push delivers to delivery_target via EventBus', async () => {
+  // Reset after each test so the fake channel manager does not leak into other tests
+  afterEach(() => resetChannelOutboundService())
+
+  test('delivery_mode=push sends directly via outbound service to delivery_target', async () => {
     createTask({
       id: 'dlv-1',
       agentId: 'agent-dlv',
@@ -1235,25 +1400,58 @@ describe('Scheduler.executeTask — Delivery', () => {
       deliveryTarget: 'tg:123456',
     })
 
+    const sendMessage = registerFakeChannel()
     const mockQueue = { enqueue: mock(() => Promise.resolve('delivery result')) } as any
     const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
 
     await scheduler.executeTask(getTask('dlv-1')!)
 
-    expect(mockEventBus.emit).toHaveBeenCalledTimes(1)
-    const emittedEvent = mockEventBus.emit.mock.calls[0][0]
-    expect(emittedEvent.type).toBe('complete')
-    expect(emittedEvent.agentId).toBe('agent-dlv')
-    expect(emittedEvent.chatId).toBe('tg:123456')
-    expect(emittedEvent.fullText).toContain('[Task: Daily Report]')
-    expect(emittedEvent.fullText).toContain('delivery result')
+    // Message goes straight to the channel
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toBe('tg:123456')
+    const sentText = sendMessage.mock.calls[0][1]
+    expect(sentText).toContain('[Task: Daily Report]')
+    expect(sentText).toContain('delivery result')
+
+    // No 'complete' event is emitted anymore — router.handleOutbound also subscribes
+    // to 'complete', so emitting would double-send the same message to the channel
+    expect(mockEventBus.emit).not.toHaveBeenCalled()
 
     // run log records delivery_status
     const logs = getTaskRunLogs('dlv-1')
     expect(logs[0].delivery_status).toBe('sent')
   })
 
-  test('delivery_mode=none does not call EventBus', async () => {
+  test('runManually with delivery_mode=push also sends via outbound service', async () => {
+    createTask({
+      id: 'dlv-manual',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-manual',
+      prompt: 'manual delivery',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() + 60000).toISOString(),
+      name: 'Manual Push',
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:777',
+    })
+
+    const sendMessage = registerFakeChannel()
+    const mockQueue = { enqueue: mock(() => Promise.resolve('manual result')) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    const result = await scheduler.runManually(getTask('dlv-manual')!)
+    expect(result.status).toBe('success')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toBe('tg:777')
+    expect(sendMessage.mock.calls[0][1]).toContain('[Task: Manual Push]')
+
+    const logs = getTaskRunLogs('dlv-manual')
+    expect(logs[0].delivery_status).toBe('sent')
+  })
+
+  test('delivery_mode=none does not touch the outbound service', async () => {
     createTask({
       id: 'dlv-2',
       agentId: 'agent-dlv',
@@ -1264,11 +1462,13 @@ describe('Scheduler.executeTask — Delivery', () => {
       nextRun: new Date(Date.now() - 1000).toISOString(),
     })
 
+    const sendMessage = registerFakeChannel()
     const mockQueue = { enqueue: mock(() => Promise.resolve('ok')) } as any
     const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
 
     await scheduler.executeTask(getTask('dlv-2')!)
 
+    expect(sendMessage).not.toHaveBeenCalled()
     expect(mockEventBus.emit).not.toHaveBeenCalled()
 
     const logs = getTaskRunLogs('dlv-2')
@@ -1288,18 +1488,19 @@ describe('Scheduler.executeTask — Delivery', () => {
       deliveryTarget: 'tg:123456',
     })
 
+    const sendMessage = registerFakeChannel()
     const mockQueue = { enqueue: mock(() => Promise.reject(new Error('err'))) } as any
     const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
 
     await scheduler.executeTask(getTask('dlv-3')!)
 
     // No delivery on failure
-    expect(mockEventBus.emit).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalled()
     const logs = getTaskRunLogs('dlv-3')
     expect(logs[0].delivery_status).toBe('skipped')
   })
 
-  test('delivery emit exception results in delivery_status=failed but task does not fail', async () => {
+  test('channel sendMessage failure results in delivery_status=failed but task does not fail', async () => {
     createTask({
       id: 'dlv-4',
       agentId: 'agent-dlv',
@@ -1312,10 +1513,10 @@ describe('Scheduler.executeTask — Delivery', () => {
       deliveryTarget: 'tg:999',
     })
 
-    // emit throws exception
-    const failEventBus = { emit: mock(() => { throw new Error('channel down') }) } as any
+    // Channel accepts the chat but the actual send blows up (e.g. disconnected)
+    registerFakeChannel(mock(async () => { throw new Error('channel down') }))
     const mockQueue = { enqueue: mock(() => Promise.resolve('ok')) } as any
-    const scheduler = new Scheduler(mockQueue, {} as any, failEventBus)
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
 
     await scheduler.executeTask(getTask('dlv-4')!)
 
@@ -1326,6 +1527,249 @@ describe('Scheduler.executeTask — Delivery', () => {
     const logs = getTaskRunLogs('dlv-4')
     expect(logs[0].status).toBe('success')
     expect(logs[0].delivery_status).toBe('failed')
+  })
+
+  test('no channel owning the target results in delivery_status=failed', async () => {
+    createTask({
+      id: 'dlv-5',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-5',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:404',
+    })
+
+    registerChannelOutboundService({ getChannelForChat: () => null } as any)
+    const mockQueue = { enqueue: mock(() => Promise.resolve('ok')) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('dlv-5')!)
+
+    const logs = getTaskRunLogs('dlv-5')
+    expect(logs[0].status).toBe('success')
+    expect(logs[0].delivery_status).toBe('failed')
+  })
+
+  test('outbound service not initialized results in delivery_status=failed', async () => {
+    createTask({
+      id: 'dlv-6',
+      agentId: 'agent-dlv',
+      chatId: 'task:dlv-6',
+      prompt: 'test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:123',
+    })
+
+    // beforeEach reset the service — nothing registered
+    const mockQueue = { enqueue: mock(() => Promise.resolve('ok')) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('dlv-6')!)
+
+    const logs = getTaskRunLogs('dlv-6')
+    expect(logs[0].status).toBe('success')
+    expect(logs[0].delivery_status).toBe('failed')
+  })
+})
+
+// ===== Delivery with attachments ([[attach:...]]) =====
+
+describe('Scheduler.executeTask — Delivery with attachments', () => {
+  beforeEach(() => {
+    cleanTables('messages', 'chats', 'scheduled_tasks', 'task_run_logs')
+    mockEventBus.emit.mockClear()
+    resetChannelOutboundService()
+  })
+
+  afterEach(() => resetChannelOutboundService())
+
+  function createPushTask(id: string, agentId: string, target: string) {
+    createTask({
+      id,
+      agentId,
+      chatId: `task:${id}`,
+      prompt: 'attachment delivery test',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() - 1000).toISOString(),
+      name: 'Attachment Task',
+      deliveryMode: 'push',
+      deliveryTarget: target,
+    })
+  }
+
+  test('text + 2 attachments all succeed → sendMessage x1 + sendMedia x2, status sent', async () => {
+    const p1 = createAgentWorkspaceFile('agent-att', 'report.pptx')
+    const p2 = createAgentWorkspaceFile('agent-att', 'data.xlsx')
+    createPushTask('att-ok', 'agent-att', 'tg:att-ok')
+
+    const sendMedia = mock(async (_chatId: string, _text: string, _mediaUrl: string) => {})
+    const sendMessage = registerFakeChannel(undefined, sendMedia)
+    const result = `报告已生成。\n[[attach:${p1}]]\n[[attach:${p2}]]`
+    const mockQueue = { enqueue: mock(() => Promise.resolve(result)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('att-ok')!)
+
+    // 文本一次：含 cleanText，不含原始标记
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][0]).toBe('tg:att-ok')
+    expect(sendMessage.mock.calls[0][1]).toContain('[Task: Attachment Task]')
+    expect(sendMessage.mock.calls[0][1]).toContain('报告已生成。')
+    expect(sendMessage.mock.calls[0][1]).not.toContain('[[attach')
+
+    // 附件两次，顺序与文本中出现顺序一致
+    expect(sendMedia).toHaveBeenCalledTimes(2)
+    expect(sendMedia.mock.calls[0][0]).toBe('tg:att-ok')
+    expect(sendMedia.mock.calls[0][2]).toBe(p1)
+    expect(sendMedia.mock.calls[1][2]).toBe(p2)
+
+    const logs = getTaskRunLogs('att-ok')
+    expect(logs[0].delivery_status).toBe('sent')
+
+    // 桌面会话落库：📎 行可读、无内部标记
+    const botMsg = getMessages('task:att-ok', 10).find((m) => m.is_bot_message === 1)!
+    expect(botMsg.content).toContain('📎 ' + p1)
+    expect(botMsg.content).toContain('📎 ' + p2)
+    expect(botMsg.content).not.toContain('[[attach')
+  })
+
+  test('attachment outside the agent workspace is skipped, only text is sent', async () => {
+    // 真实存在但位于 agents/<agentId>/ 之外的文件
+    const outsidePath = resolve(getPaths().data, 'outside-report.pptx')
+    writeFileSync(outsidePath, 'outside')
+    createPushTask('att-outside', 'agent-att', 'tg:att-outside')
+
+    const sendMedia = mock(async () => {})
+    const sendMessage = registerFakeChannel(undefined, sendMedia)
+    const mockQueue = { enqueue: mock(() => Promise.resolve(`done\n[[attach:${outsidePath}]]`)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('att-outside')!)
+
+    expect(sendMedia).not.toHaveBeenCalled()
+    // 只有正文，没有失败提醒（不合规路径是跳过而非发送失败）
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(getTaskRunLogs('att-outside')[0].delivery_status).toBe('sent')
+  })
+
+  test('one attachment send throws → status still sent + failure notice text', async () => {
+    const p1 = createAgentWorkspaceFile('agent-att', 'ok.pptx')
+    const p2 = createAgentWorkspaceFile('agent-att', 'boom.xlsx')
+    createPushTask('att-partial', 'agent-att', 'tg:att-partial')
+
+    const sendMedia = mock(async (_chatId: string, _text: string, mediaUrl: string) => {
+      if (mediaUrl === p2) throw new Error('media channel down')
+    })
+    const sendMessage = registerFakeChannel(undefined, sendMedia)
+    const mockQueue = { enqueue: mock(() => Promise.resolve(`done\n[[attach:${p1}]]\n[[attach:${p2}]]`)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('att-partial')!)
+
+    expect(sendMedia).toHaveBeenCalledTimes(2)
+    // 正文 + 补发的失败提醒
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    const notice = sendMessage.mock.calls[1][1]
+    expect(notice).toContain('1 个附件发送失败')
+    expect(notice).toContain('boom.xlsx')
+    expect(notice).not.toContain('ok.pptx')
+
+    expect(getTaskRunLogs('att-partial')[0].delivery_status).toBe('sent')
+  })
+
+  test('text send failure → status failed and no attachments are sent', async () => {
+    const p1 = createAgentWorkspaceFile('agent-att', 'never-sent.pptx')
+    createPushTask('att-text-fail', 'agent-att', 'tg:att-text-fail')
+
+    const sendMedia = mock(async () => {})
+    registerFakeChannel(mock(async () => { throw new Error('text channel down') }), sendMedia)
+    const mockQueue = { enqueue: mock(() => Promise.resolve(`done\n[[attach:${p1}]]`)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('att-text-fail')!)
+
+    expect(sendMedia).not.toHaveBeenCalled()
+    const logs = getTaskRunLogs('att-text-fail')
+    expect(logs[0].status).toBe('success')
+    expect(logs[0].delivery_status).toBe('failed')
+  })
+
+  test('channel without sendMedia → attachment fails but status stays sent', async () => {
+    const p1 = createAgentWorkspaceFile('agent-att', 'unsupported.pptx')
+    createPushTask('att-no-media', 'agent-att', 'tg:att-no-media')
+
+    // 默认 fake channel 不带 sendMedia → sendToChat({mediaUrl}) 抛"不支持"
+    const sendMessage = registerFakeChannel()
+    const mockQueue = { enqueue: mock(() => Promise.resolve(`done\n[[attach:${p1}]]`)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('att-no-media')!)
+
+    // 正文 + 失败提醒（附件失败不降级投递状态）
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage.mock.calls[1][1]).toContain('1 个附件发送失败')
+    expect(getTaskRunLogs('att-no-media')[0].delivery_status).toBe('sent')
+  })
+
+  test('more than 5 valid attachments → only the first 5 are sent', async () => {
+    const paths: string[] = []
+    for (let i = 1; i <= 6; i++) {
+      paths.push(createAgentWorkspaceFile('agent-att', `file-${i}.txt`))
+    }
+    createPushTask('att-limit', 'agent-att', 'tg:att-limit')
+
+    const sendMedia = mock(async () => {})
+    registerFakeChannel(undefined, sendMedia)
+    const result = `done\n${paths.map((p) => `[[attach:${p}]]`).join('\n')}`
+    const mockQueue = { enqueue: mock(() => Promise.resolve(result)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    await scheduler.executeTask(getTask('att-limit')!)
+
+    expect(sendMedia).toHaveBeenCalledTimes(5)
+    expect(sendMedia.mock.calls.map((c) => c[2])).toEqual(paths.slice(0, 5))
+    expect(getTaskRunLogs('att-limit')[0].delivery_status).toBe('sent')
+  })
+
+  test('runManually also delivers attachments and persists 📎 lines', async () => {
+    const p1 = createAgentWorkspaceFile('agent-att', 'manual.pptx')
+    createTask({
+      id: 'att-manual',
+      agentId: 'agent-att',
+      chatId: 'task:att-manual',
+      prompt: 'manual attachment',
+      scheduleType: 'interval',
+      scheduleValue: '60000',
+      nextRun: new Date(Date.now() + 60000).toISOString(),
+      name: 'Manual Attach',
+      deliveryMode: 'push',
+      deliveryTarget: 'tg:att-manual',
+    })
+
+    const sendMedia = mock(async (_chatId: string, _text: string, _mediaUrl: string) => {})
+    const sendMessage = registerFakeChannel(undefined, sendMedia)
+    const mockQueue = { enqueue: mock(() => Promise.resolve(`手动结果\n[[attach:${p1}]]`)) } as any
+    const scheduler = new Scheduler(mockQueue, {} as any, mockEventBus)
+
+    const result = await scheduler.runManually(getTask('att-manual')!)
+    expect(result.status).toBe('success')
+
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage.mock.calls[0][1]).not.toContain('[[attach')
+    expect(sendMedia).toHaveBeenCalledTimes(1)
+    expect(sendMedia.mock.calls[0][2]).toBe(p1)
+    expect(getTaskRunLogs('att-manual')[0].delivery_status).toBe('sent')
+
+    const botMsg = getMessages('task:att-manual', 10).find((m) => m.is_bot_message === 1)!
+    expect(botMsg.content).toContain('📎 ' + p1)
+    expect(botMsg.content).not.toContain('[[attach')
   })
 })
 

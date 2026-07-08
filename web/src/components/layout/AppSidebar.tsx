@@ -96,6 +96,8 @@ function AvatarView({
   );
 }
 
+import { useUpdateStore } from '@/stores/update'
+
 interface AppSidebarProps {
   onOpenSettings: (tab?: string) => void;
 }
@@ -103,6 +105,7 @@ interface AppSidebarProps {
 export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const { isCollapsed, toggle } = useSidebar();
   const { t } = useI18n();
+  const updateAvailable = useUpdateStore((s) => s.available);
   const { user, isLoggedIn, authLoading, login, logout, cloudEnabled } =
     useAppRuntimeStore();
   const { isMac } = usePlatform();
@@ -123,7 +126,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     // [XJC] 模板中心暂时隐藏：积分变现方向未定，且与「数字员工」功能重叠。
     // 恢复方法：取消下一行注释，并把 `Sparkles` 加回上面的 lucide-react 导入。
     // { to: "/templates", icon: Sparkles, label: "模板中心" },
-    { to: "/activation", icon: KeyRound, label: "激活与设备" },
+    // [XJC] 激活码/设备绑定依赖云端服务，离线模式（cloudEnabled=false）隐藏入口。
+    ...(cloudEnabled ? [{ to: "/activation", icon: KeyRound, label: "激活与设备" }] : []),
     { to: "/memory", icon: Brain, label: t.nav.memory },
     { to: "/logs", icon: ScrollText, label: t.nav.logs },
   ];
@@ -152,10 +156,10 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
       )}
       aria-expanded={!isCollapsed}
     >
-      {/* Top action bar */}
+      {/* Top action bar（品牌已上移到窗口标题栏，这里只保留折叠/展开功能件） */}
       {!isMac ? (
         <div className={cn("flex items-center h-[52px] shrink-0", ROW_PX)}>
-          {isCollapsed ? (
+          {isCollapsed && (
             <button
               type="button"
               onClick={toggle}
@@ -164,13 +168,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
             >
               <PanelLeft className="h-4 w-4" />
             </button>
-          ) : (
-            <div className="flex items-center gap-1.5 ml-1.5 mr-1">
-              <img src="/icon.svg" alt="XiaoJuClaw" className="h-5 w-5" />
-              <span className="text-md font-semibold tracking-tight whitespace-nowrap text-primary">
-                XiaoJuClaw
-              </span>
-            </div>
           )}
           <div className="flex-1 min-w-0" />
           <button
@@ -202,16 +199,6 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
             </button>
           ) : (
             <>
-              <div className="flex items-center gap-1.5 ml-1.5 mr-1 min-w-0">
-                <img
-                  src="/icon.svg"
-                  alt="XiaoJuClaw"
-                  className="h-5 w-5 shrink-0"
-                />
-                <span className="text-md font-semibold tracking-tight whitespace-nowrap text-primary truncate">
-                  XiaoJuClaw
-                </span>
-              </div>
               <div className="flex-1 min-w-0" />
               <button
                 type="button"
@@ -284,8 +271,14 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                     "text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]",
                   )}
                 >
-                  <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+                  <div className="relative w-9 h-9 shrink-0 flex items-center justify-center">
                     <AvatarView size="md" user={user} isLoggedIn={isLoggedIn} />
+                    {updateAvailable && (
+                      <span
+                        className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background"
+                        title={t.settings.updateAvailableTitle}
+                      />
+                    )}
                   </div>
                   <div
                     className={cn(
@@ -387,6 +380,9 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
               >
                 <BookOpen className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">{t.settings.about}</span>
+                {updateAvailable && (
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-red-500" />
+                )}
               </DropdownMenuItem>
 
               {isLoggedIn && (

@@ -1,7 +1,8 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, AtomicU8, Ordering},
@@ -744,7 +745,639 @@ fn kill_sidecar(app: &AppHandle) {
     }
 }
 
+// ===== Portable in-place updater (two-exe swap) =====
+//
+// 便携版（免安装 / U 盘）无法用安装包 updater 就地更新，这里只替换两个核心 exe：
+//   XiaoJuClaw.exe（主程序 + 内嵌前端） + XiaoJuClaw-server.exe（后端 sidecar）。
+// 客户端拉 MVP 的 manifest，逐文件比对 sha256，只下载「变了的那个 exe」，落到
+// XiaoJuClawData\updates\<version>，再起一个「分离的」.bat：等主进程退出后覆盖
+// 文件并重启（规避 Windows 运行中 exe 的占用锁 + 单实例插件冲突）。
+// 其余 _up_ / resources 等内容不走自更新（变动时重新制盘）。
+
+const PORTABLE_MAIN_EXE: &str = "XiaoJuClaw.exe";
+const PORTABLE_SERVER_EXE: &str = "XiaoJuClaw-server.exe";
+
+/// 离线版编译期开关：Tauri 构建时设环境变量 XJC_OFFLINE_BUILD=1，把「禁用自动
+/// 更新」直接烧死进二进制（面向访问不到香港服务器的大陆用户的离线交付，
+/// 运行期不发起任何更新请求）。
+/// 注意：option_env! 只在重新编译该 crate 时取值，增量缓存不会因环境变量变化
+/// 而失效——离线构建必须是干净的 release 构建（由构建脚本保证）。
+/// （const 上下文不允许对 &str 做模式匹配/相等比较，故用字节比较实现 == "1"。）
+const OFFLINE_BUILD: bool = match option_env!("XJC_OFFLINE_BUILD") {
+    Some(v) => {
+        let b = v.as_bytes();
+        b.len() == 1 && b[0] == b'1'
+    }
+    None => false,
+};
+
+/// 更新服务基址：默认线上域名，可用 XJC_UPDATE_BASE 覆盖（联调指向本地 MVP）。
+fn portable_update_base() -> String {
+    match std::env::var("XJC_UPDATE_BASE") {
+        Ok(v) if !v.trim().is_empty() => v.trim().trim_end_matches('/').to_string(),
+        _ => "https://www.xiaojuclaw.top".to_string(),
+    }
+}
+
+/// [XJC-PATCH] 安全：校验 manifest 里的下载地址是否可用。
+/// 只放行 https；仅当更新基址本身是 http（本地/离线联调用 XJC_UPDATE_BASE 指向
+/// 本地 MVP）时才额外放行 http。用于防止「被攻陷的 manifest」把下载指向任意明文
+/// http 源（中间人可投递恶意 exe）。
+fn portable_url_allowed(url: &str) -> bool {
+    if url.starts_with("https://") {
+        return true;
+    }
+    // 联调场景：更新基址为 http 时，允许同为 http 的下载地址；生产默认 https 基址下
+    // 任何 http 地址一律拒绝。
+    url.starts_with("http://") && portable_update_base().starts_with("http://")
+}
+
+fn current_exe_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
+#[derive(serde::Deserialize)]
+struct PortableManifestFile {
+    name: String,
+    sha256: String,
+    #[serde(default)]
+    size: u64,
+    url: String,
+}
+
+#[derive(serde::Deserialize)]
+struct PortableManifest {
+    version: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default, rename = "forceUpdate")]
+    force_update: bool,
+    #[serde(default)]
+    files: Vec<PortableManifestFile>,
+}
+
+#[derive(Serialize, Default)]
+struct PortableUpdateCheck {
+    available: bool,
+    version: String,
+    notes: String,
+    force_update: bool,
+    main_needs_update: bool,
+    server_needs_update: bool,
+    total_bytes: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct PortableUpdateProgress {
+    phase: String, // "downloading" | "applying"
+    percent: u32,
+    downloaded: u64,
+    total: u64,
+}
+
+fn sha256_file(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+/// semver 数值比较（与 MVP releaseService.compareVersions 对齐）：预发布标签低于同数值正式版。
+fn portable_version_cmp(a: &str, b: &str) -> i32 {
+    fn parse(v: &str) -> (Vec<i64>, String) {
+        let mut it = v.splitn(2, '-');
+        let core = it.next().unwrap_or("");
+        let pre = it.next().unwrap_or("").to_string();
+        let mut nums: Vec<i64> = core
+            .split('.')
+            .map(|n| n.parse::<i64>().unwrap_or(0))
+            .collect();
+        while nums.len() < 3 {
+            nums.push(0);
+        }
+        (nums, pre)
+    }
+    let (na, pa) = parse(a);
+    let (nb, pb) = parse(b);
+    for i in 0..3 {
+        if na[i] > nb[i] {
+            return 1;
+        }
+        if na[i] < nb[i] {
+            return -1;
+        }
+    }
+    match (pa.is_empty(), pb.is_empty()) {
+        (true, false) => 1,
+        (false, true) => -1,
+        _ => {
+            if pa < pb {
+                -1
+            } else if pa > pb {
+                1
+            } else {
+                0
+            }
+        }
+    }
+}
+
+/// [XJC-PATCH] 安全：严格校验便携版更新清单里的版本号，只接受
+/// `\d+.\d+.\d+(-[0-9A-Za-z-.]+)?`（如 0.0.178 / 1.2.3-rc.1）。
+/// manifest.version 会被逐字拼进 staging 目录路径（updates\<version>），随后被
+/// apply-update.bat 用 `rmdir /s /q` 删除。若不校验，被攻陷/损坏的 manifest 可用
+/// `..`、盘符、路径分隔符等触发「任意目录删除 / 路径穿越」。此处只放行数字段与
+/// 受限的预发布字符集，从源头挡掉危险字符。
+fn is_valid_portable_version(v: &str) -> bool {
+    if v.is_empty() || v.len() > 64 {
+        return false;
+    }
+    let (core, pre) = match v.split_once('-') {
+        Some((c, p)) => (c, Some(p)),
+        None => (v, None),
+    };
+    // core：恰好三段，每段非空、纯数字、长度受限（避免异常/超长输入）。
+    let mut segments = 0usize;
+    for seg in core.split('.') {
+        segments += 1;
+        if seg.is_empty() || seg.len() > 9 || !seg.bytes().all(|b| b.is_ascii_digit()) {
+            return false;
+        }
+    }
+    if segments != 3 {
+        return false;
+    }
+    // pre（可选）：非空，仅允许 [0-9A-Za-z-.]（禁止 / \ : 等路径分隔符）。
+    if let Some(pre) = pre {
+        if pre.is_empty()
+            || !pre
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn portable_fetch_manifest() -> Result<Option<PortableManifest>, String> {
+    let url = format!("{}/api/client/portable/manifest.json", portable_update_base());
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("检查更新失败：{}", e))?;
+    let status = resp.status();
+    if status.as_u16() == 204 {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        return Err(format!("检查更新失败：HTTP {}", status));
+    }
+    let manifest = resp
+        .json::<PortableManifest>()
+        .map_err(|e| format!("更新清单解析失败：{}", e))?;
+    Ok(Some(manifest))
+}
+
+fn portable_update_check_blocking(current: &str) -> Result<PortableUpdateCheck, String> {
+    let dir = current_exe_dir().ok_or("无法定位程序目录")?;
+    let manifest = match portable_fetch_manifest()? {
+        Some(m) => m,
+        None => return Ok(PortableUpdateCheck::default()),
+    };
+    // [XJC-PATCH] 安全：严格校验清单版本号（详见 is_valid_portable_version），与
+    // apply 保持一致，避免被攻陷/损坏的 manifest 进入后续流程。
+    if !is_valid_portable_version(&manifest.version) {
+        return Err("更新清单版本号非法".into());
+    }
+    // 防降级：清单版本低于当前版本则不提示更新。
+    if !current.is_empty() && portable_version_cmp(&manifest.version, current) < 0 {
+        return Ok(PortableUpdateCheck {
+            version: manifest.version,
+            notes: manifest.notes,
+            force_update: manifest.force_update,
+            ..Default::default()
+        });
+    }
+    let local_main = sha256_file(&dir.join(PORTABLE_MAIN_EXE)).unwrap_or_default();
+    let local_server = sha256_file(&dir.join(PORTABLE_SERVER_EXE)).unwrap_or_default();
+    let mut main_needs = false;
+    let mut server_needs = false;
+    let mut total = 0u64;
+    for f in &manifest.files {
+        if f.name == PORTABLE_MAIN_EXE && !f.sha256.is_empty() && f.sha256 != local_main {
+            main_needs = true;
+            total += f.size;
+        } else if f.name == PORTABLE_SERVER_EXE && !f.sha256.is_empty() && f.sha256 != local_server {
+            server_needs = true;
+            total += f.size;
+        }
+    }
+    Ok(PortableUpdateCheck {
+        available: main_needs || server_needs,
+        version: manifest.version,
+        notes: manifest.notes,
+        force_update: manifest.force_update,
+        main_needs_update: main_needs,
+        server_needs_update: server_needs,
+        total_bytes: total,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn portable_download(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    app: &AppHandle,
+    downloaded_total: &mut u64,
+    grand_total: u64,
+    last_percent: &mut u32,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let mut resp = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("下载失败：{}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("下载失败：HTTP {}", resp.status()));
+    }
+    let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = resp.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        *downloaded_total += n as u64;
+        let percent = if grand_total > 0 {
+            ((*downloaded_total as f64 / grand_total as f64) * 100.0) as u32
+        } else {
+            0
+        };
+        if percent != *last_percent {
+            *last_percent = percent;
+            let _ = app.emit(
+                "portable-update-progress",
+                PortableUpdateProgress {
+                    phase: "downloading".into(),
+                    percent,
+                    downloaded: *downloaded_total,
+                    total: grand_total,
+                },
+            );
+        }
+    }
+    file.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Windows：写一个分离的 .bat，等主进程退出后覆盖 exe 并重启，最后自删。
+#[cfg(target_os = "windows")]
+fn portable_spawn_swap_windows(
+    app: &AppHandle,
+    staging: &Path,
+    copies: &[(PathBuf, PathBuf)],
+) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    const DETACHED_PROCESS: u32 = 0x00000008;
+
+    let pid = std::process::id();
+    let bat_path = resolve_portable_data_dir(app)
+        .join("updates")
+        .join("apply-update.bat");
+    if let Some(parent) = bat_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let main_exe = normalize_path(current_exe_dir().ok_or("无法定位程序目录")?.join(PORTABLE_MAIN_EXE));
+
+    // [XJC-PATCH] 失败标记文件：原子替换失败（备份失败或替换回滚）时写入，供下次
+    // 启动侧检测并提示用户「上次更新失败，已保留旧版本」（前端读取属后续工作）。
+    // 成功路径会删除它，避免残留造成误报。
+    let marker = normalize_path(
+        resolve_portable_data_dir(app)
+            .join("updates")
+            .join("last-update-failed.txt"),
+    );
+
+    let mut script = String::new();
+    script.push_str("@echo off\r\n");
+    script.push_str("chcp 65001 >nul\r\n");
+    // 等主进程（PID）完全退出，避免占用锁。
+    script.push_str(":waitloop\r\n");
+    script.push_str(&format!(
+        "tasklist /FI \"PID eq {}\" 2>nul | find \"{}\" >nul\r\n",
+        pid, pid
+    ));
+    script.push_str("if not errorlevel 1 (\r\n");
+    script.push_str("  ping -n 2 127.0.0.1 >nul\r\n");
+    script.push_str("  goto waitloop\r\n");
+    script.push_str(")\r\n");
+    script.push_str("ping -n 2 127.0.0.1 >nul\r\n");
+    // [XJC-PATCH] 全或无原子替换（修复「双 exe 部分替换 -> 版本错配」）：
+    //   阶段1 先把每个目标 exe 备份为 .bak；
+    //   阶段2 逐个带重试覆盖，任一失败 -> 用 .bak 回滚全部目标、不重启、写失败标记；
+    //   全部成功才重启并清理 .bak / staging。
+    // 保证：要么两个都换、要么都不换，绝不带「new main + old server」的错配组合重启。
+    // 说明：bat 内容保持纯 ASCII（含 rem 注释），路径可能含非 ASCII，靠开头 chcp 65001
+    // + UTF-8 文件解决（与既有实现一致）。
+    // --- stage 1: backup existing targets to .bak ---
+    script.push_str("rem backup current exe files\r\n");
+    for (_staged, dest) in copies {
+        let d = normalize_path(dest.clone());
+        script.push_str(&format!("copy /y \"{}\" \"{}.bak\" >nul\r\n", d, d));
+        script.push_str("if errorlevel 1 goto backupfail\r\n");
+    }
+    // --- stage 2: apply staged files with retry; any failure -> rollback ---
+    script.push_str("rem apply staged files (all-or-nothing)\r\n");
+    for (staged, dest) in copies {
+        script.push_str(&format!(
+            "call :docopy \"{}\" \"{}\"\r\n",
+            normalize_path(staged.clone()),
+            normalize_path(dest.clone())
+        ));
+        script.push_str("if errorlevel 1 goto rollback\r\n");
+    }
+    // --- success: clear marker, drop .bak, restart, clean staging, self-delete ---
+    script.push_str(&format!("del /f /q \"{}\" >nul 2>nul\r\n", marker));
+    for (_staged, dest) in copies {
+        script.push_str(&format!(
+            "del /f /q \"{}.bak\" >nul 2>nul\r\n",
+            normalize_path(dest.clone())
+        ));
+    }
+    script.push_str(&format!("start \"\" \"{}\"\r\n", main_exe));
+    script.push_str(&format!(
+        "rmdir /s /q \"{}\"\r\n",
+        normalize_path(staging.to_path_buf())
+    ));
+    // del 与 exit 必须同一行：整行先被 cmd 解析完再执行，删掉自身后不再读文件。
+    script.push_str("del \"%~f0\" & exit /b 0\r\n");
+    script.push_str("\r\n");
+    // backup failed: no target modified yet, just drop any .bak, mark and abort (no restart).
+    script.push_str(":backupfail\r\n");
+    for (_staged, dest) in copies {
+        script.push_str(&format!(
+            "del /f /q \"{}.bak\" >nul 2>nul\r\n",
+            normalize_path(dest.clone())
+        ));
+    }
+    script.push_str(&format!("echo update-failed>\"{}\"\r\n", marker));
+    script.push_str("del \"%~f0\" & exit /b 1\r\n");
+    script.push_str("\r\n");
+    // rollback: restore every target from .bak (reuse retrying docopy), drop .bak,
+    // mark and abort (no restart) so we never boot a mismatched combo.
+    script.push_str(":rollback\r\n");
+    for (_staged, dest) in copies {
+        let d = normalize_path(dest.clone());
+        script.push_str(&format!(
+            "if exist \"{}.bak\" call :docopy \"{}.bak\" \"{}\"\r\n",
+            d, d, d
+        ));
+    }
+    for (_staged, dest) in copies {
+        script.push_str(&format!(
+            "del /f /q \"{}.bak\" >nul 2>nul\r\n",
+            normalize_path(dest.clone())
+        ));
+    }
+    script.push_str(&format!("echo update-failed>\"{}\"\r\n", marker));
+    script.push_str("del \"%~f0\" & exit /b 1\r\n");
+    script.push_str("\r\n");
+    // docopy: overwrite one file with retry (taskkill 后文件锁释放可能滞后 / 杀毒短暂占用).
+    script.push_str(":docopy\r\n");
+    script.push_str("set /a _tries=0\r\n");
+    script.push_str(":retrycopy\r\n");
+    script.push_str("copy /y %1 %2 >nul\r\n");
+    script.push_str("if not errorlevel 1 exit /b 0\r\n");
+    script.push_str("set /a _tries+=1\r\n");
+    script.push_str("if %_tries% GEQ 15 exit /b 1\r\n");
+    script.push_str("ping -n 2 127.0.0.1 >nul\r\n");
+    script.push_str("goto retrycopy\r\n");
+
+    std::fs::write(&bat_path, script).map_err(|e| e.to_string())?;
+
+    std::process::Command::new("cmd")
+        .args(["/C", &normalize_path(bat_path.clone())])
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .spawn()
+        .map_err(|e| format!("启动更新脚本失败：{}", e))?;
+    Ok(())
+}
+
+/// [XJC-PATCH] 清理 updates/ 下的旧版本暂存目录，仅保留 keep_version（即将使用的
+/// 当前目标版本）。下载/校验失败留下的半成品不会被自动删除，跨版本累积会占盘；
+/// apply 入口在建 staging 前调用一次即可自愈。只删目录，apply-update.bat / 失败标记
+/// 等文件天然跳过。
+fn portable_prune_stale_staging(updates_root: &Path, keep_version: &str) {
+    let entries = match std::fs::read_dir(updates_root) {
+        Ok(e) => e,
+        Err(_) => return, // updates/ 尚不存在或不可读，无需清理
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) if name != keep_version => {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
+    let dir = current_exe_dir().ok_or("无法定位程序目录")?;
+    if !is_writable_dir(&dir) {
+        return Err("当前为安装版，请通过安装包更新".into());
+    }
+    let manifest = portable_fetch_manifest()?.ok_or("暂无可用更新")?;
+
+    // [XJC-PATCH] 安全：manifest.version 会被逐字拼进 staging 目录路径，随后被
+    // apply-update.bat `rmdir /s /q` 删除；先做严格 semver 校验，防止被攻陷/损坏的
+    // manifest 借 `..`、路径分隔符等触发「任意目录删除 / 路径穿越 / 降级」。
+    if !is_valid_portable_version(&manifest.version) {
+        return Err("更新清单版本号非法，已中止更新".into());
+    }
+
+    // 与 check 同样的防降级门：apply 被直接调用（绕过 check）时也不允许装回旧版本。
+    let current = app.config().version.clone().unwrap_or_default();
+    if !current.is_empty() && portable_version_cmp(&manifest.version, &current) < 0 {
+        return Err("服务器上的版本低于当前版本，已取消更新".into());
+    }
+
+    let local_main = sha256_file(&dir.join(PORTABLE_MAIN_EXE)).unwrap_or_default();
+    let local_server = sha256_file(&dir.join(PORTABLE_SERVER_EXE)).unwrap_or_default();
+
+    // 逐文件 sha256 比对，挑出需要下载替换的 exe。
+    let mut targets: Vec<(&PortableManifestFile, PathBuf)> = vec![];
+    let mut grand_total = 0u64;
+    for f in &manifest.files {
+        let (local, dest) = if f.name == PORTABLE_MAIN_EXE {
+            (&local_main, dir.join(PORTABLE_MAIN_EXE))
+        } else if f.name == PORTABLE_SERVER_EXE {
+            (&local_server, dir.join(PORTABLE_SERVER_EXE))
+        } else {
+            continue;
+        };
+        if f.sha256.is_empty() || &f.sha256 == local {
+            continue;
+        }
+        // [XJC-PATCH] 安全：强制下载地址为 https（本地/离线联调 XJC_UPDATE_BASE 为
+        // http 时才放行 http），非法地址跳过并告警，避免被攻陷的 manifest 投递恶意 exe。
+        if !portable_url_allowed(&f.url) {
+            log::warn!("跳过非法下载地址（要求 https）：{}", f.url);
+            continue;
+        }
+        grand_total += f.size;
+        targets.push((f, dest));
+    }
+    if targets.is_empty() {
+        return Err("没有需要更新的文件".into());
+    }
+
+    // [XJC-PATCH] 建 staging 前先清理旧版本暂存目录（保留即将使用的当前版本），
+    // 避免下载/校验失败留下的半成品跨版本累积占盘。
+    let updates_root = resolve_portable_data_dir(app).join("updates");
+    portable_prune_stale_staging(&updates_root, &manifest.version);
+
+    let staging = updates_root.join(&manifest.version);
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+
+    // [XJC-PATCH] 下载 + 校验 + 应用整段封装，任一步失败都尽力清理 staging（忽略
+    // 清理错误），避免半成品残留。Windows 成功路径不在这里清理——staging 要留给
+    // apply-update.bat 覆盖完再自行 rmdir。
+    let outcome = (|| -> Result<(), String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(1800))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let mut downloaded_total = 0u64;
+        let mut last_percent = 0u32;
+        let mut copies: Vec<(PathBuf, PathBuf)> = vec![];
+        for (f, dest) in &targets {
+            let staged = staging.join(&f.name);
+            portable_download(
+                &client,
+                &f.url,
+                &staged,
+                app,
+                &mut downloaded_total,
+                grand_total,
+                &mut last_percent,
+            )?;
+            let got = sha256_file(&staged).ok_or("下载文件校验失败")?;
+            if got != f.sha256 {
+                return Err(format!("{} 校验失败，已中止更新", f.name));
+            }
+            copies.push((staged, dest.clone()));
+        }
+
+        let _ = app.emit(
+            "portable-update-progress",
+            PortableUpdateProgress {
+                phase: "applying".into(),
+                percent: 100,
+                downloaded: downloaded_total,
+                total: grand_total,
+            },
+        );
+
+        #[cfg(target_os = "windows")]
+        {
+            // [XJC-PATCH] 高危修复：先确认更新脚本 spawn 成功（bat 已在后台等待主进程
+            // PID 退出），再杀 sidecar 释放 server exe 占用，最后退出主进程；bat 侦测到
+            // 主进程退出后开始原子替换并重启。若像原来那样「先 kill_sidecar，再 spawn 且
+            // spawn 失败」，sidecar 已死却无 bat 兜底，应用会变成没有后端的空壳。故顺序
+            // 必须是：spawn 成功 -> kill_sidecar -> app.exit。spawn 失败则原样返回 Err，
+            // sidecar 未被动过，应用继续可用。
+            portable_spawn_swap_windows(app, &staging, &copies)?;
+            kill_sidecar(app);
+            std::thread::sleep(Duration::from_millis(300));
+            app.exit(0);
+            Ok(())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // 类 Unix：运行中的可执行文件可被替换（inode 保留），直接覆盖后重启。
+            kill_sidecar(app);
+            for (staged, dest) in &copies {
+                std::fs::copy(staged, dest).map_err(|e| e.to_string())?;
+            }
+            let _ = std::fs::remove_dir_all(&staging);
+            app.restart();
+        }
+    })();
+
+    if outcome.is_err() {
+        // [XJC-PATCH] 失败清理暂存（尽力，忽略错误）。
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+    outcome
+}
+
 // ===== Tauri Commands =====
+
+/// 返回当前更新通道："portable"（便携版，走双 exe 就地替换）| "installer"（安装版，
+/// 走 Tauri updater）| "disabled"（离线版，编译期烧死，不提供自动更新）。
+#[tauri::command]
+fn get_update_channel() -> String {
+    if OFFLINE_BUILD {
+        return "disabled".to_string();
+    }
+    // Dev 构建永远按安装版处理，避免误替换开发中的二进制。
+    if cfg!(debug_assertions) {
+        return "installer".to_string();
+    }
+    match current_exe_dir() {
+        Some(dir) if is_writable_dir(&dir) => "portable".to_string(),
+        _ => "installer".to_string(),
+    }
+}
+
+#[tauri::command]
+async fn portable_update_check(app: AppHandle) -> Result<PortableUpdateCheck, String> {
+    // 防御纵深：离线版前端不会调到这里，即使被误调也直接拒绝。
+    if OFFLINE_BUILD {
+        return Err("离线版不提供自动更新".to_string());
+    }
+    let current = app.config().version.clone().unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || portable_update_check_blocking(&current))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn portable_update_apply(app: AppHandle) -> Result<(), String> {
+    // 防御纵深：离线版前端不会调到这里，即使被误调也直接拒绝。
+    if OFFLINE_BUILD {
+        return Err("离线版不提供自动更新".to_string());
+    }
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || portable_update_apply_blocking(&app2))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
 #[tauri::command]
 fn get_portable_data_dir(app: AppHandle) -> String {
@@ -971,6 +1604,9 @@ pub fn run() {
             take_pending_deep_links,
             set_deep_link_frontend_ready,
             restart_sidecar,
+            get_update_channel,
+            portable_update_check,
+            portable_update_apply,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

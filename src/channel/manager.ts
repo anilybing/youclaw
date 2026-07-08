@@ -1,5 +1,8 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+// （创建实例时 label 可选，缺省生成「中文类型名 + 序号」；seedFromEnv 用注册表中文名）
 import { getLogger } from '../logger/index.ts'
 import { validateChannelConfig, maskSecretFields, CHANNEL_TYPE_REGISTRY } from './config-schema.ts'
+import { channelTypeLabel, generateDefaultChannelLabel } from './naming.ts'
 import { createChannelFromRecord } from './factory.ts'
 import {
   createChannelRecord, getChannelRecords, getChannelRecord,
@@ -79,7 +82,7 @@ export class ChannelManager {
       createChannelRecord({
         id: 'telegram',
         type: 'telegram',
-        label: 'Telegram',
+        label: channelTypeLabel('telegram'),
         config: JSON.stringify({ botToken: env.TELEGRAM_BOT_TOKEN }),
         enabled: true,
       })
@@ -92,7 +95,7 @@ export class ChannelManager {
       createChannelRecord({
         id: 'feishu',
         type: 'feishu',
-        label: 'Feishu / Lark',
+        label: channelTypeLabel('feishu'),
         config: JSON.stringify({ appId: env.FEISHU_APP_ID, appSecret: env.FEISHU_APP_SECRET }),
         enabled: true,
       })
@@ -105,7 +108,7 @@ export class ChannelManager {
       createChannelRecord({
         id: 'qq',
         type: 'qq',
-        label: 'QQ',
+        label: channelTypeLabel('qq'),
         config: JSON.stringify({ botAppId: env.QQ_BOT_APP_ID, botSecret: env.QQ_BOT_SECRET }),
         enabled: true,
       })
@@ -118,7 +121,7 @@ export class ChannelManager {
       createChannelRecord({
         id: 'wecom',
         type: 'wecom',
-        label: 'WeCom',
+        label: channelTypeLabel('wecom'),
         config: JSON.stringify({
           corpId: env.WECOM_CORP_ID,
           corpSecret: env.WECOM_CORP_SECRET,
@@ -137,7 +140,7 @@ export class ChannelManager {
       createChannelRecord({
         id: 'dingtalk',
         type: 'dingtalk',
-        label: 'DingTalk',
+        label: channelTypeLabel('dingtalk'),
         config: JSON.stringify({ appKey: env.DINGTALK_CLIENT_ID, appSecret: env.DINGTALK_SECRET }),
         enabled: true,
       })
@@ -156,7 +159,7 @@ export class ChannelManager {
   async createChannel(opts: {
     id?: string
     type: string
-    label: string
+    label?: string
     config: Record<string, unknown>
     enabled?: boolean
   }): Promise<ChannelRecord> {
@@ -178,10 +181,13 @@ export class ChannelManager {
       throw new Error(`Channel ID "${id}" already exists`)
     }
 
+    // [XJC] label 缺省时生成「类型中文名 + 序号」（如「微信个人号 1」）
+    const label = opts.label?.trim() || generateDefaultChannelLabel(opts.type, getChannelRecords())
+
     const record = createChannelRecord({
       id,
       type: opts.type,
-      label: opts.label,
+      label,
       config: JSON.stringify(opts.config),
       enabled: opts.enabled !== false,
     })

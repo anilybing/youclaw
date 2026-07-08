@@ -17,6 +17,9 @@ import { Workbench } from './pages/commercial/Workbench'
 import { PortConflictDialog } from './components/PortConflictDialog'
 import { AppToaster } from './components/AppToaster'
 import { CloseConfirmDialog } from './components/CloseConfirmDialog'
+import { UpdateWatcher } from './components/UpdateWatcher'
+import { ForceUpdateDialog } from './components/ForceUpdateDialog'
+import { SidecarErrorOverlay } from './components/SidecarErrorOverlay'
 import { useTheme } from './hooks/useTheme'
 import { useAppRuntimeStore } from './stores/app'
 import { getTauriInvoke, isTauri, updateCachedBaseUrl } from './api/transport'
@@ -44,28 +47,56 @@ export default function App() {
   const canPass = !cloudEnabled || isLoggedIn
   const [portConflict, setPortConflict] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
+  // 后端（sidecar）不可用：'error' = 启动/健康检查失败；'terminated' = 进程崩溃退出。
+  const [sidecarError, setSidecarError] = useState<'error' | 'terminated' | null>(null)
 
   // Persistently listen for sidecar-event (Tauri mode)
   useEffect(() => {
     if (!isTauri) return
     let cleanup: (() => void) | null = null
 
+    const applyReady = (message: string) => {
+      const match = message.match(/port\s+(\d+)/)
+      if (match) {
+        updateCachedBaseUrl(`http://localhost:${match[1]}`)
+      }
+      // Re-hydrate if initial hydrate failed (e.g. backend wasn't ready yet)
+      const { modelReady, hydrate } = useAppRuntimeStore.getState()
+      if (!modelReady) {
+        hydrate()
+      }
+    }
+
     import('@tauri-apps/api/event').then(({ listen }) => {
       listen<{ status: string; message: string }>('sidecar-event', (event) => {
-        if (event.payload.status === 'ready') {
-          const match = event.payload.message.match(/port\s+(\d+)/)
-          if (match) {
-            updateCachedBaseUrl(`http://localhost:${match[1]}`)
-          }
-          // Re-hydrate if initial hydrate failed (e.g. backend wasn't ready yet)
-          const { modelReady, hydrate } = useAppRuntimeStore.getState()
-          if (!modelReady) {
-            hydrate()
-          }
-        } else if (event.payload.status === 'port-conflict') {
+        const { status, message } = event.payload
+        if (status === 'ready') {
+          setSidecarError(null)
+          applyReady(message)
+        } else if (status === 'port-conflict') {
           setPortConflict(true)
+        } else if (status === 'error' || status === 'terminated') {
+          // 后端启动失败（健康检查 60 次失败）或运行中崩溃：拉起全屏引导层。
+          setSidecarError(status)
         }
       }).then(fn => { cleanup = fn })
+    })
+
+    // 消除竞态：监听器挂载前 Rust 可能已 emit（如启动即失败）。主动查一次当前状态。
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke<{ status: string; message: string }>('get_sidecar_status')
+        .then((s) => {
+          if (s.status === 'ready') {
+            setSidecarError(null)
+            applyReady(s.message)
+          } else if (s.status === 'port-conflict') {
+            setPortConflict(true)
+          } else if (s.status === 'error') {
+            setSidecarError('error')
+          }
+          // 'pending' 等待后续 ready 事件；'terminated' 仅经运行期事件路径上报。
+        })
+        .catch(() => {})
     })
 
     return () => { cleanup?.() }
@@ -322,6 +353,9 @@ export default function App() {
         <Route path="*" element={<Navigate to={canPass ? "/" : "/login"} replace />} />
       </Routes>
       <AppToaster />
+      {isTauri && <UpdateWatcher />}
+      {isTauri && <ForceUpdateDialog />}
+      {isTauri && <SidecarErrorOverlay status={sidecarError} onRecovered={() => setSidecarError(null)} />}
       {isTauri && <PortConflictDialog open={portConflict} onResolved={() => setPortConflict(false)} />}
       {isTauri && <CloseConfirmDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} />}
     </BrowserRouter>

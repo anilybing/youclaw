@@ -96,7 +96,9 @@ function StreamingAssistantItem({ content }: { content: string }) {
             {t.chat.assistant}
           </div>
           <MessageContent>
-            <MessageResponse parseIncompleteMarkdown>{content}</MessageResponse>
+            <MessageResponse className="chat-prose" parseIncompleteMarkdown>
+              {content}
+            </MessageResponse>
           </MessageContent>
         </div>
       </div>

@@ -174,7 +174,14 @@ export class PromptBuilder {
       `## Scheduled Task Rule\n` +
       `Use \`mcp__task__list_tasks\` and \`mcp__task__update_task\` for persistent scheduled tasks.\n` +
       `Always call \`mcp__task__list_tasks\` before any \`mcp__task__update_task\` write operation.\n` +
-      `Do NOT rely on built-in session-only cron/task tools or write raw IPC task files manually.`
+      `Do NOT rely on built-in session-only cron/task tools or write raw IPC task files manually.\n` +
+      `When a scheduled task run produces files and its result is pushed to a channel, list each file at the end of your reply on its own line as \`[[attach:<absolute path>]]\` so the files are delivered together with the result. Attached files must live inside your own agent workspace directory.`
+    )
+
+    // [XJC] 对话式技能自管理规则（覆盖已有安装的旧 AGENTS.md，见 skills-mcp.ts）
+    parts.push(
+      `## Skill Self-Service Rule\n` +
+      `When a user request needs a capability your current skills do not cover, first call \`mcp__skills__list_skills\`; enable an installed skill yourself with \`mcp__skills__set_skill_enabled\`, or — only after explaining what/where-from/why and getting the user's consent — install one with \`mcp__skills__install_skill\`. Then continue the user's original request immediately. Never ask the user to toggle skills in the settings UI.`
     )
 
     if (context) {

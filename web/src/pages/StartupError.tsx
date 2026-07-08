@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useI18n } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Loader2, Mail } from "lucide-react"
+import { WindowsTitleBar } from "@/components/layout/WindowsTitleBar"
 import logoUrl from "@/assets/logo.png"
 import appConfig from "../../../app.config.ts"
 
@@ -23,6 +24,8 @@ export function StartupError({ onRetry }: StartupErrorProps) {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
+      {/* 无边框窗口下启动失败页也需要可拖拽/最小化（组件自守卫，仅 Windows 桌面渲染） */}
+      <WindowsTitleBar />
       <div className="flex-1 flex items-center justify-center overflow-auto p-8">
         <div className="w-full max-w-lg space-y-8">
           {/* Logo & Title */}

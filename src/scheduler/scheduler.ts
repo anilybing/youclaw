@@ -1,8 +1,17 @@
+import { basename, resolve } from 'node:path'
 import { getLogger } from '../logger/index.ts'
 import {
   saveMessage,
   upsertChat,
 } from '../db/index.ts'
+import { sendToChat } from '../channel/outbound-service.ts'
+import { getPaths } from '../config/index.ts'
+import {
+  extractAttachments,
+  formatResultWithAttachmentLines,
+  MAX_TASK_ATTACHMENTS,
+  validateAttachmentPaths,
+} from './attachments.ts'
 import { cleanOldLogs } from '../logger/reader.ts'
 import {
   calculateTaskNextRun,
@@ -29,6 +38,10 @@ const LOG_RETAIN_DAYS = 30
 export class Scheduler {
   private intervalId: ReturnType<typeof setInterval> | null = null
   private tickCount = 0
+  // [XJC] 进程内在途任务集合：区分「本进程正在慢跑」与「上次进程崩溃遗留的锁」。
+  // 卡死恢复清锁 + 短退避后，若原执行仍在跑，下一 tick 可能再次选中同一任务导致
+  // 重复并发执行/重复投递；用它在 executeTask 入口去重，并让 recoverStuckTasks 跳过在途任务。
+  private inFlight = new Set<string>()
 
   constructor(
     private agentQueue: AgentQueue,
@@ -111,6 +124,10 @@ export class Scheduler {
     const stuckTasks = listStuckTasks(cutoff)
 
     for (const task of stuckTasks) {
+      // [XJC] 本进程仍在跑的任务不是「卡死遗留锁」，不要清锁（否则会被下个 tick 重复选中并发执行）。
+      // 只恢复真正的孤儿锁（如上次进程崩溃留下的 running_since）。
+      if (this.inFlight.has(task.id)) continue
+
       const newFailures = (task.consecutive_failures ?? 0) + 1
       logger.warn(
         { taskId: task.id, runningSince: task.running_since, consecutiveFailures: newFailures, category: 'task' },
@@ -152,6 +169,14 @@ export class Scheduler {
   /** Execute a single task */
   async executeTask(task: ScheduledTask): Promise<void> {
     const logger = getLogger()
+
+    // [XJC] 在途去重：同一任务在本进程已在跑则跳过，避免「卡死恢复清锁+短退避」后被重复并发执行。
+    if (this.inFlight.has(task.id)) {
+      logger.warn({ taskId: task.id, category: 'task' }, 'Task already in-flight in this process, skipping duplicate execution')
+      return
+    }
+    this.inFlight.add(task.id)
+
     const runAt = new Date().toISOString()
     const startMs = Date.now()
 
@@ -160,21 +185,27 @@ export class Scheduler {
     // running_since already set synchronously in tick(), no need to repeat
 
     try {
-      const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
+      // suppressOutbound：调度器自己经 deliver() 向 delivery_target 投递（cleanText + 📎、尊重 delivery_mode）；
+      // 若不抑制，runtime 的 complete 会被 MessageRouter 再向 task.chat_id 发一次（渠道会话时即双发/泄漏）。
+      const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt, { suppressOutbound: true })
       const durationMs = Date.now() - startMs
+
+      // [XJC] 持久化字段（run-log result / task lastResult）与桌面会话落库口径一致：
+      // 不存原始 [[attach:]] 标记，改存 cleanText + 每个附件一行 📎 <路径>。
+      const displayResult = this.toDisplayResult(result ?? '(no output)')
 
       // Save execution result to messages table for Chat page visibility
       this.saveTaskMessages(task, runAt, result ?? '(no output)')
 
       // Deliver to external channel (best-effort)
-      const deliveryStatus = this.deliver(task, result ?? '(no output)')
+      const deliveryStatus = await this.deliver(task, result ?? '(no output)')
 
       insertTaskRunLog({
         taskId: task.id,
         runAt,
         durationMs,
         status: 'success',
-        result,
+        result: displayResult,
         deliveryStatus,
       })
 
@@ -186,7 +217,7 @@ export class Scheduler {
           nextRun,
           runningSince: null,
           consecutiveFailures: 0,
-          lastResult: result?.slice(0, 500) ?? null,
+          lastResult: displayResult.slice(0, 500),
         })
       } else {
         // Mark once-type tasks as completed after execution
@@ -196,7 +227,7 @@ export class Scheduler {
           status: 'completed',
           runningSince: null,
           consecutiveFailures: 0,
-          lastResult: result?.slice(0, 500) ?? null,
+          lastResult: displayResult.slice(0, 500),
         })
       }
 
@@ -252,37 +283,98 @@ export class Scheduler {
       }
 
       logger.error({ taskId: task.id, agentId: task.agent_id, error: errorMsg, consecutiveFailures: newFailures, category: 'task' }, 'Scheduled task execution failed')
+    } finally {
+      this.inFlight.delete(task.id)
     }
   }
 
-  /** Save task execution messages to messages table */
   /** Deliver result to external channel (best-effort, failure does not affect task status) */
-  private deliver(
+  private async deliver(
     task: Pick<ScheduledTask, 'id' | 'agent_id' | 'name' | 'prompt' | 'delivery_mode' | 'delivery_target'>,
     text: string,
-  ): 'sent' | 'failed' | 'skipped' {
+  ): Promise<'sent' | 'failed' | 'skipped'> {
     if (task.delivery_mode !== 'push' || !task.delivery_target) {
       return 'skipped'
     }
 
     const logger = getLogger()
+    const chatId = task.delivery_target
+
+    // [XJC] 任务产物附件：提取 [[attach:...]] 标记，只放行 agent 工作区内真实存在的文件。
+    // deliver 承诺绝不影响任务 success，准备阶段任何意外都吞掉并退回纯文本投递。
+    let cleanText = text
+    let attachments: string[] = []
+    try {
+      const extracted = extractAttachments(text)
+      cleanText = extracted.cleanText
+      if (extracted.paths.length > 0) {
+        const agentWorkspaceDir = resolve(getPaths().agents, task.agent_id)
+        const { accepted, rejected } = validateAttachmentPaths(extracted.paths, agentWorkspaceDir)
+        for (const { path, reason } of rejected) {
+          logger.warn({ taskId: task.id, path, reason, category: 'task' }, 'Task attachment rejected, skipping')
+        }
+        if (accepted.length > MAX_TASK_ATTACHMENTS) {
+          logger.warn(
+            { taskId: task.id, total: accepted.length, limit: MAX_TASK_ATTACHMENTS, category: 'task' },
+            'Too many task attachments, extra ones ignored',
+          )
+        }
+        attachments = accepted.slice(0, MAX_TASK_ATTACHMENTS)
+      }
+    } catch (err) {
+      logger.warn({ taskId: task.id, error: String(err), category: 'task' }, 'Task attachment preparation failed, delivering text only')
+    }
+
     try {
       const taskName = task.name || task.prompt.slice(0, 30)
-      this.eventBus.emit({
-        type: 'complete',
-        agentId: task.agent_id,
-        chatId: task.delivery_target,
-        fullText: `[Task: ${taskName}]\n\n${text}`,
-        sessionId: `task:${task.id}`,
+      const header = `[Task: ${taskName}]`
+      // Send directly through the channel outbound service and await the real send
+      // result, so delivery_status reflects what actually reached the channel.
+      // Deliberately NOT emitting a 'complete' event here: router.handleOutbound also
+      // subscribes to 'complete' events, so emitting AND sending directly would push
+      // the same message to the channel twice.
+      await sendToChat({
+        chatId,
+        text: cleanText ? `${header}\n\n${cleanText}` : header,
       })
-      logger.info({ taskId: task.id, deliveryTarget: task.delivery_target }, 'Task result delivered')
-      return 'sent'
+      logger.info({ taskId: task.id, deliveryTarget: chatId }, 'Task result delivered')
     } catch (err) {
-      logger.warn({ taskId: task.id, deliveryTarget: task.delivery_target, error: String(err) }, 'Delivery failed (best-effort)')
+      // 文本失败即整体 failed，附件不再发送
+      logger.warn({ taskId: task.id, deliveryTarget: chatId, error: String(err) }, 'Delivery failed (best-effort)')
       return 'failed'
     }
+
+    // 文本已送达即算 sent；附件逐个 best-effort，失败不降级状态
+    const failedAttachments: string[] = []
+    for (const path of attachments) {
+      try {
+        await sendToChat({ chatId, mediaUrl: path })
+        logger.info({ taskId: task.id, deliveryTarget: chatId, path }, 'Task attachment delivered')
+      } catch (err) {
+        failedAttachments.push(path)
+        logger.warn(
+          { taskId: task.id, deliveryTarget: chatId, path, error: String(err), category: 'task' },
+          'Task attachment delivery failed (best-effort)',
+        )
+      }
+    }
+
+    if (failedAttachments.length > 0) {
+      const fileNames = failedAttachments.map((path) => basename(path)).join('、')
+      try {
+        await sendToChat({ chatId, text: `${failedAttachments.length} 个附件发送失败：${fileNames}` })
+      } catch (err) {
+        logger.warn(
+          { taskId: task.id, deliveryTarget: chatId, error: String(err), category: 'task' },
+          'Attachment failure notice delivery failed',
+        )
+      }
+    }
+
+    return 'sent'
   }
 
+  /** Save task execution messages to messages table */
   saveTaskMessages(
     task: Pick<ScheduledTask, 'id' | 'chat_id' | 'agent_id' | 'prompt' | 'name'>,
     runAt: string,
@@ -291,6 +383,10 @@ export class Scheduler {
     senderName = 'Scheduled Task',
   ): void {
     const timestamp = new Date().toISOString()
+
+    // [XJC] 桌面会话落库不暴露内部 [[attach:]] 标记：改存 cleanText + 每个附件一行 📎 <路径>
+    const { cleanText, paths } = extractAttachments(result)
+    const displayResult = formatResultWithAttachmentLines(cleanText, paths)
 
     // Save user prompt message (isFromMe=false means not sent by bot, consistent with router semantics)
     saveMessage({
@@ -310,7 +406,7 @@ export class Scheduler {
       chatId: task.chat_id,
       sender: task.agent_id,
       senderName: task.agent_id,
-      content: result,
+      content: displayResult,
       timestamp,
       isFromMe: true,
       isBotMessage: true,
@@ -321,6 +417,17 @@ export class Scheduler {
     upsertChat(task.chat_id, task.agent_id, `Task: ${taskName}`, 'task')
   }
 
+  /**
+   * [XJC] 生成用于持久化/展示的结果文本：剥离内部 [[attach:]] 标记，
+   * 每个附件改写成一行 📎 <路径>，与 saveTaskMessages 桌面会话落库口径一致，
+   * 保证「任务详情 lastResult / 运行日志 result」不出现内部标记语法。
+   * 无标记文本原样返回（extractAttachments 幂等）。
+   */
+  private toDisplayResult(result: string): string {
+    const { cleanText, paths } = extractAttachments(result)
+    return formatResultWithAttachmentLines(cleanText, paths)
+  }
+
   /** Manually execute task (no running_since, does not affect consecutiveFailures) */
   async runManually(task: ScheduledTask): Promise<{ status: string; result?: string; error?: string }> {
     const runAt = new Date().toISOString()
@@ -328,14 +435,18 @@ export class Scheduler {
     const runId = crypto.randomUUID().slice(0, 8)
 
     try {
-      const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt)
+      // suppressOutbound：手动运行同样由 deliver() 独占渠道投递，避免 runtime.complete 经路由重复发送。
+      const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt, { suppressOutbound: true })
       const durationMs = Date.now() - startMs
+
+      // [XJC] run-log result 与桌面会话落库口径一致：清掉 [[attach:]] 标记、附件改 📎 行
+      const displayResult = this.toDisplayResult(result ?? '(no output)')
 
       // Save execution result to messages table
       this.saveTaskMessages(task, `${runId}-${runAt}`, result ?? '(no output)', 'manual', 'Manual Run')
 
       // Deliver to external channel
-      const deliveryStatus = this.deliver(task, result ?? '(no output)')
+      const deliveryStatus = await this.deliver(task, result ?? '(no output)')
 
       // Record run log
       insertTaskRunLog({
@@ -343,7 +454,7 @@ export class Scheduler {
         runAt,
         durationMs,
         status: 'success',
-        result: `[manual] ${result ?? ''}`.slice(0, 500),
+        result: `[manual] ${displayResult}`.slice(0, 500),
         deliveryStatus,
       })
 

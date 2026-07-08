@@ -1,3 +1,5 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+// （创建渠道 label 可选，缺省由 manager 生成「中文类型名 + 序号」）
 import { Hono } from 'hono'
 import { z } from 'zod/v4'
 import { CHANNEL_TYPE_REGISTRY, maskSecretFields } from '../channel/config-schema.ts'
@@ -7,7 +9,7 @@ import { getChannelRecords, getChannelRecord } from '../db/index.ts'
 const createChannelSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).optional(),
   type: z.string().min(1),
-  label: z.string().min(1),
+  label: z.string().min(1).optional(),
   config: z.record(z.string(), z.unknown()),
   enabled: z.boolean().optional(),
 })

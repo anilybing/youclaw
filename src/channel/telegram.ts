@@ -1,9 +1,35 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
-import { Bot } from 'grammy'
+import { existsSync, statSync } from 'node:fs'
+import { basename } from 'node:path'
+import { Bot, InputFile } from 'grammy'
 import { getLogger } from '../logger/index.ts'
+import { assertSafeRemoteUrl } from './media-fetch.ts'
 import type { Channel, InboundMessage, OnInboundMessage } from './types.ts'
 
 const TELEGRAM_MAX_LENGTH = 4096
+// Telegram caption limit; longer text is sent as a separate follow-up message
+const TELEGRAM_CAPTION_LIMIT = 1024
+// Bot API upload limit for files sent by bots
+const TELEGRAM_MEDIA_MAX_BYTES = 50 * 1024 * 1024
+
+const TELEGRAM_PHOTO_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp'])
+const TELEGRAM_VIDEO_EXTENSIONS = new Set(['mp4'])
+
+/** Route a media file to the matching Bot API method by file extension. */
+export function pickTelegramMediaKind(extension: string): 'photo' | 'video' | 'document' {
+  if (TELEGRAM_PHOTO_EXTENSIONS.has(extension)) return 'photo'
+  if (TELEGRAM_VIDEO_EXTENSIONS.has(extension)) return 'video'
+  return 'document'
+}
+
+function inferTelegramMediaName(mediaUrl: string, isRemote: boolean): string {
+  if (!isRemote) return basename(mediaUrl)
+  try {
+    return decodeURIComponent(basename(new URL(mediaUrl).pathname))
+  } catch {
+    return ''
+  }
+}
 
 export interface TelegramChannelOpts {
   onMessage: OnInboundMessage
@@ -66,6 +92,11 @@ export class TelegramChannel implements Channel {
       const sender = ctx.from?.id.toString() || ''
       const msgId = ctx.message.message_id.toString()
       const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup'
+      // 群聊时 ctx.chat.title 即真实群名（私聊无此字段）
+      const groupName =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup'
+          ? ctx.chat.title
+          : undefined
 
       // Handle @mention: if bot is mentioned, replace @bot_username with @XiaoJuClaw
       const botUsername = ctx.me?.username?.toLowerCase()
@@ -95,6 +126,8 @@ export class TelegramChannel implements Channel {
         content,
         timestamp,
         isGroup,
+        channel: 'telegram',
+        ...(groupName ? { groupName } : {}),
       }
 
       this.opts.onMessage(message)
@@ -156,6 +189,63 @@ export class TelegramChannel implements Channel {
       logger.debug({ chatId, length: text.length }, 'Telegram message sent')
     } catch (err) {
       logger.error({ chatId, err }, 'Failed to send Telegram message')
+    }
+  }
+
+  async sendMedia(chatId: string, text: string, mediaUrl: string): Promise<void> {
+    const logger = getLogger()
+    if (!this.bot) {
+      logger.warn('Telegram bot not initialized, cannot send media')
+      return
+    }
+
+    const numericId = chatId.replace(/^tg:/, '')
+    const isRemote = /^https?:\/\//i.test(mediaUrl)
+    // Remote 由 Telegram 服务端下载（InputFile(URL)），本地不缓存；此处至少做 SSRF 预检，
+    // 挡掉内网/环回/云元数据地址与非 http(s) 协议。
+    if (isRemote) {
+      assertSafeRemoteUrl(mediaUrl)
+    }
+    const fileName = inferTelegramMediaName(mediaUrl, isRemote)
+    const kind = pickTelegramMediaKind(
+      fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase() : '',
+    )
+
+    if (!isRemote) {
+      if (!existsSync(mediaUrl)) {
+        throw new Error(`媒体文件不存在：${mediaUrl}`)
+      }
+      const size = statSync(mediaUrl).size
+      if (size > TELEGRAM_MEDIA_MAX_BYTES) {
+        throw new Error(
+          `文件大小 ${(size / 1024 / 1024).toFixed(1)}MB 超过 Telegram 单文件上限 50MB，已取消发送`,
+        )
+      }
+    }
+
+    const input = isRemote
+      ? new InputFile(new URL(mediaUrl), fileName || undefined)
+      : new InputFile(mediaUrl, fileName || undefined)
+    // Telegram caption is limited to 1024 chars; longer text goes out as a follow-up message
+    const caption = text && text.length <= TELEGRAM_CAPTION_LIMIT ? text : undefined
+
+    try {
+      if (kind === 'photo') {
+        await this.bot.api.sendPhoto(numericId, input, { caption, parse_mode: 'Markdown' })
+      } else if (kind === 'video') {
+        await this.bot.api.sendVideo(numericId, input, { caption, parse_mode: 'Markdown' })
+      } else {
+        await this.bot.api.sendDocument(numericId, input, { caption, parse_mode: 'Markdown' })
+      }
+
+      if (text && !caption) {
+        await this.sendMessage(chatId, text)
+      }
+
+      logger.debug({ chatId, kind, fileName }, 'Telegram media sent')
+    } catch (err) {
+      logger.error({ chatId, err }, 'Failed to send Telegram media')
+      throw err // Re-throw so caller knows the send failed
     }
   }
 

@@ -396,9 +396,12 @@ const MessageResponseCode = ({
   const isIncomplete = useIsCodeFenceIncomplete();
 
   if (!isBlock) {
+    // Visual styling lives in index.css keyed on data-streamdown, matching
+    // streamdown's own inline-code marker.
     return (
       <code
-        className={cn("rounded bg-muted px-1.5 py-0.5 font-mono text-sm", className)}
+        className={cn("font-mono", className)}
+        data-streamdown="inline-code"
         {...props}
       >
         {children}

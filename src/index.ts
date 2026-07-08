@@ -11,6 +11,7 @@ import { initLogger, getLogger } from './logger/index.ts'
 import { initDatabase } from './db/index.ts'
 import { EventBus } from './events/index.ts'
 import { AgentManager, AgentQueue, PromptBuilder, AgentRouter, HooksManager, SecretsManager } from './agent/index.ts'
+import { configureSkillsMcpRuntime } from './agent/skills-mcp.ts'
 import { MessageRouter, ChannelManager } from './channel/index.ts'
 import { registerChannelOutboundService } from './channel/outbound-service.ts'
 import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
@@ -170,6 +171,9 @@ async function main() {
     logger.error({ err }, '[STARTUP] Step 10 failed: init agent manager / load agents')
     throw err
   }
+
+  // 10b. [XJC] 对话式技能自管理工具依赖装配（skills-mcp 运行时单例）
+  configureSkillsMcpRuntime({ agentManager, skillsLoader, registryManager })
 
   // 11. Create AgentQueue
   const agentQueue = new AgentQueue(agentManager)

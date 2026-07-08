@@ -9,6 +9,7 @@ interface QueueItem {
   requestedSkills?: string[]
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
+  suppressOutbound?: boolean
   afterResult?: (result: string) => Promise<void>
   resolve: (result: string) => void
   reject: (error: Error) => void
@@ -19,6 +20,8 @@ export interface EnqueueOptions {
   requestedSkills?: string[]
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
+  // [XJC] 调度器发起的运行置真 → runtime emit 的 complete 带此标志 → 路由跳过渠道出站
+  suppressOutbound?: boolean
   afterResult?: (result: string) => Promise<void>
 }
 
@@ -56,6 +59,7 @@ export class AgentQueue {
         requestedSkills: options?.requestedSkills,
         browserProfileId: options?.browserProfileId,
         attachments: options?.attachments,
+        suppressOutbound: options?.suppressOutbound,
         afterResult: options?.afterResult,
         resolve,
         reject,
@@ -178,6 +182,7 @@ export class AgentQueue {
         requestedSkills: item.requestedSkills,
         browserProfileId: item.browserProfileId,
         attachments: item.attachments,
+        suppressOutbound: item.suppressOutbound,
       })
 
       if (item.afterResult) {

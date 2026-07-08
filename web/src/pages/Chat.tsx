@@ -4,7 +4,7 @@ import { Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useChatContext } from "@/hooks/chatCtx";
-import { groupChatsByDate } from "@/lib/chat-utils";
+import { groupChatsByDate, resolveChatDisplayName, chatMatchesQuery } from "@/lib/chat-utils";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatInput } from "@/components/chat/ChatInput";
@@ -150,7 +150,12 @@ export function Chat() {
 
   const filteredChats = chatCtx.searchQuery
     ? chatCtx.chatList.filter((c) =>
-        c.name.toLowerCase().includes(chatCtx.searchQuery.toLowerCase()),
+        chatMatchesQuery(
+          c,
+          chatCtx.searchQuery,
+          t.channels.typeLabels as Record<string, string>,
+          t.chat.taskBadge,
+        ),
       )
     : chatCtx.chatList;
 
@@ -273,7 +278,7 @@ export function Chat() {
         >
           {!isNewChat && currentChat && (
             <span className="text-sm font-medium truncate text-foreground/80">
-              {currentChat.name}
+              {resolveChatDisplayName(currentChat.name, t.channels.typeLabels as Record<string, string>)}
             </span>
           )}
         </div>

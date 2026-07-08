@@ -1,10 +1,23 @@
 import '../tests/setup-light.ts'
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect, mock, beforeAll, afterAll } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   extractDingTalkTextContent, stripDingTalkAtMention,
-  chunkText, isTokenValid, DingTalkChannel,
+  chunkText, isTokenValid, mapDingTalkMediaType, DingTalkChannel,
 } from '../src/channel/dingtalk.ts'
 import { EventBus } from '../src/events/bus.ts'
+
+let mediaTempDir: string
+
+beforeAll(() => {
+  mediaTempDir = mkdtempSync(join(tmpdir(), 'xjc-dingtalk-test-'))
+})
+
+afterAll(() => {
+  rmSync(mediaTempDir, { recursive: true, force: true })
+})
 
 // ---------------------------------------------------------------------------
 // Pure function tests
@@ -57,6 +70,21 @@ describe('chunkText', () => {
 
   test('empty string', () => {
     expect(chunkText('', 10)).toEqual([''])
+  })
+})
+
+describe('mapDingTalkMediaType', () => {
+  test('image extensions map to image', () => {
+    expect(mapDingTalkMediaType('jpg')).toBe('image')
+    expect(mapDingTalkMediaType('png')).toBe('image')
+    expect(mapDingTalkMediaType('gif')).toBe('image')
+    expect(mapDingTalkMediaType('bmp')).toBe('image')
+  })
+
+  test('everything else maps to file', () => {
+    expect(mapDingTalkMediaType('pdf')).toBe('file')
+    expect(mapDingTalkMediaType('xlsx')).toBe('file')
+    expect(mapDingTalkMediaType('')).toBe('file')
   })
 })
 
@@ -120,6 +148,22 @@ function createMockFetch() {
       return new Response(JSON.stringify({ processQueryKey: 'pqk2' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    // media upload (legacy oapi endpoint)
+    if (urlStr.includes('media/upload')) {
+      return new Response(JSON.stringify({ errcode: 0, errmsg: 'ok', media_id: '@MEDIA_ID_1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    // remote media download (SSRF-guarded outbound media)
+    if (urlStr.includes('files.example.com')) {
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
       })
     }
 
@@ -233,6 +277,120 @@ describe('DingTalkChannel', () => {
       const headers = msgCall!.init?.headers as Record<string, string>
       expect(headers['x-acs-dingtalk-access-token']).toBe('my_token')
       expect(headers['Content-Type']).toBe('application/json')
+    })
+  })
+
+  describe('sendMedia', () => {
+    test('image to a user uploads with type=image and sends sampleImageMsg', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new DingTalkChannel('appkey1', 'secret1', {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+        _streamClient: createMockStreamClient(),
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      const pngFile = join(mediaTempDir, 'chart.png')
+      writeFileSync(pngFile, 'png-bytes')
+
+      await channel.sendMedia('dingtalk:user:staff123', '', pngFile)
+
+      const uploadCall = calls.find(c => c.url.includes('media/upload'))
+      expect(uploadCall).toBeDefined()
+      expect(uploadCall!.url).toContain('oapi.dingtalk.com')
+      expect(uploadCall!.url).toContain('type=image')
+
+      const msgCall = calls.find(c => c.url.includes('oToMessages'))
+      expect(msgCall).toBeDefined()
+      const body = JSON.parse(msgCall!.init?.body as string)
+      expect(body.msgKey).toBe('sampleImageMsg')
+      expect(JSON.parse(body.msgParam)).toEqual({ photoURL: '@MEDIA_ID_1' })
+    })
+
+    test('document to a group uploads with type=file and sends sampleFile with follow-up text', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new DingTalkChannel('appkey1', 'secret1', {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+        _streamClient: createMockStreamClient(),
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      const pdfFile = join(mediaTempDir, 'report.pdf')
+      writeFileSync(pdfFile, 'pdf-bytes')
+
+      await channel.sendMedia('dingtalk:group:conv456', '这是报告', pdfFile)
+
+      const uploadCall = calls.find(c => c.url.includes('media/upload'))
+      expect(uploadCall!.url).toContain('type=file')
+
+      const msgCalls = calls.filter(c => c.url.includes('groupMessages'))
+      expect(msgCalls.length).toBe(2)
+      const mediaBody = JSON.parse(msgCalls[0]!.init?.body as string)
+      expect(mediaBody.msgKey).toBe('sampleFile')
+      expect(JSON.parse(mediaBody.msgParam)).toEqual({
+        mediaId: '@MEDIA_ID_1',
+        fileName: 'report.pdf',
+        fileType: 'pdf',
+      })
+      const textBody = JSON.parse(msgCalls[1]!.init?.body as string)
+      expect(textBody.msgKey).toBe('sampleText')
+      expect(JSON.parse(textBody.msgParam)).toEqual({ content: '这是报告' })
+    })
+
+    test('nonexistent local file is rejected without any API call', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new DingTalkChannel('appkey1', 'secret1', {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+        _streamClient: createMockStreamClient(),
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      await expect(
+        channel.sendMedia('dingtalk:user:staff123', '', join(mediaTempDir, 'missing.pdf')),
+      ).rejects.toThrow('媒体文件不存在')
+      const uploadCalls = calls.filter(c => c.url.includes('media/upload'))
+      expect(uploadCalls.length).toBe(0)
+    })
+
+    test('remote image is downloaded via the injected fetch (redirect:error) then uploaded', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new DingTalkChannel('appkey1', 'secret1', {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+        _streamClient: createMockStreamClient(),
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      await channel.sendMedia('dingtalk:user:staff123', '', 'https://files.example.com/chart.png')
+
+      const dl = calls.find(c => c.url.includes('files.example.com'))
+      expect(dl).toBeDefined()
+      expect((dl!.init as any)?.redirect).toBe('error')
+
+      const uploadCall = calls.find(c => c.url.includes('media/upload'))
+      expect(uploadCall!.url).toContain('type=image')
+      const msgCall = calls.find(c => c.url.includes('oToMessages'))
+      const body = JSON.parse(msgCall!.init?.body as string)
+      expect(body.msgKey).toBe('sampleImageMsg')
+      expect(JSON.parse(body.msgParam)).toEqual({ photoURL: '@MEDIA_ID_1' })
+    })
+
+    test('remote media targeting an internal/metadata address is rejected before any download/upload', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new DingTalkChannel('appkey1', 'secret1', {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+        _streamClient: createMockStreamClient(),
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      await expect(
+        channel.sendMedia('dingtalk:user:staff123', '', 'http://192.168.0.10/secret.png'),
+      ).rejects.toThrow()
+      expect(calls.some(c => c.url.includes('192.168'))).toBe(false)
+      expect(calls.some(c => c.url.includes('media/upload'))).toBe(false)
     })
   })
 

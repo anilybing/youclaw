@@ -30,6 +30,9 @@ tokio = { version = "1", features = ["time"] }
 log = "0.4"
 tauri-plugin-log = "2"
 sys-locale = "0.3"
+# 便携版双 exe 自更新：拉取 MVP manifest + 下载 exe（rustls 对齐 updater 插件，避免 OpenSSL）。
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+sha2 = "0.10"
 
 [profile.release]
 strip = true

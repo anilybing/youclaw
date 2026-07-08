@@ -21,6 +21,8 @@ import {
   OFFICE_ASSISTANT_IDENTITY_MD, OFFICE_ASSISTANT_BOOTSTRAP_MD,
   ECOMMERCE_ASSISTANT_AGENT_YAML, ECOMMERCE_ASSISTANT_SOUL_MD,
   ECOMMERCE_ASSISTANT_IDENTITY_MD, ECOMMERCE_ASSISTANT_BOOTSTRAP_MD,
+  CONTENT_CREATOR_AGENT_YAML, CONTENT_CREATOR_SOUL_MD,
+  CONTENT_CREATOR_IDENTITY_MD, CONTENT_CREATOR_BOOTSTRAP_MD,
 } from './templates.ts'
 import { ensureAgentWorkspace } from './workspace.ts'
 
@@ -106,6 +108,23 @@ export class AgentManager {
       writeFileSync(resolve(ecomDir, 'BOOTSTRAP.md'), ECOMMERCE_ASSISTANT_BOOTSTRAP_MD)
     }
     ensureAgentWorkspace(ecomDir, {
+      ensureBootstrap: false,
+      ensureSkillsDir: true,
+      ensurePromptsDir: true,
+    })
+
+    // [XJC] 预置数字员工「小橘创作助理」（内容创作能力包）：与电商助理同款种子逻辑，
+    // agent.yaml 为哨兵，用户改过不覆盖；技能全部纯 SKILL.md 随包预置，零配置即可用。
+    const contentDir = resolve(paths.agents, 'content-creator')
+    if (!existsSync(resolve(contentDir, 'agent.yaml'))) {
+      logger.info('Initializing content-creator digital staff template...')
+      mkdirSync(contentDir, { recursive: true })
+      writeFileSync(resolve(contentDir, 'agent.yaml'), CONTENT_CREATOR_AGENT_YAML)
+      writeFileSync(resolve(contentDir, 'SOUL.md'), CONTENT_CREATOR_SOUL_MD)
+      writeFileSync(resolve(contentDir, 'IDENTITY.md'), CONTENT_CREATOR_IDENTITY_MD)
+      writeFileSync(resolve(contentDir, 'BOOTSTRAP.md'), CONTENT_CREATOR_BOOTSTRAP_MD)
+    }
+    ensureAgentWorkspace(contentDir, {
       ensureBootstrap: false,
       ensureSkillsDir: true,
       ensurePromptsDir: true,

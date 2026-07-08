@@ -1,7 +1,23 @@
 import '../tests/setup-light.ts'
-import { describe, test, expect, mock, beforeEach } from 'bun:test'
-import { extractTextContent, extractPostText, stripBotMention, chunkText, FeishuChannel } from '../src/channel/feishu.ts'
+import { describe, test, expect, mock, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  extractTextContent, extractPostText, stripBotMention, chunkText,
+  mapFeishuFileType, FeishuChannel,
+} from '../src/channel/feishu.ts'
 import { EventBus } from '../src/events/bus.ts'
+
+let mediaTempDir: string
+
+beforeAll(() => {
+  mediaTempDir = mkdtempSync(join(tmpdir(), 'xjc-feishu-test-'))
+})
+
+afterAll(() => {
+  rmSync(mediaTempDir, { recursive: true, force: true })
+})
 
 // ---------------------------------------------------------------------------
 // Pure function tests
@@ -146,12 +162,45 @@ describe('chunkText', () => {
   })
 })
 
+describe('mapFeishuFileType', () => {
+  test('known extensions map to dedicated file types', () => {
+    expect(mapFeishuFileType('pdf')).toBe('pdf')
+    expect(mapFeishuFileType('doc')).toBe('doc')
+    expect(mapFeishuFileType('docx')).toBe('doc')
+    expect(mapFeishuFileType('xls')).toBe('xls')
+    expect(mapFeishuFileType('xlsx')).toBe('xls')
+    expect(mapFeishuFileType('ppt')).toBe('ppt')
+    expect(mapFeishuFileType('pptx')).toBe('ppt')
+    expect(mapFeishuFileType('mp4')).toBe('mp4')
+    expect(mapFeishuFileType('opus')).toBe('opus')
+  })
+
+  test('unknown extensions fall back to stream', () => {
+    expect(mapFeishuFileType('zip')).toBe('stream')
+    expect(mapFeishuFileType('html')).toBe('stream')
+    expect(mapFeishuFileType('')).toBe('stream')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // FeishuChannel integration tests
 // ---------------------------------------------------------------------------
 
+/** Emulate the real SDK consuming the upload stream, so callers can safely delete temp files afterward. */
+async function drainStream(streamLike: any): Promise<void> {
+  if (streamLike && typeof streamLike.on === 'function') {
+    await new Promise<void>((resolve, reject) => {
+      streamLike.on('error', reject)
+      streamLike.on('end', resolve)
+      streamLike.resume?.()
+    })
+  }
+}
+
 function createMockClient() {
   const sentMessages: any[] = []
+  const imageUploads: any[] = []
+  const fileUploads: any[] = []
   const reactions: Map<string, string> = new Map()
   let reactionCounter = 0
 
@@ -162,6 +211,20 @@ function createMockClient() {
           create: mock(async (params: any) => {
             sentMessages.push(params)
             return { code: 0 }
+          }),
+        },
+        image: {
+          create: mock(async (params: any) => {
+            await drainStream(params?.data?.image)
+            imageUploads.push(params)
+            return { image_key: 'img_key_1' }
+          }),
+        },
+        file: {
+          create: mock(async (params: any) => {
+            await drainStream(params?.data?.file)
+            fileUploads.push(params)
+            return { file_key: 'file_key_1' }
           }),
         },
         messageReaction: {
@@ -181,6 +244,8 @@ function createMockClient() {
       })),
     } as any,
     sentMessages,
+    imageUploads,
+    fileUploads,
     reactions,
   }
 }
@@ -238,6 +303,141 @@ describe('FeishuChannel', () => {
       await channel.sendMessage('feishu:chat1', longText)
 
       expect(sentMessages.length).toBe(2)
+    })
+  })
+
+  describe('sendMedia', () => {
+    test('image is uploaded via im.image.create and sent as msg_type image', async () => {
+      const { client, sentMessages, imageUploads, fileUploads } = createMockClient()
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+      const pngFile = join(mediaTempDir, 'chart.png')
+      writeFileSync(pngFile, 'png-bytes')
+
+      await channel.sendMedia('feishu:chat1', '', pngFile)
+
+      expect(imageUploads.length).toBe(1)
+      expect(imageUploads[0].data.image_type).toBe('message')
+      expect(fileUploads.length).toBe(0)
+
+      expect(sentMessages.length).toBe(1)
+      expect(sentMessages[0].params.receive_id_type).toBe('chat_id')
+      expect(sentMessages[0].data.receive_id).toBe('chat1')
+      expect(sentMessages[0].data.msg_type).toBe('image')
+      expect(JSON.parse(sentMessages[0].data.content)).toEqual({ image_key: 'img_key_1' })
+    })
+
+    test('document is uploaded via im.file.create with mapped file_type and sent as msg_type file', async () => {
+      const { client, sentMessages, fileUploads } = createMockClient()
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+      const xlsxFile = join(mediaTempDir, 'data.xlsx')
+      writeFileSync(xlsxFile, 'xlsx-bytes')
+
+      await channel.sendMedia('feishu:chat1', '', xlsxFile)
+
+      expect(fileUploads.length).toBe(1)
+      expect(fileUploads[0].data.file_type).toBe('xls')
+      expect(fileUploads[0].data.file_name).toBe('data.xlsx')
+
+      expect(sentMessages.length).toBe(1)
+      expect(sentMessages[0].data.msg_type).toBe('file')
+      expect(JSON.parse(sentMessages[0].data.content)).toEqual({ file_key: 'file_key_1' })
+    })
+
+    test('non-empty text is sent as a follow-up message after the media', async () => {
+      const { client, sentMessages } = createMockClient()
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+      const pdfFile = join(mediaTempDir, 'report.pdf')
+      writeFileSync(pdfFile, 'pdf-bytes')
+
+      await channel.sendMedia('feishu:chat1', '这是报告', pdfFile)
+
+      expect(sentMessages.length).toBe(2)
+      expect(sentMessages[0].data.msg_type).toBe('file')
+      expect(sentMessages[1].data.msg_type).toBe('post')
+    })
+
+    test('image over 10MB is rejected with a Chinese error and nothing is uploaded', async () => {
+      const { client, sentMessages, imageUploads } = createMockClient()
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+      const bigImage = join(mediaTempDir, 'big.png')
+      writeFileSync(bigImage, '')
+      truncateSync(bigImage, 10 * 1024 * 1024 + 1)
+
+      await expect(channel.sendMedia('feishu:chat1', '', bigImage)).rejects.toThrow('超过飞书图片上限 10MB')
+      expect(imageUploads.length).toBe(0)
+      expect(sentMessages.length).toBe(0)
+    })
+
+    test('nonexistent local file is rejected', async () => {
+      const { client, sentMessages } = createMockClient()
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+
+      await expect(
+        channel.sendMedia('feishu:chat1', '', join(mediaTempDir, 'missing.pdf')),
+      ).rejects.toThrow('媒体文件不存在')
+      expect(sentMessages.length).toBe(0)
+    })
+  })
+
+  // Feishu uses global fetch for remote downloads (no injected fetchFn), so we stub it.
+  describe('sendMedia (remote, SSRF-guarded)', () => {
+    let originalFetch: typeof fetch
+    beforeEach(() => {
+      originalFetch = globalThis.fetch
+    })
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    test('remote image is downloaded then uploaded via im.image.create', async () => {
+      const { client, imageUploads, sentMessages } = createMockClient()
+      const fetchSpy = mock(async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }))
+      globalThis.fetch = fetchSpy as any
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+
+      await channel.sendMedia('feishu:chat1', '', 'https://files.example.com/chart.png')
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const init = (fetchSpy.mock.calls[0] as any[])[1]
+      expect(init?.redirect).toBe('error')
+      expect(imageUploads.length).toBe(1)
+      expect(sentMessages.some((m) => m.data.msg_type === 'image')).toBe(true)
+    })
+
+    test('remote URL pointing at an internal/metadata address is rejected before download/upload', async () => {
+      const { client, imageUploads, fileUploads, sentMessages } = createMockClient()
+      const fetchSpy = mock(async () => new Response(new Uint8Array([1]), { status: 200 }))
+      globalThis.fetch = fetchSpy as any
+      const channel = new FeishuChannel('app1', 'secret1', {
+        onMessage: mock(() => {}),
+        _client: client,
+      })
+
+      await expect(
+        channel.sendMedia('feishu:chat1', '', 'http://169.254.169.254/latest/meta-data/'),
+      ).rejects.toThrow()
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(imageUploads.length).toBe(0)
+      expect(fileUploads.length).toBe(0)
+      expect(sentMessages.length).toBe(0)
     })
   })
 

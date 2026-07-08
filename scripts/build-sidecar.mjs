@@ -75,8 +75,15 @@ function getCurrentTarget() {
 // only when parsing .env.production, whose URL entries use the legacy names.
 // BUILTIN_* default to empty string = built-in cloud model disabled; they have
 // no legacy-name fallback at all so upstream tokens cannot slip in.
+//
+// OFFLINE EDITION (XJC_OFFLINE_BUILD=1): 离线版构建开关，面向访问不到香港服务器
+// 的大陆用户的离线交付。injectionKeys 里的**全部**云端常量强制空字符串（跳过
+// process.env / .env.production / 默认值整条回退链——空字符串 env 本身穿不透 `||`
+// 回退，所以必须在这里显式短路）。以后新增云端常量只要加进 injectionKeys，
+// 离线分支自动覆盖，无需单独处理。sidecar 的 env.ts 只注入非空常量，URL 未配置
+// 即离线模式（免登录、无任何云端调用）。
 function generateBuildConstants() {
-  const prodEnv = parseDotEnvFile(resolve(root, '.env.production'))
+  const offlineBuild = process.env.XJC_OFFLINE_BUILD === '1'
 
   // [key, legacy alias in .env.production (URL keys only), default]
   const injectionKeys = [
@@ -87,12 +94,20 @@ function generateBuildConstants() {
   ]
 
   const entries = {}
-  for (const [key, prodLegacyKey, defaultValue] of injectionKeys) {
-    entries[key] =
-      process.env[key] ||
-      prodEnv[key] ||
-      (prodLegacyKey && prodEnv[prodLegacyKey]) ||
-      defaultValue
+  if (offlineBuild) {
+    console.log('OFFLINE EDITION: cloud constants forced empty (XJC_OFFLINE_BUILD=1)')
+    for (const [key] of injectionKeys) {
+      entries[key] = ''
+    }
+  } else {
+    const prodEnv = parseDotEnvFile(resolve(root, '.env.production'))
+    for (const [key, prodLegacyKey, defaultValue] of injectionKeys) {
+      entries[key] =
+        process.env[key] ||
+        prodEnv[key] ||
+        (prodLegacyKey && prodEnv[prodLegacyKey]) ||
+        defaultValue
+    }
   }
 
   const constPath = resolve(root, 'src/config/build-constants.ts')

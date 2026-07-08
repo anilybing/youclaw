@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { installTool } from "@/api/client"
 import { isTauri, openExternal } from "@/api/transport"
+import { WindowsTitleBar } from "@/components/layout/WindowsTitleBar"
 import logoUrl from "@/assets/logo.png"
 import { GIT_DOWNLOAD_URL } from "@/config/tools"
 const COMPACT_SIZE = { width: 520, height: 720 }
@@ -178,6 +179,8 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
+      {/* 无边框窗口下环境引导页也需要可拖拽/关闭（组件自守卫，仅 Windows 桌面渲染） */}
+      <WindowsTitleBar />
       <div className="flex-1 flex items-center justify-center overflow-auto p-8">
         <div className="w-full max-w-lg space-y-6">
           {/* Logo & Title */}

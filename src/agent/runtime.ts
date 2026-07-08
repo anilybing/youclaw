@@ -117,7 +117,7 @@ export class AgentRuntime {
    * Process a user message and return the agent's reply.
    */
   async process(params: ProcessParams): Promise<string> {
-    const { chatId, prompt, agentId, turnId } = params
+    const { chatId, prompt, agentId, turnId, suppressOutbound } = params
     const logger = getLogger()
 
     this.emitProcessing(agentId, chatId, true, turnId)
@@ -228,6 +228,7 @@ export class AgentRuntime {
           sessionId,
           turnId,
           toolUse,
+          suppressOutbound,
         })
       }
 

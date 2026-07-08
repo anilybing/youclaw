@@ -2,6 +2,7 @@
 import { type ReactNode, useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { AppSidebar } from './AppSidebar'
+import { WindowsTitleBar } from './WindowsTitleBar'
 import { ChatProvider } from '@/hooks/useChatContext'
 import { SettingsDialog, type SettingsTab } from '@/components/settings/SettingsDialog'
 import { isTauri, openExternal } from '@/api/transport'
@@ -66,6 +67,17 @@ export function Shell({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // 更新哨兵 toast 的「去更新」/其它模块请求打开设置：统一走 xjc:open-settings 事件。
+  useEffect(() => {
+    const onOpenSettings = (e: Event) => {
+      const tab = (e as CustomEvent).detail?.tab as SettingsTab | undefined
+      setSettingsTab(tab)
+      setSettingsOpen(true)
+    }
+    window.addEventListener('xjc:open-settings', onOpenSettings)
+    return () => window.removeEventListener('xjc:open-settings', onOpenSettings)
+  }, [])
+
   const isWin = platform === 'windows'
   const isMac = platform === 'macos'
   const isDesktop = isTauri
@@ -77,6 +89,9 @@ export function Shell({ children }: { children: ReactNode }) {
       <ChatProvider>
         <div className="h-screen flex flex-col bg-background text-foreground">
           {isMac && <MacTitleBar />}
+          {/* Windows 标题栏组件自守卫（isTauri + Win 平台同步判定），
+              不用异步的 isWin 门控以避免 get_platform 返回前缺一帧标题栏 */}
+          <WindowsTitleBar />
           <AnnouncementBanner />
           <div className="flex-1 flex overflow-hidden">
             <AppSidebar onOpenSettings={(tab) => { setSettingsTab(tab as SettingsTab); setSettingsOpen(true) }} />

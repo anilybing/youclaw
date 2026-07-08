@@ -228,3 +228,300 @@ body {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Chat message rendering (Codex-style refinement)
+ *
+ * Two layers:
+ * 1. Global chrome for streamdown widgets (code blocks / tables / inline
+ *    code). streamdown v2.4 relies on a `sidebar` theme color this app does
+ *    not define, and ships broken `bg-[var(--sdm-bg,inherit]` classes for the
+ *    shiki background, so panels rendered with transparent backgrounds.
+ * 2. `.chat-prose`: typography scoped to chat messages only (assistant +
+ *    user bubble), so other MessageResponse consumers keep their own scale.
+ *
+ * Rules here are intentionally unlayered so they win over streamdown's
+ * built-in Tailwind utility classes.
+ * ------------------------------------------------------------------------ */
+
+/* --- Fenced code block: one rounded panel, header bar with language label.
+   No `overflow: hidden` here — it would break the sticky copy button. */
+[data-streamdown="code-block"] {
+  margin: 0.875rem 0;
+  padding: 0;
+  gap: 0;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--muted);
+}
+
+[data-streamdown="code-block-header"] {
+  height: 2.25rem;
+  flex: none;
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+[data-streamdown="code-block-header"] > span {
+  margin-left: 0;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Actions overlay (copy / download): dock into the header bar, stays sticky
+   while scrolling long blocks */
+[data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
+  margin-top: -2.25rem;
+  height: 2.25rem;
+  padding: 0 0.375rem;
+}
+
+/* Subtle backdrop keeps the buttons readable when they stick over code
+   while scrolling long blocks */
+[data-streamdown="code-block-actions"] {
+  border: 0;
+  padding: 0;
+  gap: 0.125rem;
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--muted) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+[data-streamdown="code-block-copy-button"],
+[data-streamdown="code-block-download-button"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  color: var(--muted-foreground);
+  transition: color 150ms var(--ease-soft), background-color 150ms var(--ease-soft);
+}
+
+[data-streamdown="code-block-copy-button"]:hover,
+[data-streamdown="code-block-download-button"]:hover {
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+/* Code area: restore the shiki theme background (streamdown's own class is
+   malformed and never applied) and scroll horizontally instead of clipping */
+[data-streamdown="code-block-body"] {
+  border: 0;
+  /* Clip the code area to the container's lower corners (body keeps its own
+     overflow-hidden class from streamdown) */
+  border-radius: 0 0 calc(0.75rem - 1px) calc(0.75rem - 1px);
+  padding: 0;
+  /* Shown while highlighting loads (pre is transparent until shiki resolves);
+     close to the final theme background to avoid flicker during streaming */
+  background: var(--card);
+}
+
+[data-streamdown="code-block-body"] > pre {
+  overflow-x: auto;
+  padding: 0.875rem 1rem;
+  background-color: var(--sdm-bg, transparent);
+  color: var(--sdm-fg, inherit);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+}
+
+.dark [data-streamdown="code-block-body"] > pre {
+  background-color: var(--shiki-dark-bg, var(--sdm-bg, transparent));
+}
+
+/* Mermaid container relies on the same missing `sidebar` color */
+[data-streamdown="mermaid-block"] {
+  background: var(--muted);
+}
+
+/* --- Inline code: subtle chip, em-based so it scales inside headings */
+[data-streamdown="inline-code"] {
+  font-size: 0.875em;
+  padding: 0.125em 0.375em;
+  border-radius: 0.375rem;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  background: color-mix(in oklab, var(--muted) 80%, transparent);
+  overflow-wrap: anywhere;
+}
+
+/* --- Tables: bordered rounded frame, sturdier header, zebra rows */
+[data-streamdown="table-wrapper"] {
+  margin: 0.875rem 0;
+  padding: 0;
+  gap: 0.375rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+[data-streamdown="table-wrapper"] > div:has(> table) {
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--card);
+}
+
+[data-streamdown="table-wrapper"] > div:not(:has(> table)) {
+  opacity: 0.5;
+  transition: opacity 150ms var(--ease-soft);
+}
+
+[data-streamdown="table-wrapper"]:hover > div:not(:has(> table)) {
+  opacity: 1;
+}
+
+[data-streamdown="table"] {
+  font-size: 0.8125rem;
+}
+
+[data-streamdown="table-header"] {
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+}
+
+[data-streamdown="table-header-cell"] {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+[data-streamdown="table-cell"] {
+  padding: 0.4375rem 0.75rem;
+}
+
+[data-streamdown="table-body"] > tr:nth-child(even) {
+  background: color-mix(in oklab, var(--muted) 40%, transparent);
+}
+
+/* --- Chat prose: 14px / 1.7 rhythm for chat messages -------------------- */
+.chat-prose {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+}
+
+/* Block rhythm between streamdown sections (overrides root space-y-4) */
+.chat-prose > :not(:last-child) {
+  margin-block-end: 0;
+}
+
+.chat-prose > * + * {
+  margin-block-start: 0.75em;
+}
+
+.chat-prose > :first-child,
+.chat-prose > section:first-child > :first-child {
+  margin-block-start: 0;
+}
+
+.chat-prose > :last-child,
+.chat-prose > section:last-child > :last-child {
+  margin-block-end: 0;
+}
+
+.chat-prose p {
+  margin: 0.625em 0;
+}
+
+.chat-prose h1,
+.chat-prose h2,
+.chat-prose h3,
+.chat-prose h4,
+.chat-prose h5,
+.chat-prose h6 {
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  margin: 1.25em 0 0.5em;
+}
+
+.chat-prose h1 {
+  font-size: 1.25em;
+}
+
+.chat-prose h2 {
+  font-size: 1.15em;
+}
+
+.chat-prose h3 {
+  font-size: 1.05em;
+}
+
+.chat-prose h4,
+.chat-prose h5,
+.chat-prose h6 {
+  font-size: 1em;
+}
+
+.chat-prose ul,
+.chat-prose ol {
+  list-style-position: outside;
+  padding-left: 1.375em;
+  margin: 0.625em 0;
+}
+
+.chat-prose ul ul,
+.chat-prose ul ol,
+.chat-prose ol ul,
+.chat-prose ol ol {
+  margin: 0.25em 0;
+}
+
+.chat-prose li {
+  padding: 0;
+  margin: 0.3em 0;
+  padding-left: 0.125em;
+}
+
+.chat-prose li::marker {
+  color: var(--muted-foreground);
+}
+
+.chat-prose input[type="checkbox"] {
+  margin-right: 0.375em;
+}
+
+/* Upright quotes read better for CJK text than italics */
+.chat-prose blockquote {
+  margin: 0.75em 0;
+  padding: 0.125em 0 0.125em 0.875em;
+  border-left: 3px solid color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+  font-style: normal;
+  color: var(--muted-foreground);
+}
+
+.chat-prose hr {
+  margin-block: 1.25em;
+}
+
+.chat-prose a {
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklab, var(--primary) 45%, transparent);
+  transition: text-decoration-color 150ms var(--ease-soft);
+}
+
+.chat-prose a:hover {
+  text-decoration-color: var(--primary);
+}
+
+.chat-prose img {
+  max-width: 100%;
+  border-radius: 0.625rem;
+}
+
+/* --- User bubble variant (sits on secondary background) ------------------ */
+.chat-user-bubble {
+  overflow-wrap: anywhere;
+}
+
+.chat-user-bubble [data-streamdown="inline-code"] {
+  background: color-mix(in oklab, var(--background) 85%, transparent);
+}
+
+.chat-user-bubble blockquote {
+  border-left-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}

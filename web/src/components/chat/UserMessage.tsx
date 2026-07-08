@@ -1,7 +1,11 @@
-import { User } from "lucide-react";
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+import { useState } from "react";
+import { Check, Copy, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Message as AIMessage,
+  MessageAction,
+  MessageActions,
   MessageResponse,
 } from "@/components/ai-elements/message";
 import {
@@ -12,6 +16,8 @@ import {
 } from "@/components/ai-elements/attachments";
 import { localAssetUrl } from "@/api/transport";
 import { formatUserMessageForDisplay } from "@/lib/user-message-format";
+import { applyMarkdownHardBreaks } from "./user-message-markdown";
+import { useI18n } from "@/i18n";
 import { useAppRuntimeStore } from "@/stores/app";
 import type { Message } from "@/hooks/useChat";
 
@@ -53,13 +59,23 @@ function UserAvatar() {
 }
 
 export function UserMessage({ message }: { message: Message }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
   const attachments = message.attachments ?? [];
-  const formattedContent = formatUserMessageForDisplay(message.content);
+  const formattedContent = applyMarkdownHardBreaks(
+    formatUserMessageForDisplay(message.content),
+  );
   const hasContent = formattedContent.trim().length > 0;
   const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <AIMessage from="user" data-testid="message-user">
@@ -101,26 +117,25 @@ export function UserMessage({ message }: { message: Message }) {
               </Attachments>
             )}
             {hasContent && (
-              <div className="w-fit max-w-full overflow-hidden rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-primary-foreground">
-                <MessageResponse
-                  className={cn(
-                    "text-sm leading-relaxed text-primary-foreground [overflow-wrap:anywhere]",
-                    "[&_p]:my-0 [&_p]:[overflow-wrap:anywhere]",
-                    "[&_ul]:my-0 [&_ul]:space-y-1 [&_ul]:pl-5 [&_ul]:marker:text-primary-foreground/80",
-                    "[&_ol]:my-0 [&_ol]:space-y-1 [&_ol]:pl-5 [&_ol]:marker:text-primary-foreground/80",
-                    "[&_li]:py-0.5 [&_li]:[overflow-wrap:anywhere]",
-                    "[&_hr]:my-3 [&_hr]:border-primary-foreground/25",
-                    "[&_a]:text-primary-foreground [&_a]:underline [&_a]:underline-offset-4",
-                    "[&_[data-streamdown=link]]:text-primary-foreground [&_[data-streamdown=link]]:underline-offset-4",
-                    "[&_code]:rounded-md [&_code]:bg-black/10 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.95em]",
-                    "[&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-black/10 [&_pre]:p-3",
-                    "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
-                    "[&_blockquote]:border-l-2 [&_blockquote]:border-primary-foreground/20 [&_blockquote]:pl-3 [&_blockquote]:text-primary-foreground/90",
-                  )}
-                >
+              <div className="w-fit max-w-[min(38rem,100%)] overflow-hidden rounded-2xl bg-secondary px-4 py-2.5 text-foreground">
+                <MessageResponse className="chat-prose chat-user-bubble">
                   {formattedContent}
                 </MessageResponse>
               </div>
+            )}
+            {hasContent && (
+              <MessageActions className="mt-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <MessageAction
+                  tooltip={copied ? t.chat.copied : t.chat.copyCode}
+                  onClick={handleCopy}
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </MessageAction>
+              </MessageActions>
             )}
           </div>
         </div>

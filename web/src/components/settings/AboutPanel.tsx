@@ -6,6 +6,8 @@ import { isTauri, openExternal } from "@/api/transport"
 import { useI18n } from "@/i18n"
 import { Globe, Cog } from "lucide-react"
 import appConfig from "../../../../app.config.ts"
+import { useUpdateStore } from "@/stores/update"
+import { getUpdateChannel } from "@/lib/update-check"
 
 type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error"
 
@@ -16,26 +18,63 @@ interface UpdateState {
   newVersion?: string
 }
 
+interface PortableUpdateCheck {
+  available: boolean
+  version: string
+  notes: string
+  force_update: boolean
+  main_needs_update: boolean
+  server_needs_update: boolean
+  total_bytes: number
+}
+
 export function AboutPanel() {
   const { t } = useI18n()
   const [version, setVersion] = useState("")
+  // "portable" = 免安装/U盘版，走双 exe 就地替换；"installer" = 安装版，走 Tauri updater；
+  // "disabled" = 离线版，编译期禁用更新，整个更新区块不渲染。
+  const [channel, setChannel] = useState<"portable" | "installer" | "disabled" | "">("")
   const [update, setUpdate] = useState<UpdateState>({
     status: "idle",
     message: "",
     progress: 0,
   })
+  const setUpdateAvailable = useUpdateStore((s) => s.setAvailable)
+  const clearUpdate = useUpdateStore((s) => s.clear)
+  const storeAvailable = useUpdateStore((s) => s.available)
+  const storeChannel = useUpdateStore((s) => s.channel)
+  const storeVersion = useUpdateStore((s) => s.version)
+  const storeNotes = useUpdateStore((s) => s.notes)
 
   useEffect(() => {
     if (!isTauri) return
 
-    // Get version via Tauri command
     import("@tauri-apps/api/core").then(({ invoke }) => {
       invoke<string>("get_version").then((v) => setVersion("v" + v))
     })
+    void getUpdateChannel().then(setChannel)
+  }, [])
+
+  // 从启动检测的角标/toast 点进来时，若已知便携版有更新则直接预置「立即更新」。
+  useEffect(() => {
+    if (!isTauri) return
+    if (storeAvailable && storeChannel === "portable" && storeVersion) {
+      setUpdate({
+        status: "available",
+        message: storeNotes || `v${storeVersion}`,
+        progress: 0,
+        newVersion: storeVersion,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleCheck = async () => {
     if (!isTauri) return
+    if (channel === "portable") {
+      await handlePortableCheck()
+      return
+    }
     setUpdate({ status: "checking", message: t.settings.checkingUpdates, progress: 0 })
 
     try {
@@ -49,6 +88,7 @@ export function AboutPanel() {
           progress: 0,
           newVersion: update.version,
         })
+        setUpdateAvailable({ version: update.version, notes: update.body ?? "", channel: "installer" })
 
         let downloaded = 0
         let contentLength = 0
@@ -79,6 +119,7 @@ export function AboutPanel() {
           }
         })
       } else {
+        clearUpdate()
         setUpdate({ status: "up-to-date", message: t.settings.upToDate, progress: 0 })
         setTimeout(() => {
           setUpdate({ status: "idle", message: "", progress: 0 })
@@ -93,6 +134,60 @@ export function AboutPanel() {
     }
   }
 
+  const handlePortableCheck = async () => {
+    setUpdate({ status: "checking", message: t.settings.checkingUpdates, progress: 0 })
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      const info = await invoke<PortableUpdateCheck>("portable_update_check")
+      if (info && info.available) {
+        setUpdate({
+          status: "available",
+          message: info.notes ? info.notes : `v${info.version}`,
+          progress: 0,
+          newVersion: info.version,
+        })
+        setUpdateAvailable({ version: info.version, notes: info.notes || "", channel: "portable", forceUpdate: info.force_update })
+      } else {
+        clearUpdate()
+        setUpdate({ status: "up-to-date", message: t.settings.upToDate, progress: 0 })
+        setTimeout(() => setUpdate({ status: "idle", message: "", progress: 0 }), 3000)
+      }
+    } catch (err) {
+      setUpdate({
+        status: "error",
+        message: `${t.settings.updateError}: ${err instanceof Error ? err.message : String(err)}`,
+        progress: 0,
+      })
+    }
+  }
+
+  const handlePortableApply = async () => {
+    let unlisten: (() => void) | undefined
+    setUpdate((prev) => ({ ...prev, status: "downloading", message: `${t.settings.downloading}... 0%`, progress: 0 }))
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      const { listen } = await import("@tauri-apps/api/event")
+      unlisten = await listen<{ phase: string; percent: number }>("portable-update-progress", (event) => {
+        const { phase, percent } = event.payload
+        if (phase === "applying") {
+          setUpdate((prev) => ({ ...prev, status: "ready", message: t.settings.updatingRestart, progress: 100 }))
+        } else {
+          setUpdate((prev) => ({ ...prev, status: "downloading", message: `${t.settings.downloading}... ${percent}%`, progress: percent }))
+        }
+      })
+      // 成功后 Rust 侧会关闭本进程并由脚本重启，本调用通常不会正常返回。
+      await invoke("portable_update_apply")
+    } catch (err) {
+      setUpdate({
+        status: "error",
+        message: `${t.settings.updateError}: ${err instanceof Error ? err.message : String(err)}`,
+        progress: 0,
+      })
+    } finally {
+      if (unlisten) unlisten()
+    }
+  }
+
   const handleRelaunch = async () => {
     if (!isTauri) return
     try {
@@ -103,9 +198,17 @@ export function AboutPanel() {
     }
   }
 
+  const isPortable = channel === "portable"
   const isChecking = update.status === "checking"
-  const showProgress = update.status === "available" || update.status === "downloading"
-  const showInstall = update.status === "ready"
+  // 便携版：available 时显示「立即更新」按钮（不自动下载）；ready 表示正在应用+重启。
+  const portableAvailable = isPortable && update.status === "available"
+  const showInstall = !isPortable && update.status === "ready"
+  const busy = update.status === "checking" || update.status === "downloading" || (isPortable && update.status === "ready")
+  const showCheckBtn = !busy && !portableAvailable && !showInstall
+  const showProgress =
+    update.status === "downloading" ||
+    (isPortable && update.status === "ready") ||
+    (!isPortable && update.status === "available")
 
   return (
     <div className="flex flex-col items-center py-12 space-y-8">
@@ -125,16 +228,22 @@ export function AboutPanel() {
         </p>
       </div>
 
-      {/* Update feature */}
-      {isTauri && (
+      {/* Update feature（离线版通道为 "disabled"：整个更新区块不渲染，只显示版本号） */}
+      {isTauri && channel !== "disabled" && (
         <div className="w-full max-w-xs">
-          {!showInstall && (
+          {showCheckBtn && (
             <Button
               className="w-full rounded-xl"
               onClick={handleCheck}
-              disabled={isChecking}
+              disabled={isChecking || !channel}
             >
               {t.settings.checkForUpdates}
+            </Button>
+          )}
+          {portableAvailable && (
+            <Button className="w-full rounded-xl" onClick={handlePortableApply}>
+              {t.settings.updateNow}
+              {update.newVersion ? ` · v${update.newVersion}` : ""}
             </Button>
           )}
           {showInstall && (

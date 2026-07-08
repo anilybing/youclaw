@@ -1,9 +1,22 @@
 import '../tests/setup-light.ts'
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect, mock, beforeAll, afterAll } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   generateSignature, decryptMessage, encryptMessage,
-  extractTextFromXml, chunkText, WeComChannel,
+  extractTextFromXml, chunkText, mapWeComMediaType, WeComChannel,
 } from '../src/channel/wecom.ts'
+
+let mediaTempDir: string
+
+beforeAll(() => {
+  mediaTempDir = mkdtempSync(join(tmpdir(), 'xjc-wecom-test-'))
+})
+
+afterAll(() => {
+  rmSync(mediaTempDir, { recursive: true, force: true })
+})
 
 // ---------------------------------------------------------------------------
 // Pure function tests
@@ -112,6 +125,24 @@ describe('chunkText', () => {
   })
 })
 
+describe('mapWeComMediaType', () => {
+  test('jpg/jpeg/png map to image', () => {
+    expect(mapWeComMediaType('jpg')).toBe('image')
+    expect(mapWeComMediaType('jpeg')).toBe('image')
+    expect(mapWeComMediaType('png')).toBe('image')
+  })
+
+  test('mp4 maps to video', () => {
+    expect(mapWeComMediaType('mp4')).toBe('video')
+  })
+
+  test('everything else maps to file (incl. gif, which WeCom image upload rejects)', () => {
+    expect(mapWeComMediaType('gif')).toBe('file')
+    expect(mapWeComMediaType('pdf')).toBe('file')
+    expect(mapWeComMediaType('')).toBe('file')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // WeComChannel integration tests (mock fetch)
 // ---------------------------------------------------------------------------
@@ -136,6 +167,22 @@ function createMockFetch() {
       return new Response(JSON.stringify({ errcode: 0, errmsg: 'ok' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    // temporary material upload
+    if (urlStr.includes('media/upload')) {
+      return new Response(JSON.stringify({ errcode: 0, errmsg: 'ok', media_id: 'MEDIA_ID_1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    // remote media download (SSRF-guarded outbound media)
+    if (urlStr.includes('files.example.com')) {
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
       })
     }
 
@@ -202,6 +249,112 @@ describe('WeComChannel', () => {
 
       const tokenCall = calls.find(c => c.url.includes('gettoken'))
       expect(tokenCall).toBeDefined()
+    })
+  })
+
+  describe('sendMedia', () => {
+    test('image is uploaded with type=image and sent as msgtype image', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new WeComChannel('corp1', 'secret1', '1000001', 'token', encodingAESKey, {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      const pngFile = join(mediaTempDir, 'chart.png')
+      writeFileSync(pngFile, 'png-bytes')
+
+      await channel.sendMedia('wecom:user123', '', pngFile)
+
+      const uploadCall = calls.find(c => c.url.includes('media/upload'))
+      expect(uploadCall).toBeDefined()
+      expect(uploadCall!.url).toContain('type=image')
+      expect(uploadCall!.url).toContain('access_token=test_token')
+
+      const sendCall = calls.find(c => c.url.includes('message/send'))
+      expect(sendCall).toBeDefined()
+      const body = JSON.parse(sendCall!.init?.body as string)
+      expect(body.touser).toBe('user123')
+      expect(body.msgtype).toBe('image')
+      expect(body.image.media_id).toBe('MEDIA_ID_1')
+    })
+
+    test('document is uploaded with type=file and follow-up text goes out separately', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new WeComChannel('corp1', 'secret1', '1000001', 'token', encodingAESKey, {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      const xlsxFile = join(mediaTempDir, 'data.xlsx')
+      writeFileSync(xlsxFile, 'xlsx-bytes')
+
+      await channel.sendMedia('wecom:user123', '这是数据表', xlsxFile)
+
+      const uploadCall = calls.find(c => c.url.includes('media/upload'))
+      expect(uploadCall!.url).toContain('type=file')
+
+      const sendCalls = calls.filter(c => c.url.includes('message/send'))
+      expect(sendCalls.length).toBe(2)
+      const mediaBody = JSON.parse(sendCalls[0]!.init?.body as string)
+      expect(mediaBody.msgtype).toBe('file')
+      expect(mediaBody.file.media_id).toBe('MEDIA_ID_1')
+      const textBody = JSON.parse(sendCalls[1]!.init?.body as string)
+      expect(textBody.msgtype).toBe('text')
+      expect(textBody.text.content).toBe('这是数据表')
+    })
+
+    test('nonexistent local file is rejected without any API call', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new WeComChannel('corp1', 'secret1', '1000001', 'token', encodingAESKey, {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      await expect(
+        channel.sendMedia('wecom:user123', '', join(mediaTempDir, 'missing.pdf')),
+      ).rejects.toThrow('媒体文件不存在')
+      const uploadCalls = calls.filter(c => c.url.includes('media/upload'))
+      expect(uploadCalls.length).toBe(0)
+    })
+
+    test('remote image is downloaded via the injected fetch (redirect:error) then uploaded', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new WeComChannel('corp1', 'secret1', '1000001', 'token', encodingAESKey, {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      await channel.sendMedia('wecom:user123', '', 'https://files.example.com/pic.png')
+
+      const dl = calls.find(c => c.url.includes('files.example.com'))
+      expect(dl).toBeDefined()
+      expect((dl!.init as any)?.redirect).toBe('error')
+
+      const uploadCall = calls.find(c => c.url.includes('media/upload'))
+      expect(uploadCall!.url).toContain('type=image')
+      const sendCall = calls.find(c => c.url.includes('message/send'))
+      const body = JSON.parse(sendCall!.init?.body as string)
+      expect(body.msgtype).toBe('image')
+      expect(body.image.media_id).toBe('MEDIA_ID_1')
+    })
+
+    test('remote media targeting an internal/metadata address is rejected before any download/upload', async () => {
+      const { fetch: mockFetch, calls } = createMockFetch()
+      const channel = new WeComChannel('corp1', 'secret1', '1000001', 'token', encodingAESKey, {
+        onMessage: mock(() => {}),
+        _fetchFn: mockFetch,
+      })
+      ;(channel as any).accessToken = { access_token: 'test_token', expires_in: 7200, fetchedAt: Date.now() }
+
+      await expect(
+        channel.sendMedia('wecom:user1', '', 'http://169.254.169.254/latest/meta-data/'),
+      ).rejects.toThrow()
+      expect(calls.some(c => c.url.includes('169.254'))).toBe(false)
+      expect(calls.some(c => c.url.includes('media/upload'))).toBe(false)
     })
   })
 

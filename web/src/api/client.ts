@@ -1171,6 +1171,8 @@ export interface ScheduledTaskDTO {
   consecutive_failures: number
   timezone: string | null
   last_result: string | null
+  delivery_mode: string | null
+  delivery_target: string | null
 }
 
 export interface TaskRunLogDTO {
@@ -1181,6 +1183,7 @@ export interface TaskRunLogDTO {
   status: string
   result: string | null
   error: string | null
+  delivery_status: string | null
 }
 
 export async function getTaskList() {
@@ -1196,6 +1199,8 @@ export async function createScheduledTask(data: {
   name?: string
   description?: string
   timezone?: string
+  deliveryMode?: 'push' | 'none'
+  deliveryTarget?: string
 }) {
   return apiFetch<ScheduledTaskDTO>('/api/tasks', {
     method: 'POST',
@@ -1203,7 +1208,7 @@ export async function createScheduledTask(data: {
   })
 }
 
-export async function updateScheduledTask(id: string, data: Partial<{ prompt: string; scheduleValue: string; scheduleType: string; status: string; name: string; description: string; timezone: string | null }>) {
+export async function updateScheduledTask(id: string, data: Partial<{ prompt: string; scheduleValue: string; scheduleType: string; status: string; name: string; description: string; timezone: string | null; deliveryMode: 'push' | 'none'; deliveryTarget: string | null }>) {
   return apiFetch<ScheduledTaskDTO>(`/api/tasks/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
@@ -1550,7 +1555,8 @@ export async function getChannelTypes() {
 export async function createChannel(data: {
   id?: string
   type: string
-  label: string
+  /** 缺省时后端自动生成「类型名 + 序号」（如「微信个人号 1」） */
+  label?: string
   config: Record<string, string>
   enabled?: boolean
 }) {

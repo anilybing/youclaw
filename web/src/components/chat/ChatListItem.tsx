@@ -9,7 +9,12 @@ import {
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useChatProcessing } from "@/hooks/useChat";
-import { resolveAvatar, PRESET_GRADIENTS } from "@/lib/chat-utils";
+import {
+  resolveAvatar,
+  PRESET_GRADIENTS,
+  resolveChatBadge,
+  resolveChatDisplayName,
+} from "@/lib/chat-utils";
 import type { ChatItem } from "@/lib/chat-utils";
 import {
   DropdownMenu,
@@ -23,15 +28,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-
-const CHANNEL_LABELS: Record<string, string> = {
-  telegram: 'TG',
-  feishu: 'Feishu',
-  qq: 'QQ',
-  wecom: 'WeCom',
-  dingtalk: 'DingTalk',
-  'wechat-oa': 'WeChat',
-}
 
 interface ChatListItemProps {
   chat: ChatItem;
@@ -56,6 +52,12 @@ export function ChatListItem({
   const [editing, setEditing] = useState(false);
   const [editingName, setEditingName] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // 来源徽标：定时任务 → 「定时任务」；其它渠道 → 本地化类型名（归一 type 串/实例 id）
+  const typeLabels = t.channels.typeLabels as Record<string, string>;
+  const channelBadge = resolveChatBadge(chat, typeLabels, t.chat.taskBadge);
+  // 存量会话名恰为英文 type（如 "wechat-personal"）时映射成本地化类型名；Task: 前缀会被去掉
+  const displayName = resolveChatDisplayName(chat.name, typeLabels);
 
   useEffect(() => {
     if (editing) {
@@ -142,12 +144,15 @@ export function ChatListItem({
             />
           ) : (
             <span className="text-[13px] font-medium truncate flex-1 text-foreground flex items-center gap-1.5">
-              {chat.channel && chat.channel !== 'web' && (
-                <span className="shrink-0 text-[9px] font-medium px-1 py-px rounded bg-muted text-muted-foreground">
-                  {CHANNEL_LABELS[chat.channel] ?? chat.channel}
+              {channelBadge && (
+                <span
+                  className="shrink-0 text-[9px] font-medium px-1 py-px rounded bg-muted text-muted-foreground"
+                  data-testid="chat-channel-badge"
+                >
+                  {channelBadge}
                 </span>
               )}
-              {chat.name}
+              {displayName}
             </span>
           )}
           <div className="relative shrink-0">
@@ -181,7 +186,7 @@ export function ChatListItem({
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleStartEdit(chat.name);
+                    handleStartEdit(displayName);
                   }}
                 >
                   <Pencil className="h-3.5 w-3.5 mr-2" />

@@ -14,6 +14,8 @@ import { cn } from '../lib/utils'
 import { buildCronExpression, createDefaultCronDraft, parseCronExpression, type CronDraft, type CronMode } from '../lib/task-cron'
 import { INTERVAL_UNITS, buildIntervalScheduleValue, formatIntervalLabel, parseIntervalScheduleValue, type IntervalUnit } from '../lib/task-interval'
 import { useI18n } from '../i18n'
+import { TaskDeliveryFields } from '@/components/tasks/TaskDeliveryFields'
+import { isDeliveryTargetComplete, type TaskDeliveryMode } from '@/lib/task-delivery'
 import { SidePanel } from '@/components/layout/SidePanel'
 import { useDragRegion } from "@/hooks/useDragRegion"
 import { Button } from '@/components/ui/button'
@@ -39,6 +41,7 @@ import {
   Clock3,
   Pencil,
   PlayCircle,
+  Send,
 } from 'lucide-react'
 
 type Agent = { id: string; name: string }
@@ -131,6 +134,31 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={cn('px-2 py-0.5 rounded text-xs font-medium', colors[status] ?? 'bg-zinc-500/20 text-zinc-400')}>
       {status}
+    </span>
+  )
+}
+
+function DeliveryStatusBadge({ status }: { status: string }) {
+  const { t } = useI18n()
+  const labels: Record<string, string> = {
+    sent: t.tasks.deliveryStatusSent,
+    failed: t.tasks.deliveryStatusFailed,
+    skipped: t.tasks.deliveryStatusSkipped,
+  }
+  const colors: Record<string, string> = {
+    sent: 'bg-green-500/20 text-green-400',
+    failed: 'bg-red-500/20 text-red-400',
+    skipped: 'bg-zinc-500/20 text-zinc-400',
+  }
+  const label = labels[status]
+  if (!label) return null
+  return (
+    <span
+      data-testid="task-log-delivery-badge"
+      data-delivery-status={status}
+      className={cn('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium', colors[status])}
+    >
+      {label}
     </span>
   )
 }
@@ -315,6 +343,15 @@ export function Tasks() {
                       {scheduleLabel(task.schedule_type, task.schedule_value)}
                     </span>
                   </div>
+                  {task.delivery_mode === 'push' && task.delivery_target && (
+                    <p
+                      data-testid="task-item-delivery"
+                      className="text-xs text-muted-foreground mt-1 flex items-center gap-1 min-w-0"
+                    >
+                      <Send className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{t.tasks.deliveryPushShort} → {task.delivery_target}</span>
+                    </p>
+                  )}
                   {!task.name && (
                     <p className="text-xs text-muted-foreground mt-1 truncate">{task.prompt.slice(0, 60)}</p>
                   )}
@@ -478,6 +515,18 @@ function TaskDetail({
         <InfoField label={t.tasks.nextRun} value={formatRelative(task.next_run)} />
         <InfoField label={t.tasks.created} value={new Date(task.created_at).toLocaleString()} />
         <InfoField label={t.tasks.lastRun} value={task.last_run ? new Date(task.last_run).toLocaleString() : '-'} />
+        <InfoField label={t.tasks.delivery}>
+          <div data-testid="task-detail-delivery" className="flex items-center gap-1.5 text-sm">
+            {task.delivery_mode === 'push' && task.delivery_target ? (
+              <>
+                <Send className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{t.tasks.deliveryPushShort} → <span className="font-mono text-xs">{task.delivery_target}</span></span>
+              </>
+            ) : (
+              <span>{t.tasks.deliveryModeNone}</span>
+            )}
+          </div>
+        </InfoField>
         <InfoField label={t.tasks.taskId} value={task.id} mono />
       </div>
 
@@ -509,6 +558,9 @@ function TaskDetail({
                 )}
                 <span className="text-muted-foreground">{new Date(log.run_at).toLocaleString()}</span>
                 <span className="text-muted-foreground">{formatDuration(log.duration_ms)}</span>
+                {log.delivery_status && (log.delivery_status !== 'skipped' || task.delivery_mode === 'push') && (
+                  <DeliveryStatusBadge status={log.delivery_status} />
+                )}
                 {log.error && <span className="text-red-400 truncate flex-1">{log.error}</span>}
               </div>
             ))}
@@ -1007,6 +1059,10 @@ function TaskForm({
     task?.schedule_type === 'once' ? 'custom' : null
   )
   const [oncePickerOpen, setOncePickerOpen] = useState(false)
+  const [deliveryMode, setDeliveryMode] = useState<TaskDeliveryMode>(
+    task?.delivery_mode === 'push' ? 'push' : 'none'
+  )
+  const [deliveryTarget, setDeliveryTarget] = useState(task?.delivery_target ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const cronScheduleValue = cronMode === 'custom'
@@ -1058,6 +1114,11 @@ function TaskForm({
       return
     }
 
+    if (deliveryMode === 'push' && !isDeliveryTargetComplete(deliveryTarget)) {
+      setError(t.tasks.deliveryTargetRequired)
+      return
+    }
+
     setSubmitting(true)
     setError('')
 
@@ -1090,6 +1151,8 @@ function TaskForm({
           scheduleValue: finalValue,
           name: name || undefined,
           description: description || undefined,
+          deliveryMode,
+          deliveryTarget: deliveryMode === 'push' ? deliveryTarget.trim() : null,
         })
       } else {
         const chatId = `task:${crypto.randomUUID().slice(0, 8)}`
@@ -1101,6 +1164,8 @@ function TaskForm({
           scheduleValue: finalValue,
           name: name || undefined,
           description: description || undefined,
+          deliveryMode,
+          deliveryTarget: deliveryMode === 'push' ? deliveryTarget.trim() : undefined,
         })
       }
       onSaved()
@@ -1318,6 +1383,21 @@ function TaskForm({
               </Select>
             </div>
           )}
+        </div>
+
+        {/* Result delivery */}
+        <div>
+          <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.delivery}</label>
+          <TaskDeliveryFields
+            mode={deliveryMode}
+            target={deliveryTarget}
+            onModeChange={(mode) => {
+              setDeliveryMode(mode)
+              setError('')
+            }}
+            onTargetChange={setDeliveryTarget}
+            disabled={submitting}
+          />
         </div>
 
         {error && <p data-testid="task-form-error" className="text-xs text-red-400">{error}</p>}
