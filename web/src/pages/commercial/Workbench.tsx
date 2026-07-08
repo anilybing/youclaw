@@ -10,6 +10,7 @@ import { isDeliveryTargetComplete, type TaskDeliveryMode } from '@/lib/task-deli
 import { useChatActions } from '@/hooks/useChat'
 import { uploadChatAttachment, reportTelemetry, createScheduledTask } from '@/api/client'
 import { useAppPreferencesStore } from '@/stores/app-preferences'
+import { useWorkbenchCardsStore } from '@/stores/workbench-cards'
 import { useI18n } from '@/i18n'
 import {
   WORKBENCH_AGENT_ID,
@@ -17,6 +18,7 @@ import {
   WORKBENCH_CRON_PRESETS,
   WORKBENCH_CATEGORIES,
   getTaskCategory,
+  mergeWorkbenchTasks,
   type WorkbenchLocale,
   type WorkbenchTask,
   type WorkbenchCategoryId,
@@ -282,8 +284,17 @@ export function Workbench() {
   const [activeTask, setActiveTask] = useState<WorkbenchTask | null>(null)
   const [activeCategory, setActiveCategory] = useState<'all' | WorkbenchCategoryId>('all')
 
+  // 有效任务卡 = 内置卡 ∪ 服务端下发卡（远程同 id 覆盖、新 id 追加）。
+  // 未加载或无远程卡时用内置卡（离线兜底）。
+  const remoteCards = useWorkbenchCardsStore((s) => s.remoteCards)
+  const cardsLoaded = useWorkbenchCardsStore((s) => s.loaded)
+  const allTasks = useMemo(
+    () => (cardsLoaded && remoteCards.length > 0 ? mergeWorkbenchTasks(remoteCards) : WORKBENCH_TASKS),
+    [cardsLoaded, remoteCards],
+  )
+
   const countFor = (id: WorkbenchCategoryId) =>
-    WORKBENCH_TASKS.filter((task) => getTaskCategory(task) === id).length
+    allTasks.filter((task) => getTaskCategory(task) === id).length
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -305,7 +316,7 @@ export function Workbench() {
             <CategoryTab
               active={activeCategory === 'all'}
               label={locale === 'zh' ? '全部' : 'All'}
-              count={WORKBENCH_TASKS.length}
+              count={allTasks.length}
               onClick={() => setActiveCategory('all')}
             />
             {WORKBENCH_CATEGORIES.map((cat) => (
@@ -323,7 +334,7 @@ export function Workbench() {
           {activeCategory === 'all' ? (
             <div className="space-y-8">
               {WORKBENCH_CATEGORIES.map((cat) => {
-                const tasks = WORKBENCH_TASKS.filter((task) => getTaskCategory(task) === cat.id)
+                const tasks = allTasks.filter((task) => getTaskCategory(task) === cat.id)
                 if (tasks.length === 0) return null
                 return (
                   <section key={cat.id} className="space-y-3">
@@ -343,7 +354,7 @@ export function Workbench() {
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {WORKBENCH_TASKS.filter((task) => getTaskCategory(task) === activeCategory).map((task) => (
+              {allTasks.filter((task) => getTaskCategory(task) === activeCategory).map((task) => (
                 <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
               ))}
             </div>

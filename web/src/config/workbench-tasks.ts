@@ -5,7 +5,7 @@
 export type WorkbenchLocale = 'zh' | 'en'
 
 /** 工作台任务分类（按类型分 tab；未来新增能力扩展此联合类型 + WORKBENCH_CATEGORIES 即可） */
-export type WorkbenchCategoryId = 'office' | 'ecom' | 'content'
+export type WorkbenchCategoryId = 'office' | 'ecom' | 'content' | 'finance' | 'hr' | 'support' | 'research'
 
 export interface WorkbenchField {
   key: string
@@ -44,6 +44,14 @@ export const WORKBENCH_AGENT_ID = 'office-assistant'
 export const ECOMMERCE_AGENT_ID = 'ecommerce-assistant'
 /** 内容创作能力包卡片绑定的数字员工 */
 export const CONTENT_AGENT_ID = 'content-creator'
+/** 财务能力包卡片绑定的数字员工 */
+export const FINANCE_AGENT_ID = 'finance-assistant'
+/** 人事能力包卡片绑定的数字员工 */
+export const HR_AGENT_ID = 'hr-assistant'
+/** 客服能力包卡片绑定的数字员工 */
+export const SUPPORT_AGENT_ID = 'support-assistant'
+/** 研究能力包卡片绑定的数字员工 */
+export const RESEARCH_AGENT_ID = 'research-assistant'
 
 /** 工作台分类定义（数组顺序即 tab 展示顺序） */
 export interface WorkbenchCategory {
@@ -56,6 +64,10 @@ export const WORKBENCH_CATEGORIES: WorkbenchCategory[] = [
   { id: 'office', label: { zh: '办公', en: 'Office' }, icon: '🗂️' },
   { id: 'ecom', label: { zh: '电商', en: 'E-commerce' }, icon: '🛒' },
   { id: 'content', label: { zh: '创作', en: 'Content' }, icon: '✍️' },
+  { id: 'finance', label: { zh: '财务', en: 'Finance' }, icon: '💰' },
+  { id: 'hr', label: { zh: '人事', en: 'HR' }, icon: '🧑‍💼' },
+  { id: 'support', label: { zh: '客服', en: 'Support' }, icon: '🎧' },
+  { id: 'research', label: { zh: '研究', en: 'Research' }, icon: '🔬' },
 ]
 
 /** 归类一个任务：优先显式 category，其次按绑定的数字员工推断 */
@@ -63,6 +75,10 @@ export function getTaskCategory(task: WorkbenchTask): WorkbenchCategoryId {
   if (task.category) return task.category
   if (task.agentId === ECOMMERCE_AGENT_ID) return 'ecom'
   if (task.agentId === CONTENT_AGENT_ID) return 'content'
+  if (task.agentId === FINANCE_AGENT_ID) return 'finance'
+  if (task.agentId === HR_AGENT_ID) return 'hr'
+  if (task.agentId === SUPPORT_AGENT_ID) return 'support'
+  if (task.agentId === RESEARCH_AGENT_ID) return 'research'
   return 'office'
 }
 
@@ -420,4 +436,330 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
       { key: 'period', kind: 'text', required: false, label: { zh: '周期（可选，默认一周）', en: 'Period (optional, 1 week default)' }, placeholder: { zh: '一周 / 一月', en: '1 week / 1 month' } },
     ],
   },
+
+  // ─── 财务记账能力包（绑定财务助理，纯 prompt 技能零配置）────────────────
+  {
+    id: 'finance-bookkeeping',
+    icon: '🧾',
+    title: { zh: '整理记账流水', en: 'Bookkeeping' },
+    desc: { zh: '收支流水整理成规范记账表+汇总', en: 'Tidy transactions into a ledger' },
+    agentId: FINANCE_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 finance-bookkeeping 技能，把下面的收支流水整理成规范记账表（日期/类目/收支/金额/账户/备注），自动归类并给月度汇总：\n{{records}}\n补充说明：{{note}}。金额或类目存疑请列出让我确认，不要臆造。',
+      en: 'Use the finance-bookkeeping skill to tidy these transactions into a ledger (date/category/direction/amount/account/note), auto-categorize and summarize by month:\n{{records}}\nNotes: {{note}}. List anything uncertain for me to confirm; do not fabricate.',
+    },
+    fields: [
+      { key: 'records', kind: 'textarea', required: true, label: { zh: '收支流水', en: 'Transactions' }, placeholder: { zh: '一行一笔，如：3/5 买办公用品 -230 微信', en: 'One per line, e.g. 3/5 office supplies -230 WeChat' } },
+      { key: 'note', kind: 'text', required: false, label: { zh: '补充说明（可选）', en: 'Notes (optional)' }, placeholder: { zh: '例如：只统计公司账 / 区分现金和银行', en: 'e.g. company account only' } },
+    ],
+  },
+  {
+    id: 'finance-invoice',
+    icon: '📑',
+    title: { zh: '发票报销整理', en: 'Invoice & reimbursement' },
+    desc: { zh: '发票信息汇总+查重+缺票提示', en: 'Summarize invoices, dedupe, flag gaps' },
+    agentId: FINANCE_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 finance-invoice 技能，把下面的发票/票据整理成报销汇总表（抬头/税号/类型/金额/税额/用途），做查重与合计核对，并提示缺票或抬头不符：\n{{invoices}}',
+      en: 'Use the finance-invoice skill to compile these invoices into a reimbursement sheet (title/tax-id/type/amount/tax/purpose), dedupe, verify totals and flag missing or mismatched invoices:\n{{invoices}}',
+    },
+    fields: [
+      { key: 'invoices', kind: 'textarea', required: true, label: { zh: '发票/票据信息', en: 'Invoices' }, placeholder: { zh: '一行一张，粘贴发票关键信息', en: 'One per line' } },
+    ],
+  },
+  {
+    id: 'finance-report',
+    icon: '📈',
+    title: { zh: '财务小结分析', en: 'Financial summary' },
+    desc: { zh: '收支数据→利润/现金流概览+洞察', en: 'P&L / cash-flow overview + insights' },
+    agentId: FINANCE_AGENT_ID,
+    schedulable: true,
+    promptTemplate: {
+      zh: '请使用 finance-report 技能，根据下面的收支数据生成财务小结（收入/成本/毛利、现金流概览）并给 3-5 条经营洞察：\n{{data}}\n周期：{{period}}。数据不足请说明假设与局限，不要编数字。',
+      en: 'Use the finance-report skill to produce a financial summary (revenue/cost/gross profit, cash-flow overview) with 3-5 business insights from this data:\n{{data}}\nPeriod: {{period}}. State assumptions if data is insufficient; do not fabricate numbers.',
+    },
+    fields: [
+      { key: 'data', kind: 'textarea', required: true, label: { zh: '收支数据', en: 'Financial data' }, placeholder: { zh: '粘贴收支明细或汇总', en: 'Paste income/expense data' } },
+      { key: 'period', kind: 'text', required: false, label: { zh: '周期（可选）', en: 'Period (optional)' }, placeholder: { zh: '例如：2026 年 3 月', en: 'e.g. Mar 2026' } },
+    ],
+  },
+  {
+    id: 'finance-budget',
+    icon: '🎯',
+    title: { zh: '预算与对账', en: 'Budget & reconciliation' },
+    desc: { zh: '分类预算+实际差异+超支预警', en: 'Budget vs actual, overspend alerts' },
+    agentId: FINANCE_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 finance-budget 技能帮我{{mode}}。相关数据：\n{{data}}\n输出分类预算/实际差异表与超支预警（或对账差异逐条待核清单）。',
+      en: 'Use the finance-budget skill to help me {{mode}}. Data:\n{{data}}\nOutput a budget-vs-actual variance table with overspend alerts (or an itemized reconciliation diff list).',
+    },
+    fields: [
+      { key: 'mode', kind: 'text', required: true, label: { zh: '做什么', en: 'Task' }, placeholder: { zh: '例如：制定月度预算 / 对账 / 跟踪执行', en: 'e.g. set budget / reconcile / track' } },
+      { key: 'data', kind: 'textarea', required: true, label: { zh: '相关数据', en: 'Data' }, placeholder: { zh: '粘贴预算或实际收支/两份账', en: 'Paste budget or actuals' } },
+    ],
+  },
+
+  // ─── 人事 HR 能力包（绑定人事助理，纯 prompt 技能零配置）────────────────
+  {
+    id: 'hr-jd',
+    icon: '📋',
+    title: { zh: '写招聘 JD', en: 'Job description' },
+    desc: { zh: '规范 JD+多渠道版本', en: 'Structured JD, multi-channel' },
+    agentId: HR_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 hr-jd 技能帮我写招聘 JD。岗位：{{role}}。要求/职责：{{reqs}}。城市/薪资：{{city}}。输出规范 JD（职责/要求/加分项/薪酬福利/亮点），并给一个偏吸引的渠道版本；信息不足先问我。',
+      en: 'Use the hr-jd skill to write a job description. Role: {{role}}. Requirements/duties: {{reqs}}. City/salary: {{city}}. Output a structured JD plus an attractive channel version; ask me if info is missing.',
+    },
+    fields: [
+      { key: 'role', kind: 'text', required: true, label: { zh: '岗位名称', en: 'Role' }, placeholder: { zh: '例如：前端工程师', en: 'e.g. Frontend engineer' } },
+      { key: 'reqs', kind: 'textarea', required: false, label: { zh: '要求/职责（可选）', en: 'Requirements (optional)' }, placeholder: { zh: '一行一条，留空由 AI 拟定', en: 'One per line' } },
+      { key: 'city', kind: 'text', required: false, label: { zh: '城市/薪资（可选）', en: 'City/salary (optional)' }, placeholder: { zh: '例如：杭州 / 15-25K', en: 'e.g. Hangzhou / 15-25K' } },
+    ],
+  },
+  {
+    id: 'hr-resume-screen',
+    icon: '🔎',
+    title: { zh: '简历筛选', en: 'Resume screening' },
+    desc: { zh: '对照 JD 打分排序+面试追问点', en: 'Score vs JD, rank, follow-ups' },
+    agentId: HR_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 hr-resume-screen 技能，对照下面的 JD 帮我评估简历：\nJD：{{jd}}\n简历：\n{{resumes}}\n给匹配度打分、排序、通过/待定/淘汰建议与面试追问点。只基于岗位相关能力，忽略性别/年龄/婚育等无关信息。',
+      en: 'Use the hr-resume-screen skill to evaluate resumes against this JD:\nJD: {{jd}}\nResumes:\n{{resumes}}\nGive match scores, ranking, pass/hold/reject suggestions and interview follow-ups. Judge only job-relevant ability; ignore gender/age/marital info.',
+    },
+    fields: [
+      { key: 'jd', kind: 'textarea', required: true, label: { zh: '岗位 JD', en: 'Job description' }, placeholder: { zh: '粘贴 JD 或关键要求', en: 'Paste JD or key requirements' } },
+      { key: 'resumes', kind: 'textarea', required: true, label: { zh: '简历内容', en: 'Resumes' }, placeholder: { zh: '粘贴一份或多份简历', en: 'Paste one or more resumes' } },
+    ],
+  },
+  {
+    id: 'hr-interview',
+    icon: '🗣️',
+    title: { zh: '面试题库', en: 'Interview questions' },
+    desc: { zh: '结构化面试题+评估维度', en: 'Structured questions + rubric' },
+    agentId: HR_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 hr-interview 技能，为岗位「{{role}}」（层级：{{level}}）生成结构化面试题：专业能力题、行为面试题（STAR）、情景题，每题附考察维度与参考评估要点，并给面试评分表模板。',
+      en: 'Use the hr-interview skill to generate structured interview questions for {{role}} ({{level}}): technical, behavioral (STAR) and scenario questions, each with the competency assessed and scoring notes, plus a scorecard template.',
+    },
+    fields: [
+      { key: 'role', kind: 'text', required: true, label: { zh: '岗位', en: 'Role' }, placeholder: { zh: '例如：运营专员', en: 'e.g. Operations specialist' } },
+      { key: 'level', kind: 'text', required: false, label: { zh: '层级（可选）', en: 'Level (optional)' }, placeholder: { zh: '初级 / 中级 / 高级', en: 'junior / mid / senior' } },
+    ],
+  },
+  {
+    id: 'hr-docs',
+    icon: '📄',
+    title: { zh: '人事文档模板', en: 'HR documents' },
+    desc: { zh: '合同要点/手册/流程/通知模板', en: 'Contracts, handbook, notices' },
+    agentId: HR_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 hr-docs 技能帮我起草：{{doc}}。补充要求：{{note}}。输出可用的要点/模板，涉及劳动法条款请提示以当地法规与专业法务意见为准。',
+      en: 'Use the hr-docs skill to draft: {{doc}}. Notes: {{note}}. Output usable points/templates; for labor-law clauses, note that local regulations and professional legal advice prevail.',
+    },
+    fields: [
+      { key: 'doc', kind: 'text', required: true, label: { zh: '要起草的文档', en: 'Document' }, placeholder: { zh: '例如：劳动合同要点 / 员工手册 / 入职流程', en: 'e.g. contract points / handbook' } },
+      { key: 'note', kind: 'text', required: false, label: { zh: '补充要求（可选）', en: 'Notes (optional)' }, placeholder: { zh: '例如：适用小微公司', en: 'e.g. for a small company' } },
+    ],
+  },
+
+  // ─── 客服能力包（绑定客服助理，纯 prompt 技能零配置）────────────────────
+  {
+    id: 'support-reply',
+    icon: '💬',
+    title: { zh: '客服话术', en: 'Support reply' },
+    desc: { zh: '多轮应答话术+多语气版本', en: 'Reply scripts, tone variants' },
+    agentId: SUPPORT_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 support-reply 技能，针对下面的客户场景生成应答话术（共情安抚→澄清→给方案→确认闭环），提供亲切/正式两种语气：\n场景：{{scenario}}\n可用政策/边界：{{policy}}。不承诺无法兑现的赔付，敏感诉求提示转人工。',
+      en: 'Use the support-reply skill to generate reply scripts for this case (empathize → clarify → solve → confirm) in warm and formal tones:\nCase: {{scenario}}\nPolicy/limits: {{policy}}. Do not over-promise; escalate sensitive cases to a human.',
+    },
+    fields: [
+      { key: 'scenario', kind: 'textarea', required: true, label: { zh: '客户场景', en: 'Customer case' }, placeholder: { zh: '例如：客户嫌发货慢要投诉', en: 'e.g. customer complains about slow shipping' } },
+      { key: 'policy', kind: 'text', required: false, label: { zh: '可用政策/边界（可选）', en: 'Policy/limits (optional)' }, placeholder: { zh: '例如：7 天无理由 / 最多补 10 元券', en: 'e.g. 7-day returns' } },
+    ],
+  },
+  {
+    id: 'support-faq',
+    icon: '📚',
+    title: { zh: '生成 FAQ', en: 'Build FAQ' },
+    desc: { zh: '常见问题整理成结构化知识库', en: 'Structured FAQ knowledge base' },
+    agentId: SUPPORT_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 support-faq 技能，把下面的产品说明/常见问题整理成结构化 FAQ（问题/标准答案/分类/关键词），合并近义问题：\n{{source}}',
+      en: 'Use the support-faq skill to organize this product info/questions into a structured FAQ (question/answer/category/keywords), merging near-duplicates:\n{{source}}',
+    },
+    fields: [
+      { key: 'source', kind: 'textarea', required: true, label: { zh: '产品说明/常见问题', en: 'Product info / questions' }, placeholder: { zh: '粘贴产品说明或历史问题', en: 'Paste product info or past questions' } },
+    ],
+  },
+  {
+    id: 'support-ticket',
+    icon: '🗂️',
+    title: { zh: '工单分类', en: 'Ticket triage' },
+    desc: { zh: '反馈分类+优先级+处理建议', en: 'Classify, prioritize, suggest' },
+    agentId: SUPPORT_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 support-ticket 技能，对下面的用户反馈做分类（咨询/投诉/退款/建议/报障）、判优先级、给处理建议与转派对象，并提取共性问题，输出表格：\n{{tickets}}',
+      en: 'Use the support-ticket skill to classify these tickets (inquiry/complaint/refund/suggestion/bug), set priority, suggest handling and assignee, and extract common issues as a table:\n{{tickets}}',
+    },
+    fields: [
+      { key: 'tickets', kind: 'textarea', required: true, label: { zh: '用户反馈/工单', en: 'Tickets' }, placeholder: { zh: '一行一条用户反馈', en: 'One ticket per line' } },
+    ],
+  },
+  {
+    id: 'support-review',
+    icon: '⭐',
+    title: { zh: '评价回复', en: 'Review reply' },
+    desc: { zh: '好评差评得体回复+补偿话术', en: 'Reply to reviews tactfully' },
+    agentId: SUPPORT_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 support-review 技能，为下面的评价写得体回复（好评致谢+引导复购；差评真诚道歉+方案+适度补偿+邀请私信），遵守平台规范：\n{{reviews}}',
+      en: 'Use the support-review skill to write tactful replies (thank positive reviews and invite repurchase; sincerely apologize to negative ones with a solution, modest compensation and a DM invite), following platform rules:\n{{reviews}}',
+    },
+    fields: [
+      { key: 'reviews', kind: 'textarea', required: true, label: { zh: '评价内容', en: 'Reviews' }, placeholder: { zh: '粘贴一条或多条评价', en: 'Paste one or more reviews' } },
+    ],
+  },
+
+  // ─── 研究/知识工作能力包（绑定研究助理，纯 prompt 技能零配置）──────────────
+  {
+    id: 'research-brief-card',
+    icon: '🔬',
+    title: { zh: '深度研究简报', en: 'Deep research' },
+    desc: { zh: '多源检索+交叉核对，带来源的调研报告', en: 'Multi-source brief with citations' },
+    agentId: RESEARCH_AGENT_ID,
+    schedulable: true,
+    promptTemplate: {
+      zh: '请使用 research-report 技能，围绕主题「{{topic}}」做深度调研：用 web-search 多源检索、交叉核对，输出结构化研究简报（结论摘要/关键发现/多方观点/数据与来源/延伸问题），每条事实标注来源。侧重：{{focus}}。',
+      en: 'Use the research-report skill to research "{{topic}}": search multiple sources via web-search, cross-check, and output a structured brief (summary/findings/viewpoints/data & sources/open questions) with citations. Focus: {{focus}}.',
+    },
+    fields: [
+      { key: 'topic', kind: 'text', required: true, label: { zh: '研究主题', en: 'Topic' }, placeholder: { zh: '例如：2026 国内预制菜行业竞争格局', en: 'e.g. China prepared-food market 2026' } },
+      { key: 'focus', kind: 'text', required: false, label: { zh: '侧重/用途（可选）', en: 'Focus (optional)' }, placeholder: { zh: '例如：给投资决策 / 只看头部玩家', en: 'e.g. for investment decision' } },
+    ],
+  },
+  {
+    id: 'doc-summarize-card',
+    icon: '📃',
+    title: { zh: '文档/网页摘要', en: 'Summarize' },
+    desc: { zh: '长文/PDF/网页提炼要点+TL;DR', en: 'TL;DR + key points from docs/pages' },
+    agentId: RESEARCH_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 doc-summarize 技能，把下面的材料总结成 TL;DR + 结构化要点 +（如有）行动项：\n{{material}}\n侧重：{{focus}}。PDF/文档用内置 parse_document 工具读取、网址用 web-search/agent-browser 读取。',
+      en: 'Use the doc-summarize skill to summarize this into a TL;DR + structured key points + action items (if any):\n{{material}}\nFocus: {{focus}}. Read PDFs/docs via the built-in parse_document tool and URLs via web-search/agent-browser.',
+    },
+    fields: [
+      { key: 'material', kind: 'textarea', required: true, label: { zh: '材料（文本/文件路径/网址）', en: 'Material (text/path/URL)' }, placeholder: { zh: '粘贴长文，或给 PDF 路径 / 网址', en: 'Paste text, or a PDF path / URL' } },
+      { key: 'focus', kind: 'text', required: false, label: { zh: '侧重（可选）', en: 'Focus (optional)' }, placeholder: { zh: '例如：只要结论 / 只要行动项', en: 'e.g. conclusions only' } },
+    ],
+  },
+  {
+    id: 'translate-card',
+    icon: '🌐',
+    title: { zh: '翻译润色', en: 'Translate & polish' },
+    desc: { zh: '地道互译+多风格润色版本', en: 'Idiomatic translation + polish' },
+    agentId: RESEARCH_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 translate 技能翻译/润色下面的文本。目标语言/方向：{{target}}。场景/风格：{{style}}。做本地化而非直译，并给主译文 + 1 个风格变体：\n{{text}}',
+      en: 'Use the translate skill to translate/polish this text. Target/direction: {{target}}. Scene/style: {{style}}. Localize (not literal) and give a main version plus one variant:\n{{text}}',
+    },
+    fields: [
+      { key: 'text', kind: 'textarea', required: true, label: { zh: '原文', en: 'Source text' }, placeholder: { zh: '粘贴要翻译/润色的文本', en: 'Paste text to translate/polish' } },
+      { key: 'target', kind: 'text', required: false, label: { zh: '目标语言（可选）', en: 'Target language (optional)' }, placeholder: { zh: '例如：中译英 / 英译中', en: 'e.g. to English / to Chinese' } },
+      { key: 'style', kind: 'text', required: false, label: { zh: '场景/风格（可选）', en: 'Scene/style (optional)' }, placeholder: { zh: '商务 / 学术 / 口语 / 营销', en: 'business / academic / casual' } },
+    ],
+  },
+  {
+    id: 'mind-map-card',
+    icon: '🧠',
+    title: { zh: '思维导图', en: 'Mind map' },
+    desc: { zh: '主题/材料→大纲+mermaid 导图+卡片', en: 'Outline + mermaid map + cards' },
+    agentId: RESEARCH_AGENT_ID,
+    promptTemplate: {
+      zh: '请使用 mind-map 技能，把下面的主题/材料整理成层级大纲 + mermaid 思维导图代码（可选知识卡片）：\n{{input}}\n用途：{{use}}。',
+      en: 'Use the mind-map skill to turn this topic/material into a hierarchical outline + mermaid mind-map code (optional study cards):\n{{input}}\nUse: {{use}}.',
+    },
+    fields: [
+      { key: 'input', kind: 'textarea', required: true, label: { zh: '主题或材料', en: 'Topic or material' }, placeholder: { zh: '例如：用户增长的核心杠杆；或粘贴一段材料', en: 'e.g. a topic, or paste material' } },
+      { key: 'use', kind: 'text', required: false, label: { zh: '用途（可选）', en: 'Use (optional)' }, placeholder: { zh: '梳理思路 / 学习复习 / 讲解大纲', en: 'thinking / study / outline' } },
+    ],
+  },
 ]
+
+// ─── 服务端下发任务卡的清洗与合并（能力与时俱进 · 阶段一）─────────────────
+// 客户端从 /api/commercial/workbench 拉远程卡，与内置卡合并后渲染。
+// 远程卡是"外部数据"，直接进入 UI 渲染/发送链路，必须防御性校验：结构不合法的卡整张丢弃，
+// 绝不能让一张坏卡拖垮整个工作台页。
+
+const KNOWN_CATEGORY_IDS = new Set<string>(WORKBENCH_CATEGORIES.map((c) => c.id))
+const CARD_ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/
+const FIELD_KINDS = new Set(['text', 'textarea', 'file'])
+
+function asBilingual(raw: unknown): Record<WorkbenchLocale, string> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  const zh = typeof obj.zh === 'string' ? obj.zh : (typeof obj.en === 'string' ? obj.en : '')
+  const en = typeof obj.en === 'string' ? obj.en : (typeof obj.zh === 'string' ? obj.zh : '')
+  if (!zh && !en) return null
+  return { zh: zh || en, en: en || zh }
+}
+
+function sanitizeRemoteField(raw: unknown): WorkbenchField | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  const key = typeof obj.key === 'string' ? obj.key.trim() : ''
+  if (!key) return null
+  const label = asBilingual(obj.label)
+  if (!label) return null
+  const kind = FIELD_KINDS.has(obj.kind as string) ? (obj.kind as WorkbenchField['kind']) : 'text'
+  const field: WorkbenchField = { key, kind, required: obj.required === true, label }
+  const placeholder = asBilingual(obj.placeholder)
+  if (placeholder) field.placeholder = placeholder
+  if (typeof obj.accept === 'string') field.accept = obj.accept
+  return field
+}
+
+/** 清洗一张远程卡：结构不合法返回 null（整张丢弃）。 */
+export function sanitizeRemoteCard(raw: unknown): WorkbenchTask | null {
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+  const id = typeof obj.id === 'string' ? obj.id.trim() : ''
+  if (!CARD_ID_RE.test(id)) return null
+  const title = asBilingual(obj.title)
+  const desc = asBilingual(obj.desc)
+  const promptTemplate = asBilingual(obj.promptTemplate)
+  if (!title || !desc || !promptTemplate) return null
+  if (!Array.isArray(obj.fields)) return null
+  const fields: WorkbenchField[] = []
+  for (const f of obj.fields) {
+    const field = sanitizeRemoteField(f)
+    if (!field) return null
+    fields.push(field)
+  }
+  const card: WorkbenchTask = { id, icon: typeof obj.icon === 'string' && obj.icon ? obj.icon : '🧩', title, desc, promptTemplate, fields }
+  if (typeof obj.agentId === 'string' && obj.agentId.trim()) card.agentId = obj.agentId.trim()
+  // 分类仅保留已知值；未知分类留空 → getTaskCategory 按 agentId 回落到已有 tab，
+  // 保证远程卡永远落进一个存在的分类，不会出现空 tab。
+  if (typeof obj.category === 'string' && KNOWN_CATEGORY_IDS.has(obj.category)) card.category = obj.category as WorkbenchCategoryId
+  if (obj.schedulable === true) card.schedulable = true
+  return card
+}
+
+/**
+ * 合并内置卡与远程卡：远程同 id 覆盖内置、新 id 追加。
+ * 内置卡在此从"唯一来源"降级为"离线兜底"。
+ */
+export function mergeWorkbenchTasks(remote: unknown[]): WorkbenchTask[] {
+  const builtinIds = new Set(WORKBENCH_TASKS.map((t) => t.id))
+  const overrides = new Map<string, WorkbenchTask>() // 覆盖内置（同 id）
+  const appended = new Map<string, WorkbenchTask>() // 新增远程卡（Map 去重：同 id 后者覆盖前者，避免重复 key）
+  for (const raw of remote || []) {
+    const card = sanitizeRemoteCard(raw)
+    if (!card) continue
+    if (builtinIds.has(card.id)) overrides.set(card.id, card)
+    else appended.set(card.id, card)
+  }
+  // 内置顺序在前（被远程覆盖的仍在原位），新增远程卡按首次出现顺序追加在后
+  const merged = WORKBENCH_TASKS.map((t) => overrides.get(t.id) ?? t)
+  return merged.concat([...appended.values()])
+}

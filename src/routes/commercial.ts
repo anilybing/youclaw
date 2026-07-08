@@ -14,6 +14,8 @@ import {
   userAiConfigStatus,
 } from './user-ai.ts'
 import { isModelHint, type ModelHint } from '../agent/model-hints.ts'
+import type { AgentManager } from '../agent/index.ts'
+import type { RegistryManager } from '../skills/index.ts'
 
 // ─── 远程配置（T-C5）───────────────────────────────────────────────
 // 离线默认值与 MVP remote_configs 种子保持一致；拉取成功缓存到数据目录，
@@ -42,6 +44,26 @@ function readRemoteConfigCache(): { configs: Record<string, unknown>; version: n
       return { configs: parsed.configs, version: Number(parsed.version) || 0 }
     }
   } catch { /* 缓存不存在或损坏，走默认 */ }
+  return null
+}
+
+// ─── 工作台任务卡下发（能力与时俱进 · 阶段一）─────────────────────────
+// 服务端下发的任务卡；客户端与内置卡合并（远程同 id 覆盖、新 id 追加）。
+// 云端 → 缓存 → 空（空 = 仅用内置卡，离线兜底）三级降级。
+function workbenchCachePath(): string {
+  return resolve(getPaths().data, 'workbench-cards-cache.json')
+}
+
+function readWorkbenchCache(): { cards: unknown[]; version: number } | null {
+  try {
+    const parsed = JSON.parse(readFileSync(workbenchCachePath(), 'utf8')) as {
+      cards?: unknown[]
+      version?: number
+    }
+    if (parsed && Array.isArray(parsed.cards)) {
+      return { cards: parsed.cards, version: Number(parsed.version) || 0 }
+    }
+  } catch { /* 缓存不存在或损坏，回落内置 */ }
   return null
 }
 
@@ -75,7 +97,12 @@ function getSidecarVersion(): string {
  * Routes: device, templates, chat
  * These are NOT part of upstream XiaoJuClaw; they live in the commercial isolation layer.
  */
-export function createCommercialRoutes() {
+export interface CommercialRouteDeps {
+  agentManager?: AgentManager
+  registryManager?: RegistryManager
+}
+
+export function createCommercialRoutes(deps: CommercialRouteDeps = {}) {
   const app = new Hono()
 
   const PROXY_TIMEOUT = 15000
@@ -163,6 +190,80 @@ export function createCommercialRoutes() {
       return c.json({ configs: { ...REMOTE_CONFIG_DEFAULTS, ...cached.configs }, version: cached.version, source: 'cache' })
     }
     return c.json({ configs: REMOTE_CONFIG_DEFAULTS, version: 0, source: 'default' })
+  })
+
+  // GET /cloud-reachable — 探测 MVP 云端是否可达（不依赖登录态，命中 MVP 公共 /api/health）。
+  // 供客户端「连不上远程服务器就降级为离线可用」用：未配置云端 → configured:false；
+  // 配置了但短超时内不可达 → reachable:false。绝不阻塞（异常一律当不可达）。
+  app.get('/cloud-reachable', async (c) => {
+    const apiUrl = getApiUrl()
+    if (!apiUrl) return c.json({ configured: false, reachable: false })
+    try {
+      const res = await fetch(`${apiUrl}/api/health`, { signal: AbortSignal.timeout(5000) })
+      return c.json({ configured: true, reachable: res.ok })
+    } catch {
+      return c.json({ configured: true, reachable: false })
+    }
+  })
+
+  // GET /workbench — 服务端下发的工作台任务卡（云端 → 缓存 → 空 三级降级）。
+  // 返回空数组时客户端只用内置卡；离线版无 apiUrl，天然回落内置。
+  app.get('/workbench', async (c) => {
+    const apiUrl = getApiUrl()
+    const token = getAuthToken()
+
+    if (apiUrl && token) {
+      try {
+        const res = await proxyGet(apiUrl, '/api/client/workbench.json', token)
+        if (res.ok) {
+          const data = await res.json() as { success?: boolean; data?: { cards?: unknown[]; version?: number } }
+          const merged = data.data
+          if (merged && Array.isArray(merged.cards)) {
+            const payload = { cards: merged.cards, version: Number(merged.version) || 0, source: 'cloud' as const }
+            try {
+              writeFileSync(workbenchCachePath(), JSON.stringify(payload), 'utf8')
+            } catch { /* 缓存写失败不影响下发 */ }
+            return c.json(payload)
+          }
+        }
+      } catch (err) {
+        getLogger().warn({ error: String(err), category: 'commercial' }, 'Workbench cards fetch failed, fallback to cache')
+      }
+    }
+
+    const cached = readWorkbenchCache()
+    if (cached) {
+      return c.json({ cards: cached.cards, version: cached.version, source: 'cache' })
+    }
+    return c.json({ cards: [], version: 0, source: 'default' })
+  })
+
+  // POST /staff/sync — 拉取服务端下发的数字员工定义并按哨兵种子落地（能力与时俱进 · 阶段三）。
+  // 需登录 + 具备 agent/registry 管理器；离线（无 apiUrl/token）时静默跳过，只用内置员工。
+  app.post('/staff/sync', async (c) => {
+    const apiUrl = getApiUrl()
+    const token = getAuthToken()
+    if (!apiUrl || !token || !deps.agentManager) {
+      return c.json({ seeded: [], skipped: 0, source: 'offline' })
+    }
+    try {
+      const res = await proxyGet(apiUrl, '/api/client/staff.json', token)
+      if (!res.ok) return c.json({ seeded: [], skipped: 0, source: 'error' })
+      const data = await res.json() as { success?: boolean; data?: { agents?: unknown[] } }
+      const agents = data.data && Array.isArray(data.data.agents) ? data.data.agents : []
+      const registryManager = deps.registryManager
+      const installSkill = registryManager
+        ? (slug: string) => registryManager.installSkill(slug, 'xiaojuclaw')
+        : undefined
+      const result = await deps.agentManager.seedRemoteStaff(agents, installSkill)
+      if (result.seeded.length > 0) {
+        getLogger().info({ seeded: result.seeded, category: 'commercial' }, 'Remote digital staff seeded')
+      }
+      return c.json({ ...result, source: 'cloud' })
+    } catch (err) {
+      getLogger().warn({ error: String(err), category: 'commercial' }, 'Remote staff sync failed')
+      return c.json({ seeded: [], skipped: 0, source: 'error' })
+    }
   })
 
   // ─── Telemetry（T-C4 桌面端）──────────────────────────────────────

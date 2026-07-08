@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAppRuntimeStore } from '@/stores/app'
-import { redeemInvitationCode, getDeviceList, unbindDevice, type DeviceItem } from '@/api/client'
+import { redeemInvitationCode, getDeviceList, unbindDevice, syncRemoteStaff, type DeviceItem } from '@/api/client'
 import { notify } from '@/stores/app-runtime'
+import { useWorkbenchCardsStore } from '@/stores/workbench-cards'
 import { formatApiError } from '@/lib/api-error'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -46,9 +47,12 @@ export function Activation() {
     try {
       const result = await redeemInvitationCode(code.trim())
       setLastRedeem(result)
-      notify.success(`激活成功，到账 ${result.creditGranted ?? 0} 积分`)
+      notify.success('激活成功，已解锁线上数字员工')
       setCode('')
       await Promise.all([fetchUser(), fetchCreditBalance(), loadDevices()])
+      // 激活后即解锁线上数字员工：立刻同步落地新员工 + 刷新工作台卡，无需重启
+      void syncRemoteStaff().catch(() => {})
+      void useWorkbenchCardsStore.getState().fetchCards()
     } catch (err) {
       const formatted = formatApiError(err, '激活失败')
       notify.error(formatted.title, { description: formatted.suggestion })
