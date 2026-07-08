@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useCallback } from 'react'
 import { sendMessage, getMessages, abortChat } from '../api/client'
 import { useChatStore, onChatUpdate } from '../stores/chat'
@@ -96,6 +97,19 @@ export function useChatActions(selectedAgentId: string) {
     [selectedAgentId],
   )
 
+  // [XJC] T-A3 重新生成：取当前会话最后一条 user 消息（文本+附件），复用 send 链路重发。
+  // 仅 !isProcessing 且存在 user 消息时生效；UI 状态处理由 send 统一负责。
+  const regenerate = useCallback(async () => {
+    const store = useChatStore.getState()
+    const chatId = store.activeChatId
+    if (!chatId) return
+    const chat = store.chats[chatId]
+    if (!chat || chat.isProcessing) return
+    const lastUserMessage = [...chat.messages].reverse().find((message) => message.role === 'user')
+    if (!lastUserMessage) return
+    await send(lastUserMessage.content, lastUserMessage.attachments)
+  }, [send])
+
   const loadChat = useCallback(async (chatId: string, agentId?: string) => {
     const store = useChatStore.getState()
     store.initChat(chatId)
@@ -159,7 +173,7 @@ export function useChatActions(selectedAgentId: string) {
     }
   }, [])
 
-  return { send, loadChat, newChat, stop, setShowInsufficientCredits }
+  return { send, regenerate, loadChat, newChat, stop, setShowInsufficientCredits }
 }
 
 // Re-export onChatUpdate for ChatProvider

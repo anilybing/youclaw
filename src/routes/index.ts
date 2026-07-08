@@ -22,6 +22,8 @@ import { createRealtimeRoutes } from './realtime.ts'
 import { createCommercialRoutes } from './commercial.ts'
 import { createCommercialAuthRoutes } from './commercial-auth.ts'
 import { createDiagnosticRoutes } from './diagnostic.ts'
+import { createVoiceRoutes } from './voice.ts'
+import { createKnowledgeRoutes } from './knowledge.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
 import type { MessageRouter, ChannelManager } from '../channel/index.ts'
@@ -82,13 +84,16 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createWebhooksRoutes(channelManager))
   app.route('/api', createSettingsRoutes())
   app.route('/api', createIngestRoutes()) // [XJC-PATCH] T-G6 本地文档摄取配置
+  // [XJC] 通用能力对齐底座：语音（T-A2）+ 知识库（T-A1），懒单例服务，无需注入 deps
+  app.route('/api', createVoiceRoutes())
+  app.route('/api', createKnowledgeRoutes())
   // Commercial auth must mount BEFORE upstream auth to override POST /auth/login and GET /auth/user
   app.route('/api', createCommercialAuthRoutes())
   app.route('/api', createAuthRoutes())
   app.route('/api', createCreditRoutes())
   app.route('/api', createProxyRoutes())
-  // Commercial isolation layer — device, templates, chat proxy
-  app.route('/api', createCommercialRoutes())
+  // Commercial isolation layer — device, templates, chat proxy, remote staff seeding
+  app.route('/api', createCommercialRoutes({ agentManager, registryManager }))
   // Commercial diagnostic — for after-sales support
   app.route('/api', createDiagnosticRoutes())
 

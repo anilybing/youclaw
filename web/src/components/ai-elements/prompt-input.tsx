@@ -67,6 +67,7 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -1171,16 +1172,20 @@ export const PromptInputButton = ({
   const shortcut = typeof tooltip === "string" ? undefined : tooltip.shortcut;
   const side = typeof tooltip === "string" ? "top" : (tooltip.side ?? "top");
 
+  // [XJC] T-A2 修复：裸 Tooltip 缺少 TooltipProvider 会在运行时抛错拖垮整棵树
+  // （上游从未给本组件传过 tooltip，属潜伏缺陷）；与 message.tsx 的 MessageAction 同款包法。
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side={side}>
-        {tooltipContent}
-        {shortcut && (
-          <span className="ml-2 text-muted-foreground">{shortcut}</span>
-        )}
-      </TooltipContent>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side={side}>
+          {tooltipContent}
+          {shortcut && (
+            <span className="ml-2 text-muted-foreground">{shortcut}</span>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 };
 

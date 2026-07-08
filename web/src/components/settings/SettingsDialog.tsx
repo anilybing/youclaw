@@ -8,19 +8,21 @@ import { AccountPanel } from "./AccountPanel"
 import { AboutPanel } from "./AboutPanel"
 // InvitationPanel removed — not applicable for USB activation model
 import { EnvironmentPanel } from "./EnvironmentPanel"
+import { VoicePanel } from "./VoicePanel"
 import { Channels } from "@/pages/Channels"
 import { BrowserProfiles } from "@/pages/BrowserProfiles"
-import { X, User, Palette, Cpu, Radio, Globe, Info, Store, Terminal } from "lucide-react"
+import { X, User, Palette, Cpu, Radio, Globe, Info, Store, Terminal, Mic } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n"
 import { useAppRuntimeStore } from "@/stores/app"
 import { useRemoteConfigStore } from "@/stores/remote-config"
+import { VOICE_ENABLED } from "@/config/features"
 
-type Tab = "account" | "general" | "marketplace" | "models" | "channels" | "browser" | "environment" | "about"
+type Tab = "account" | "general" | "marketplace" | "models" | "voice" | "channels" | "browser" | "environment" | "about"
 
 export type SettingsTab = Tab
 
-const CONTENT_PADDING_TABS: Tab[] = ["account", "general", "marketplace", "models", "environment", "about"]
+const CONTENT_PADDING_TABS: Tab[] = ["account", "general", "marketplace", "models", "voice", "environment", "about"]
 
 interface SettingsDialogProps {
   open: boolean
@@ -39,6 +41,8 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
     { id: "account", label: t.account.title, icon: User, cloud: true },
     { id: "general", label: t.settings.general, icon: Palette },
     { id: "models", label: t.settings.models, icon: Cpu },
+    // [XJC] 语音（通用能力对齐 · T-A2）：本地能力用编译期开关，禁止远程配置门控（离线红线）
+    { id: "voice", label: t.voice.settingsTitle, icon: Mic, enabled: VOICE_ENABLED },
     { id: "marketplace", label: t.settings.marketplaceConfig, icon: Store, enabled: flag("features.skill_market_enabled", true) },
     { id: "channels", label: t.nav.channels, icon: Radio, enabled: flag("features.channels_enabled", true) },
     { id: "browser", label: t.nav.browser, icon: Globe, enabled: flag("features.browser_enabled", false) },
@@ -102,6 +106,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
           {activeTab === "general" && <GeneralPanel />}
           {activeTab === "marketplace" && <MarketplacePanel />}
           {activeTab === "models" && <ModelsPanel />}
+          {activeTab === "voice" && <VoicePanel />}
           {activeTab === "channels" && <Channels />}
           {activeTab === "browser" && <BrowserProfiles />}
           {activeTab === "environment" && <EnvironmentPanel />}

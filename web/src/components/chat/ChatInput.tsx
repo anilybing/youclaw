@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md（T-A2 语音输入麦克风按钮）
+import { useCallback, useEffect, useRef } from "react";
 import {
   Attachment,
   AttachmentInfo,
@@ -23,11 +24,13 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { uploadChatAttachment } from "@/api/client";
+import { VOICE_ENABLED } from "@/config/features";
 import { useChatContext } from "@/hooks/chatCtx";
+import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useI18n } from "@/i18n";
 import { resolveChatAttachments } from "@/lib/chat-attachments";
 import { notify, useAppRuntimeStore } from "@/stores/app";
-import { Bot, PlusIcon } from "lucide-react";
+import { Bot, Loader2, Mic, PlusIcon } from "lucide-react";
 
 const MAX_FILES = 10;
 
@@ -41,6 +44,54 @@ function AddAttachmentButton() {
       onClick={() => attachments.openFileDialog()}
     >
       <PlusIcon className="size-4" />
+    </PromptInputButton>
+  );
+}
+
+// [XJC] T-A2 语音输入按钮：空闲=麦克风；录音中=红色脉冲+秒数（点击停止）；识别中=Loader
+function VoiceInputButton({ onTranscript }: { onTranscript: (text: string) => void }) {
+  const { t } = useI18n();
+  const { state, seconds, start, stop } = useVoiceRecorder(onTranscript);
+
+  if (state === "recording") {
+    return (
+      <PromptInputButton
+        size="sm"
+        onClick={stop}
+        tooltip={t.voice.stopRecording}
+        aria-label={t.voice.stopRecording}
+        className="text-red-500 hover:text-red-500"
+      >
+        <span className="relative flex size-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+          <span className="relative inline-flex size-2 rounded-full bg-red-500" />
+        </span>
+        <span className="text-xs tabular-nums">{seconds}s</span>
+      </PromptInputButton>
+    );
+  }
+
+  if (state === "transcribing") {
+    return (
+      <PromptInputButton
+        size="sm"
+        disabled
+        tooltip={t.voice.transcribing}
+        aria-label={t.voice.transcribing}
+      >
+        <Loader2 className="size-4 animate-spin" />
+      </PromptInputButton>
+    );
+  }
+
+  return (
+    <PromptInputButton
+      size="sm"
+      onClick={() => void start()}
+      tooltip={t.voice.startRecording}
+      aria-label={t.voice.startRecording}
+    >
+      <Mic className="size-4" />
     </PromptInputButton>
   );
 }
@@ -95,6 +146,16 @@ export function ChatInput() {
     return () => cancelAnimationFrame(frameId);
   }, [chatId, chatStatus]);
 
+  // [XJC] T-A2 语音识别文本追加到输入框现有内容（不自动发送）。
+  // 该输入框是非受控组件（表单提交经 FormData 读值），直接写 DOM value 即可。
+  const appendTranscript = useCallback((text: string) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.value = el.value ? el.value + text : text;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+
   const handleSubmit = async (msg: PromptInputMessage) => {
     const text = msg.text.trim();
     if (!text && msg.files.length === 0) return;
@@ -136,6 +197,7 @@ export function ChatInput() {
         <PromptInputFooter>
           <PromptInputTools>
             <AddAttachmentButton />
+            {VOICE_ENABLED && <VoiceInputButton onTranscript={appendTranscript} />}
             {agents.length > 1 && (
               <PromptInputSelect
                 value={effectiveAgentId}

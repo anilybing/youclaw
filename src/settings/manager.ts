@@ -75,6 +75,11 @@ export function updateSettings(partial: Partial<Settings>): Settings {
         ...partial.registrySources?.tencent,
       },
     },
+    // [XJC] 语音配置（T-A2）：asr/tts 分组浅合并
+    voice: {
+      asr: { ...current.voice.asr, ...partial.voice?.asr },
+      tts: { ...current.voice.tts, ...partial.voice?.tts },
+    },
   }
 
   // Validate and write

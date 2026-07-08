@@ -69,6 +69,34 @@ export const ActiveModelSchema = z.object({
   id: z.string().optional(),
 }).default({ provider: ActiveModelProvider.Builtin })
 
+// [XJC] 语音能力配置（通用能力对齐 · T-A2）。provider='openai-compatible' 时走
+// OpenAI 兼容 /audio/transcriptions（ASR）与 /audio/speech（TTS）端点；
+// baseUrl/apiKey/model 由用户在设置页填写（不硬编码任何厂商域名，离线红线）。
+export const VoiceProviderSchema = z.enum(['off', 'openai-compatible'])
+
+export const VoiceAsrConfigSchema = z.object({
+  provider: VoiceProviderSchema.default('off'),
+  baseUrl: z.string().default(''),
+  apiKey: z.string().default(''),
+  model: z.string().default(''),
+})
+
+export const VoiceTtsConfigSchema = z.object({
+  provider: VoiceProviderSchema.default('off'),
+  baseUrl: z.string().default(''),
+  apiKey: z.string().default(''),
+  model: z.string().default(''),
+  voice: z.string().default(''),
+})
+
+export const DEFAULT_VOICE_ASR_CONFIG = VoiceAsrConfigSchema.parse({})
+export const DEFAULT_VOICE_TTS_CONFIG = VoiceTtsConfigSchema.parse({})
+
+export const VoiceSettingsSchema = z.object({
+  asr: VoiceAsrConfigSchema.default(DEFAULT_VOICE_ASR_CONFIG),
+  tts: VoiceTtsConfigSchema.default(DEFAULT_VOICE_TTS_CONFIG),
+}).default({ asr: DEFAULT_VOICE_ASR_CONFIG, tts: DEFAULT_VOICE_TTS_CONFIG })
+
 export const SettingsSchema = z.object({
   activeModel: ActiveModelSchema,
   customModels: z.array(CustomModelSchema).default([]),
@@ -80,8 +108,12 @@ export const SettingsSchema = z.object({
     clawhub: DEFAULT_CLAWHUB_REGISTRY_SOURCE,
     tencent: DEFAULT_TENCENT_REGISTRY_SOURCE,
   }),
+  voice: VoiceSettingsSchema,
 })
 
 export type Settings = z.infer<typeof SettingsSchema>
 export type ActiveModel = z.infer<typeof ActiveModelSchema>
 export type CustomModel = z.infer<typeof CustomModelSchema>
+export type VoiceSettings = z.infer<typeof VoiceSettingsSchema>
+export type VoiceAsrConfig = z.infer<typeof VoiceAsrConfigSchema>
+export type VoiceTtsConfig = z.infer<typeof VoiceTtsConfigSchema>

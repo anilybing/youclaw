@@ -23,6 +23,7 @@ import { useSidebar } from "@/hooks/useSidebar";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useAppRuntimeStore } from "@/stores/app";
+import { KNOWLEDGE_ENABLED } from "@/config/features";
 import {
   BookOpen,
   Bot,
@@ -129,6 +130,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     // [XJC] 激活码/设备绑定依赖云端服务，离线模式（cloudEnabled=false）隐藏入口。
     ...(cloudEnabled ? [{ to: "/activation", icon: KeyRound, label: "激活与设备" }] : []),
     { to: "/memory", icon: Brain, label: t.nav.memory },
+    // [XJC] 知识库（通用能力对齐 · T-A1）：编译期开关门控，实现完成后启用
+    ...(KNOWLEDGE_ENABLED ? [{ to: "/knowledge", icon: BookOpen, label: t.nav.knowledge }] : []),
     { to: "/logs", icon: ScrollText, label: t.nav.logs },
   ];
 

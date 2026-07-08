@@ -5,6 +5,7 @@ import { createMessageTool } from './message-mcp.ts'
 import { createDocumentTools } from './document-mcp.ts'
 import { createTaskTools } from './task-mcp.ts'
 import { createSkillsTools } from './skills-mcp.ts'
+import { createKnowledgeTools } from './knowledge-mcp.ts'
 import type { BrowserManager, BrowserTarget } from '../browser/index.ts'
 import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
 import type { SecretsManager } from './secrets.ts'
@@ -58,6 +59,8 @@ export async function buildRuntimeCustomTools(params: {
     ...createTaskTools({ chatId: params.chatId, agentId: params.agentId }),
     // [XJC] 对话式技能自管理：依赖在 index.ts 启动时经 configureSkillsMcpRuntime 注入
     ...createSkillsTools({ agentId: params.agentId }),
+    // [XJC] 知识库检索（T-A1）：FTS5 全文检索用户上传文档，回答须标注来源
+    ...createKnowledgeTools(),
   ]
   let externalMcpDispose: (() => Promise<void>) | undefined
 

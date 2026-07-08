@@ -5,6 +5,14 @@ import { getDatabase } from '../db/index.ts'
 
 const app = new Hono()
 
+// [XJC] 语音配置 apiKey 打码（保留后 4 位），与 customModels 同款策略
+function maskVoice(voice: ReturnType<typeof getSettings>['voice']) {
+  return {
+    asr: { ...voice.asr, apiKey: voice.asr.apiKey ? `****${voice.asr.apiKey.slice(-4)}` : '' },
+    tts: { ...voice.tts, apiKey: voice.tts.apiKey ? `****${voice.tts.apiKey.slice(-4)}` : '' },
+  }
+}
+
 // GET /settings — return full settings (apiKey masked)
 app.get('/settings', (c) => {
   const settings = getSettings()
@@ -26,6 +34,7 @@ app.get('/settings', (c) => {
       ...m,
       apiKey: m.apiKey ? `****${m.apiKey.slice(-4)}` : '',
     })),
+    voice: maskVoice(settings.voice),
   }
 
   return c.json(masked)
@@ -68,6 +77,23 @@ app.patch('/settings', async (c) => {
     }
   }
 
+  // [XJC] 语音配置（T-A2）：apiKey 为 ****打码值时保留原值，其余透传
+  if ('voice' in body && body.voice && typeof body.voice === 'object') {
+    const incoming = body.voice as { asr?: Record<string, unknown>; tts?: Record<string, unknown> }
+    const resolveKey = (kind: 'asr' | 'tts', group?: Record<string, unknown>) => {
+      if (!group) return undefined
+      const apiKey = typeof group.apiKey === 'string' ? group.apiKey : undefined
+      if (apiKey !== undefined && apiKey.startsWith('****')) {
+        return { ...group, apiKey: current.voice[kind].apiKey }
+      }
+      return group
+    }
+    partial.voice = {
+      ...(incoming.asr ? { asr: resolveKey('asr', incoming.asr) } : {}),
+      ...(incoming.tts ? { tts: resolveKey('tts', incoming.tts) } : {}),
+    }
+  }
+
   if ('registrySources' in body && body.registrySources && typeof body.registrySources === 'object') {
     const incoming = body.registrySources as Record<string, unknown>
     const partialSources: Record<string, unknown> = {}
@@ -105,6 +131,7 @@ app.patch('/settings', async (c) => {
       ...m,
       apiKey: m.apiKey ? `****${m.apiKey.slice(-4)}` : '',
     })),
+    voice: maskVoice(updated.voice),
   }
 
   return c.json(masked)

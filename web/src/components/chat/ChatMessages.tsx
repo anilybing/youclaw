@@ -27,6 +27,14 @@ export function ChatMessages() {
   const { t } = useI18n()
   const { timelineItems, streamingText, isProcessing, pendingToolUse } = useChatContext()
   const renderableItems = buildRenderableTimeline(timelineItems)
+  // [XJC] T-A3：最后一条 assistant 消息的 id，用于只在该条上显示「重新生成」
+  const lastAssistantMessageId = (() => {
+    for (let i = renderableItems.length - 1; i >= 0; i -= 1) {
+      const item = renderableItems[i]
+      if (item?.kind === 'message' && item.role === 'assistant') return item.id
+    }
+    return null
+  })()
   const latestRenderableItem = renderableItems[renderableItems.length - 1]
   const showThinkingState = isProcessing
     && !streamingText
@@ -37,7 +45,7 @@ export function ChatMessages() {
     <Conversation data-testid="message-list">
       <ConversationContent className="max-w-3xl mx-auto w-full px-4 py-6 gap-1">
         {renderableItems.map((item) =>
-          <TimelineRow key={item.id} item={item} />
+          <TimelineRow key={item.id} item={item} isLastAssistantMessage={item.id === lastAssistantMessageId} />
         )}
 
         {/* Thinking state */}
@@ -62,7 +70,7 @@ export function ChatMessages() {
   )
 }
 
-function TimelineRow({ item }: { item: RenderableTimelineItem }) {
+function TimelineRow({ item, isLastAssistantMessage }: { item: RenderableTimelineItem; isLastAssistantMessage?: boolean }) {
   if (item.kind === 'tool_use_group') {
     return <ToolUseTimelineGroup items={item.items} />
   }
@@ -71,7 +79,7 @@ function TimelineRow({ item }: { item: RenderableTimelineItem }) {
     case 'message':
       return item.role === 'user'
         ? <UserMessage message={item} />
-        : <AssistantMessage message={item} />
+        : <AssistantMessage message={item} isLast={isLastAssistantMessage} />
     case 'assistant_stream':
       return <StreamingAssistantItem content={item.content} />
     case 'document_status':

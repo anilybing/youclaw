@@ -2,7 +2,7 @@
 import { createAgentSession, createCodingTools, SessionManager, AuthStorage, DefaultResourceLoader, getAgentDir } from '@mariozechner/pi-coding-agent'
 import type { AgentSession, AgentSessionEvent, SessionEntry, ToolDefinition } from '@mariozechner/pi-coding-agent'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, existsSync, statSync } from 'node:fs'
+import { mkdirSync, existsSync, statSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
@@ -53,6 +53,64 @@ type RuntimeAttachment = {
   filePath?: string
   data?: string
   size?: number
+}
+
+// [XJC] T-A3 视觉:附件图片转 base64 进多模态
+// collectPromptImages 只消费带 data(纯 base64) 的附件；上传链路只有 filePath，
+// 此函数在进 prompt 前读盘补齐 data。限制:单图 ≤maxBytes、最多 maxCount 张，
+// 超限/读失败逐张跳过（保持无 data，回退为路径文本引用），绝不抛错影响文本主流程。
+export const MAX_PROMPT_IMAGE_BYTES = 5 * 1024 * 1024
+export const MAX_PROMPT_IMAGE_COUNT = 4
+
+export function hydratePromptImageAttachments(
+  attachments: RuntimeAttachment[] | undefined,
+  options?: {
+    maxBytes?: number
+    maxCount?: number
+    warn?: (context: Record<string, unknown>, message: string) => void
+  },
+): RuntimeAttachment[] | undefined {
+  if (!attachments || attachments.length === 0) {
+    return attachments
+  }
+
+  const maxBytes = options?.maxBytes ?? MAX_PROMPT_IMAGE_BYTES
+  const maxCount = options?.maxCount ?? MAX_PROMPT_IMAGE_COUNT
+  const warn = options?.warn ?? (() => {})
+  let hydratedCount = 0
+
+  return attachments.map((attachment) => {
+    if (!attachment.mediaType.startsWith('image/')) {
+      return attachment
+    }
+    if (typeof attachment.data === 'string' && attachment.data.length > 0) {
+      hydratedCount += 1
+      return attachment
+    }
+    if (!attachment.filePath) {
+      return attachment
+    }
+    if (hydratedCount >= maxCount) {
+      warn({ filename: attachment.filename, maxCount }, 'Skipping prompt image: too many image attachments')
+      return attachment
+    }
+    try {
+      const size = statSync(attachment.filePath).size
+      if (size > maxBytes) {
+        warn({ filename: attachment.filename, size, maxBytes }, 'Skipping prompt image: file exceeds size limit')
+        return attachment
+      }
+      const data = readFileSync(attachment.filePath).toString('base64')
+      hydratedCount += 1
+      return { ...attachment, data }
+    } catch (err) {
+      warn(
+        { filename: attachment.filename, filePath: attachment.filePath, error: err instanceof Error ? err.message : String(err) },
+        'Skipping prompt image: failed to read file',
+      )
+      return attachment
+    }
+  })
 }
 
 type SessionWithSystemPromptOverride = {
@@ -505,7 +563,19 @@ export class AgentRuntime {
         : []
       const promptWithAttachments = this.appendAttachmentInstructions(promptWithDocuments, processedAttachments)
       const remainingAttachmentPaths = new Set(remainingAttachments.map((attachment) => attachment.filePath).filter(Boolean))
-      const promptImages = this.collectPromptImages(attachments, remainingAttachmentPaths)
+      // [XJC] T-A3 视觉:附件图片转 base64 进多模态（仅视觉模型；任何失败回退现状路径引用）
+      let attachmentsForImages = attachments
+      try {
+        if (Array.isArray(model.input) && model.input.includes('image')) {
+          attachmentsForImages = hydratePromptImageAttachments(attachments, {
+            warn: (context, message) => logger.warn({ ...context, agentId, chatId, category: 'agent' }, message),
+          })
+        }
+      } catch (err) {
+        logger.warn({ agentId, chatId, error: err instanceof Error ? err.message : String(err), category: 'agent' }, 'Failed to hydrate image attachments, falling back to path references')
+        attachmentsForImages = attachments
+      }
+      const promptImages = this.collectPromptImages(attachmentsForImages, remainingAttachmentPaths)
 
       abortController.signal.addEventListener('abort', () => {
         session.abort().catch(() => {})

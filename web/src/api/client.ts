@@ -1250,6 +1250,11 @@ export async function getCloudStatus() {
   return apiFetch<{ enabled: boolean }>('/api/auth/cloud-status')
 }
 
+// 探测远程 MVP 是否可达（不依赖登录态）；用于「连不上远程服务器就降级为离线可用」。
+export async function getCloudReachable() {
+  return apiFetch<{ configured: boolean; reachable: boolean }>('/api/commercial/cloud-reachable')
+}
+
 // [XJC] 云端 OAuth 外跳登录已移除（商业版只用应用内登录页），
 // 对应 Sidecar 路由 /api/auth/login 已禁用（410）。
 
@@ -1442,6 +1447,20 @@ export interface SettingsDTO {
     }
   }
   builtinModelId?: string | null
+  voice: VoiceSettingsDTO
+}
+
+// [XJC] 语音配置（通用能力对齐 · T-A2）：apiKey 由后端 ****打码返回
+export interface VoiceEndpointConfigDTO {
+  provider: 'off' | 'openai-compatible'
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+export interface VoiceSettingsDTO {
+  asr: VoiceEndpointConfigDTO
+  tts: VoiceEndpointConfigDTO & { voice: string }
 }
 
 export async function getSettings() {
@@ -1801,6 +1820,124 @@ export interface RemoteConfigPayload {
 
 export async function getRemoteConfig() {
   return apiFetch<RemoteConfigPayload>('/api/commercial/config')
+}
+
+// ─── 服务端下发的工作台任务卡（能力与时俱进 · 阶段一） ─────────────────
+export interface WorkbenchCardsPayload {
+  cards: unknown[]
+  version: number
+  source: 'cloud' | 'cache' | 'default'
+}
+
+export async function getWorkbenchCards() {
+  return apiFetch<WorkbenchCardsPayload>('/api/commercial/workbench')
+}
+
+// ─── 服务端下发的数字员工定义同步（能力与时俱进 · 阶段三） ─────────────────
+export interface RemoteStaffSyncResult {
+  seeded: string[]
+  skipped: number
+  source: 'cloud' | 'cache' | 'offline' | 'error'
+}
+
+export async function syncRemoteStaff() {
+  return apiFetch<RemoteStaffSyncResult>('/api/commercial/staff/sync', { method: 'POST' })
+}
+
+// ─── 语音（通用能力对齐 · T-A2）────────────────────────────────
+export interface VoiceStatusDTO {
+  asrConfigured: boolean
+  ttsConfigured: boolean
+}
+
+export async function getVoiceStatus() {
+  return apiFetch<VoiceStatusDTO>('/api/voice/status')
+}
+
+/** 语音转文字：上传录音（webm/opus 等），返回识别文本 */
+export async function transcribeAudio(blob: Blob, filename = 'recording.webm') {
+  const base = await getBackendBaseUrl()
+  const formData = new FormData()
+  formData.append('file', blob, filename)
+  const res = await fetch(`${base}/api/voice/transcribe`, { method: 'POST', body: formData })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string; errorCode?: string } | null
+    throw new ApiError({
+      message: body?.error || `Transcribe failed: ${res.status}`,
+      errorCode: body?.errorCode || '',
+      status: res.status,
+      raw: body,
+    })
+  }
+  return res.json() as Promise<{ text: string }>
+}
+
+/** 文字转语音：返回音频 Blob（调用方用 Audio 播放） */
+export async function speakText(text: string) {
+  const base = await getBackendBaseUrl()
+  const res = await fetch(`${base}/api/voice/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string; errorCode?: string } | null
+    throw new ApiError({
+      message: body?.error || `Speak failed: ${res.status}`,
+      errorCode: body?.errorCode || '',
+      status: res.status,
+      raw: body,
+    })
+  }
+  return res.blob()
+}
+
+// ─── 知识库（通用能力对齐 · T-A1）────────────────────────────────
+export interface KnowledgeDocDTO {
+  id: string
+  title: string
+  mediaType: string
+  sizeBytes: number
+  chunkCount: number
+  createdAt: string
+}
+
+export interface KnowledgeSearchHitDTO {
+  docId: string
+  docTitle: string
+  chunkIndex: number
+  snippet: string
+  score: number
+}
+
+export async function getKnowledgeDocs() {
+  return apiFetch<{ docs: KnowledgeDocDTO[] }>('/api/knowledge/docs')
+}
+
+export async function uploadKnowledgeDoc(file: File) {
+  const base = await getBackendBaseUrl()
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${base}/api/knowledge/docs`, { method: 'POST', body: formData })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string; errorCode?: string } | null
+    throw new ApiError({
+      message: body?.error || `Upload failed: ${res.status}`,
+      errorCode: body?.errorCode || '',
+      status: res.status,
+      raw: body,
+    })
+  }
+  return res.json() as Promise<KnowledgeDocDTO>
+}
+
+export async function deleteKnowledgeDoc(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/knowledge/docs/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function searchKnowledge(query: string, topK = 8) {
+  const params = new URLSearchParams({ q: query, topK: String(topK) })
+  return apiFetch<{ hits: KnowledgeSearchHitDTO[] }>(`/api/knowledge/search?${params}`)
 }
 
 export type TelemetryEventType = 'app_start' | 'skill_run' | 'error'

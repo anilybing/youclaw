@@ -1,6 +1,6 @@
 ﻿// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useState } from 'react'
-import { Copy, Check, Coins } from 'lucide-react'
+import { Copy, Check, Coins, RotateCcw } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Message as AIMessage,
@@ -10,8 +10,11 @@ import {
   MessageAction,
 } from '@/components/ai-elements/message'
 import { ToolUseBlock } from './ToolUseBlock'
+import { TtsPlayButton } from './TtsPlayButton'
 import { useI18n } from '@/i18n'
 import { useAppRuntimeStore } from '@/stores/app'
+import { useChatContext } from '@/hooks/chatCtx'
+import { useChatActions } from '@/hooks/useChat'
 import type { Message } from '@/hooks/useChat'
 
 function InsufficientCreditsMessage() {
@@ -37,8 +40,11 @@ function InsufficientCreditsMessage() {
   )
 }
 
-export function AssistantMessage({ message }: { message: Message }) {
+// [XJC] T-A3：isLast = 是否最后一条 assistant 消息（由 ChatMessages 计算传入），控制「重新生成」按钮显隐
+export function AssistantMessage({ message, isLast = false }: { message: Message; isLast?: boolean }) {
   const { t } = useI18n()
+  const { agentId, isProcessing } = useChatContext()
+  const { regenerate } = useChatActions(agentId)
   const [copied, setCopied] = useState(false)
   const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
     hour: '2-digit',
@@ -87,6 +93,16 @@ export function AssistantMessage({ message }: { message: Message }) {
                     >
                       {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                     </MessageAction>
+                    {isLast && (
+                      <MessageAction
+                        tooltip={t.chat.regenerate}
+                        onClick={() => void regenerate()}
+                        disabled={isProcessing}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </MessageAction>
+                    )}
+                    <TtsPlayButton text={message.content} />
                   </MessageActions>
                 </>
               )}
