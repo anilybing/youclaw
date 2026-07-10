@@ -1,6 +1,11 @@
 import { describe, test, expect, afterAll } from 'bun:test'
 import './setup-light'
-import { extractDocxText, extractXlsxText, preprocessAttachments } from '../src/utils/file-extractor'
+import {
+  extractDocxText,
+  extractXlsxText,
+  MAX_OFFICE_INPUT_BYTES,
+  preprocessAttachments,
+} from '../src/utils/file-extractor'
 import { zipSync } from 'fflate'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -65,6 +70,17 @@ describe('extractDocxText', () => {
     const zip = zipSync({ 'other.xml': new TextEncoder().encode('<root/>') })
     const result = extractDocxText(Buffer.from(zip))
     expect(result).toBe('')
+  })
+
+  test('rejects archive paths that escape the document root', () => {
+    const zip = zipSync({
+      '../word/document.xml': new TextEncoder().encode('<w:document/>'),
+    })
+    expect(() => extractDocxText(Buffer.from(zip))).toThrow('unsafe path')
+  })
+
+  test('rejects oversized office inputs before decompression', () => {
+    expect(() => extractDocxText(Buffer.alloc(MAX_OFFICE_INPUT_BYTES + 1))).toThrow('exceeds')
   })
 })
 

@@ -39,6 +39,7 @@ function makeService(state: AgentSkillsState, overrides: Partial<SkillsMcpServic
     setAgentSkills: mock(async () => {}),
     installSkillFromMarketplace: mock(async () => {}),
     isThirdPartySourcesEnabled: mock(() => false),
+    discoverRecommendedSkills: mock(() => []),
     ...overrides,
   } as any
 }
@@ -296,6 +297,49 @@ describe('skills-mcp install_skill', () => {
   })
 })
 
+describe('skills-mcp discover_skills', () => {
+  test('returns matching recommended (not-installed) skills with install guidance', async () => {
+    const service = makeService(
+      { whitelist: [], installed: [] },
+      { discoverRecommendedSkills: mock(() => [{ slug: 'pdf-master', displayName: 'PDF Master', summary: 'Advanced PDF ops' }]) },
+    )
+    const server = createSkillsMcpServer({ agentId: 'agent-a' }, { service }) as any
+
+    const result = await getToolHandler(server, 'discover_skills')({ query: 'PDF' })
+
+    expect(service.discoverRecommendedSkills).toHaveBeenCalledWith('PDF', 8)
+    expect(result.isError).toBeUndefined()
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.recommended[0].slug).toBe('pdf-master')
+    expect(result.content[0].text).toContain('mcp__skills__install_skill')
+  })
+
+  test('empty query is rejected', async () => {
+    const service = makeService({ whitelist: [], installed: [] })
+    const server = createSkillsMcpServer({ agentId: 'agent-a' }, { service }) as any
+
+    const result = await getToolHandler(server, 'discover_skills')({ query: '  ' })
+
+    expect(result.isError).toBe(true)
+    expect(service.discoverRecommendedSkills).not.toHaveBeenCalled()
+  })
+
+  test('no matches returns a helpful fallback note', async () => {
+    const service = makeService(
+      { whitelist: [], installed: [] },
+      { discoverRecommendedSkills: mock(() => []) },
+    )
+    const server = createSkillsMcpServer({ agentId: 'agent-a' }, { service }) as any
+
+    const result = await getToolHandler(server, 'discover_skills')({ query: 'nonexistent-xyz' })
+
+    expect(result.isError).toBeUndefined()
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.recommended).toEqual([])
+    expect(result.content[0].text).toContain('list_skills')
+  })
+})
+
 describe('install source policy', () => {
   test('resolveInstallSource trust matrix', () => {
     expect(resolveInstallSource(undefined, false)).toEqual({ ok: true, source: 'xiaojuclaw' })
@@ -311,7 +355,7 @@ describe('install source policy', () => {
 })
 
 describe('skills-mcp runtime tools', () => {
-  test('createSkillsTools exposes the three runtime tool names', () => {
+  test('createSkillsTools exposes the four runtime tool names', () => {
     const tools = createSkillsTools(
       { agentId: 'agent-runtime' },
       { service: makeService({ whitelist: [], installed: [] }) },
@@ -319,6 +363,7 @@ describe('skills-mcp runtime tools', () => {
 
     expect(tools.map((tool) => tool.name)).toEqual([
       'mcp__skills__list_skills',
+      'mcp__skills__discover_skills',
       'mcp__skills__set_skill_enabled',
       'mcp__skills__install_skill',
     ])

@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 /**
  * 售后诊断包导出（P1-3）
  *
@@ -10,6 +11,7 @@
 import { getDiagnosticReport, type DiagnosticReport } from '../api/client'
 import { getPortableDiskSpace, isTauri, type PortableDiskSpace } from '../api/transport'
 import { ApiError } from './api-error'
+import { getUpdateRuntimeDiagnostics, type UpdateRuntimeDiagnostics } from './update-check'
 
 export interface ClientDiagnostic {
   generatedAt: string
@@ -31,6 +33,7 @@ export interface DiagnosticBundle {
   client: ClientDiagnostic
   server: DiagnosticReport | { error: string; errorCode?: string; status?: number }
   portableDiskSpace: PortableDiskSpace | null
+  update: UpdateRuntimeDiagnostics | null
   user: {
     activated: boolean | null
     creditBalance: number | null
@@ -91,11 +94,19 @@ export async function collectDiagnosticBundle(options: CollectDiagnosticOptions 
     disk = null
   }
 
+  let update: UpdateRuntimeDiagnostics | null = null
+  try {
+    update = await getUpdateRuntimeDiagnostics()
+  } catch {
+    update = null
+  }
+
   return {
     schema: 'XiaoJuClaw-diagnostic@1',
     client: buildClientDiagnostic(),
     server,
     portableDiskSpace: disk,
+    update,
     user: {
       activated: options.activated ?? null,
       creditBalance: options.creditBalance ?? null,

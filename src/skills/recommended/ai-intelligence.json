@@ -89,18 +89,6 @@
     ]
   },
   {
-    "slug": "evolver",
-    "displayName": "Evolver",
-    "summary": "A self-evolution engine for AI agents.",
-    "category": "ai-intelligence",
-    "tags": [
-      "agent",
-      "automation",
-      "assistant",
-      "evolver"
-    ]
-  },
-  {
     "slug": "gemini",
     "displayName": "Gemini",
     "summary": "Gemini CLI for one-shot Q&A, summaries, and generation.",

@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useI18n } from '@/i18n'
+import { applyInstallerUpdate, applyPortableUpdate } from '@/lib/update-check'
 import { useUpdateStore } from '@/stores/update'
 import appConfig from '../../../app.config.ts'
 
@@ -48,42 +49,25 @@ export function ForceUpdateDialog() {
   const showEscape = manualOnly || failCount >= FAIL_THRESHOLD
 
   const applyPortable = async () => {
-    const { invoke } = await import('@tauri-apps/api/core')
-    const { listen } = await import('@tauri-apps/api/event')
-    const unlisten = await listen<{ phase: string; percent: number }>('portable-update-progress', (event) => {
-      if (event.payload.phase === 'applying') {
+    await applyPortableUpdate((event) => {
+      if (event.phase === 'applying') {
         setProgress(100)
         setMessage(t.settings.updatingRestart)
       } else {
-        setProgress(event.payload.percent)
-        setMessage(`${t.settings.downloading}... ${event.payload.percent}%`)
+        setProgress(event.percent)
+        setMessage(`${t.settings.downloading}... ${event.percent}%`)
       }
     })
-    try {
-      // 成功后 Rust 侧退出进程并由脚本重启，本调用通常不会返回。
-      await invoke('portable_update_apply')
-    } finally {
-      unlisten()
-    }
   }
 
   const applyInstaller = async () => {
-    const { check } = await import('@tauri-apps/plugin-updater')
-    const upd = await check()
-    if (!upd) throw new Error(t.settings.upToDate)
-    let downloaded = 0
-    let contentLength = 0
-    await upd.downloadAndInstall((event) => {
-      if (event.event === 'Started') {
-        contentLength = event.data.contentLength ?? 0
-      } else if (event.event === 'Progress') {
-        downloaded += event.data.chunkLength
-        const pct = contentLength > 0 ? Math.round((downloaded / contentLength) * 100) : 0
-        setProgress(pct)
-        setMessage(`${t.settings.downloading}... ${pct}%`)
-      } else if (event.event === 'Finished') {
+    await applyInstallerUpdate((event) => {
+      if (event.phase === 'applying') {
         setProgress(100)
         setMessage(t.settings.updatingRestart)
+      } else {
+        setProgress(event.percent)
+        setMessage(`${t.settings.downloading}... ${event.percent}%`)
       }
     })
     const { relaunch } = await import('@tauri-apps/plugin-process')

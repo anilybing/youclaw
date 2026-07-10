@@ -1,17 +1,63 @@
-import { mkdirSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+// [XJC-PATCH] 浏览器导航 SSRF 与截图落盘边界
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, realpathSync } from 'node:fs'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { Type } from '@mariozechner/pi-ai'
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
+import { assertSafeRemoteUrl } from '../channel/media-fetch.ts'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import type { BrowserManager } from './manager.ts'
 import { createBrowserActionRouter } from './router.ts'
 import type { BrowserTarget } from './types.ts'
 
-function createScreenshotPath(chatId: string): string {
-  const dir = resolve(getPaths().data, 'browser-artifacts', chatId)
+const BROWSER_ARTIFACT_ROOT_ENV = 'XJC_BROWSER_ARTIFACT_ROOT'
+
+function isWithin(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate)
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+}
+
+/**
+ * 创建只位于 data/browser-artifacts/<chat hash> 下的随机截图路径。
+ * requestedPath 仅用于在工具执行边界明确拒绝旧版的任意路径参数。
+ */
+export function createBrowserScreenshotPath(chatId: string, requestedPath?: unknown): string {
+  if (requestedPath !== undefined) {
+    throw new Error('Browser screenshot path is managed by XiaoJuClaw and cannot be provided by the caller')
+  }
+
+  const dataRoot = getPaths().data
+  mkdirSync(dataRoot, { recursive: true })
+  const realDataRoot = realpathSync(dataRoot)
+  const root = resolve(dataRoot, 'browser-artifacts')
+  mkdirSync(root, { recursive: true })
+  const realRoot = realpathSync(root)
+  if (!isWithin(realDataRoot, realRoot)) {
+    throw new Error('Browser artifact root escapes the data directory through a symlink or junction')
+  }
+  // 让独立 Node runner 复核同一个规范根；子进程由 sidecar 启动并继承该环境变量。
+  process.env[BROWSER_ARTIFACT_ROOT_ENV] = realRoot
+
+  const chatKey = createHash('sha256').update(chatId).digest('hex').slice(0, 32)
+  const dir = resolve(realRoot, chatKey)
   mkdirSync(dir, { recursive: true })
-  return resolve(dir, `browser-${Date.now()}.png`)
+  const realDir = realpathSync(dir)
+  if (!isWithin(realRoot, realDir)) {
+    throw new Error('Browser artifact directory escapes data/browser-artifacts through a symlink or junction')
+  }
+
+  return resolve(realDir, `browser-${Date.now()}-${randomUUID()}.png`)
+}
+
+/** 浏览器仅允许导航到公网 http(s) URL；默认不开放 localhost/私网例外。 */
+export function assertSafeBrowserNavigationUrl(rawUrl: string): string {
+  try {
+    return assertSafeRemoteUrl(rawUrl).href
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(`Browser navigation blocked: ${detail}`)
+  }
 }
 
 function createJsonTool<T extends Record<string, unknown>>(
@@ -81,7 +127,8 @@ export function createBrowserMcpServer(params: {
       Type.Object({
         url: Type.Optional(Type.String({ description: 'Optional absolute URL to open in the new tab' })),
       }),
-      async (args: { url?: string }) => router.openTab(args.url),
+      async (args: { url?: string }) =>
+        router.openTab(args.url === undefined ? undefined : assertSafeBrowserNavigationUrl(args.url)),
       (_args, message) => `Failed to open tab: ${message}`,
     ),
     createJsonTool(
@@ -90,7 +137,7 @@ export function createBrowserMcpServer(params: {
       Type.Object({
         url: Type.String({ description: 'Absolute URL to navigate to' }),
       }),
-      async (args: { url: string }) => router.navigate(args.url),
+      async (args: { url: string }) => router.navigate(assertSafeBrowserNavigationUrl(args.url)),
       (_args, message) => `Failed to navigate: ${message}`,
     ),
     createJsonTool(
@@ -125,16 +172,15 @@ export function createBrowserMcpServer(params: {
     ),
     createJsonTool(
       'screenshot',
-      'Capture a screenshot of the current tab.',
-      Type.Object({
-        path: Type.Optional(Type.String({ description: 'Optional absolute output path for the screenshot PNG' })),
-      }),
-      async (args: { path?: string }) => {
-        const targetPath = args.path || createScreenshotPath(chatId)
+      'Capture a screenshot of the current tab into the managed browser artifacts directory.',
+      Type.Object({}, { additionalProperties: false }),
+      async (args: Record<string, unknown>) => {
+        const targetPath = createBrowserScreenshotPath(chatId, args.path)
         const result = await router.screenshot(targetPath)
         return {
           ...result,
-          filename: basename(result.path),
+          path: targetPath,
+          filename: basename(targetPath),
         }
       },
       (_args, message) => `Failed to take screenshot: ${message}`,

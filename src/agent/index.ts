@@ -1,7 +1,15 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 export { AgentRuntime } from './runtime.ts'
 export { AgentManager } from './manager.ts'
-export { AgentQueue } from './queue.ts'
+export {
+  AgentQueue,
+  QueueCancellationError,
+  isQueueCancellationError,
+  QUEUE_CANCELLATION_CODE,
+} from './queue.ts'
+export type { EnqueueOptions, QueueCancelResult } from './queue.ts'
 export { PromptBuilder } from './prompt-builder.ts'
+export { AgentCompiler } from './compiler.ts'
 export { abortRegistry } from './abort-registry.ts'
 export { AgentRouter } from './router.ts'
 export { HooksManager } from './hooks.ts'

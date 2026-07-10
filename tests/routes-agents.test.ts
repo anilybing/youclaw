@@ -486,4 +486,41 @@ describe('agents routes', () => {
     expect(existsSync(getAgentDir(agentId))).toBe(false)
     expect(manager.getAgent(agentId)).toBeUndefined()
   })
+
+  // [XJC] 人设一键优化配套：POST /agents 支持 persona（落 SOUL.md）与 skills（进白名单）
+  test('POST /agents with persona writes SOUL.md and skills whitelist (bad slugs filtered)', async () => {
+    const manager = await createRealManager()
+    const app = createAgentsRoutes(manager)
+    const agentId = createAgentId('route-persona')
+
+    const res = await app.request('/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: agentId,
+        name: '电商助手',
+        persona: '# 角色定位\n女装电商运营助手',
+        skills: ['ecom-copywriter', 'BAD SLUG!', 'ecom-image', 'ecom-image'],
+      }),
+    })
+    expect(res.status).toBe(201)
+
+    const soul = readFileSync(resolve(getAgentDir(agentId), 'SOUL.md'), 'utf-8')
+    expect(soul).toContain('女装电商运营助手')
+
+    const yaml = parseYaml(readFileSync(resolve(getAgentDir(agentId), 'agent.yaml'), 'utf-8')) as { skills: string[] }
+    expect(yaml.skills).toEqual(['ecom-copywriter', 'ecom-image']) // 非法/重复被过滤
+  })
+
+  test('POST /agents/optimize-persona rejects empty draft', async () => {
+    const manager = await createRealManager()
+    const app = createAgentsRoutes(manager)
+
+    const res = await app.request('/agents/optimize-persona', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft: '   ' }),
+    })
+    expect(res.status).toBe(400)
+  })
 })

@@ -6,6 +6,8 @@ import { Chat } from './pages/Chat'
 import { Agents } from './pages/Agents'
 import { Memory } from './pages/Memory'
 import { Knowledge } from './pages/Knowledge'
+import { Fulfillment } from './pages/Fulfillment'
+import { Workflows } from './pages/Workflows'
 import { Tasks } from './pages/Tasks'
 import { Logs } from './pages/Logs'
 import { Skills } from './pages/Skills'
@@ -21,6 +23,7 @@ import { CloseConfirmDialog } from './components/CloseConfirmDialog'
 import { UpdateWatcher } from './components/UpdateWatcher'
 import { ForceUpdateDialog } from './components/ForceUpdateDialog'
 import { SidecarErrorOverlay } from './components/SidecarErrorOverlay'
+import { FloatingBridge } from './components/FloatingBridge'
 import { useTheme } from './hooks/useTheme'
 import { useAppRuntimeStore } from './stores/app'
 import { getTauriInvoke, isTauri, updateCachedBaseUrl } from './api/transport'
@@ -351,6 +354,8 @@ export default function App() {
           <Route path="/skills" element={<Skills />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/fulfillment" element={<Fulfillment />} />
+          <Route path="/workflows" element={<Workflows />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/activation" element={<Activation />} />
@@ -360,6 +365,7 @@ export default function App() {
         <Route path="*" element={<Navigate to={canPass ? "/" : "/login"} replace />} />
       </Routes>
       <AppToaster />
+      {isTauri && <FloatingBridge />}
       {isTauri && <UpdateWatcher />}
       {isTauri && <ForceUpdateDialog />}
       {isTauri && <SidecarErrorOverlay status={sidecarError} onRecovered={() => setSidecarError(null)} />}

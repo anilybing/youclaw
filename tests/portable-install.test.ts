@@ -17,6 +17,7 @@ import {
 
 const tempDirs: string[] = []
 const originalForcePortable = process.env.XJC_FORCE_PORTABLE
+const originalPortableMode = process.env.XiaoJuClaw_PORTABLE
 
 function makeToolsDir(): string {
   const dir = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-install-'))
@@ -36,6 +37,8 @@ function makeManifest(tools: ToolsManifest['tools']): ToolsManifest {
 afterEach(() => {
   if (originalForcePortable === undefined) delete process.env.XJC_FORCE_PORTABLE
   else process.env.XJC_FORCE_PORTABLE = originalForcePortable
+  if (originalPortableMode === undefined) delete process.env.XiaoJuClaw_PORTABLE
+  else process.env.XiaoJuClaw_PORTABLE = originalPortableMode
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()
     if (dir) rmSync(dir, { recursive: true, force: true })
@@ -50,6 +53,19 @@ describe('isPortableMode', () => {
 
   test('默认（测试 DATA_DIR 非 EXE 同级 XiaoJuClawData）为非便携', () => {
     delete process.env.XJC_FORCE_PORTABLE
+    delete process.env.XiaoJuClaw_PORTABLE
+    expect(isPortableMode()).toBe(false)
+  })
+
+  test('Tauri 显式便携标记优先于目录可写性', () => {
+    delete process.env.XJC_FORCE_PORTABLE
+    process.env.XiaoJuClaw_PORTABLE = '1'
+    expect(isPortableMode()).toBe(true)
+  })
+
+  test('Tauri 显式安装标记阻止旧工具目录误判', () => {
+    delete process.env.XJC_FORCE_PORTABLE
+    process.env.XiaoJuClaw_PORTABLE = '0'
     expect(isPortableMode()).toBe(false)
   })
 })
@@ -144,5 +160,12 @@ describe('isPathInPortableTools（env-check source 判定）', () => {
     expect(isPathInPortableTools(resolve(tmpdir(), 'system', 'git'), toolsDir)).toBe(false)
     expect(isPathInPortableTools(toolsDir, toolsDir)).toBe(false)
     expect(isPathInPortableTools(null, toolsDir)).toBe(false)
+  })
+
+  test('旧 Data/tools 回退目录内的路径仍识别为便携工具', () => {
+    const runtimeTools = makeToolsDir()
+    const legacyTools = makeToolsDir()
+    const legacyExe = resolve(legacyTools, getPlatformKey(), 'bun', 'bun.exe')
+    expect(isPathInPortableTools(legacyExe, runtimeTools, legacyTools)).toBe(true)
   })
 })

@@ -6,6 +6,8 @@ import { getPaths } from '../config/index.ts'
 import type { AgentManager } from '../agent/index.ts'
 import { EDITABLE_WORKSPACE_DOCS } from '../agent/index.ts'
 import { ensureAgentWorkspace } from '../agent/workspace.ts'
+import { optimizePersona } from '../agent/persona-optimizer.ts'
+import type { SkillsLoader } from '../skills/loader.ts'
 import { DEFAULT_BROWSER_PROFILE_ID } from '../browser/index.ts'
 
 const ALLOWED_DOCS = [...EDITABLE_WORKSPACE_DOCS, 'MEMORY.md'] as const
@@ -42,7 +44,7 @@ function applyConfigPatch(target: Record<string, unknown>, patch: Record<string,
   return next
 }
 
-export function createAgentsRoutes(agentManager: AgentManager) {
+export function createAgentsRoutes(agentManager: AgentManager, skillsLoader?: SkillsLoader) {
   const agents = new Hono()
 
   // GET /api/agents — list all agents (with state info)
@@ -148,9 +150,33 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     return c.json({ filename, content: body.content })
   })
 
+  // [XJC] POST /api/agents/optimize-persona — 人设一键优化（需求再优化 + 技能自动匹配）。
+  // 输入用户随手写的需求，返回结构化人设 + 建议名 + 从本机已装技能匹配的清单。
+  agents.post('/agents/optimize-persona', async (c) => {
+    let body: { draft?: unknown }
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400)
+    }
+    const draft = typeof body.draft === 'string' ? body.draft.trim() : ''
+    if (!draft) return c.json({ error: '请先填写你的需求描述' }, 400)
+
+    const candidates = skillsLoader
+      ? skillsLoader.loadAllSkills().map((s) => ({ name: s.name, description: s.frontmatter.description ?? '' }))
+      : []
+    try {
+      const result = await optimizePersona(draft, candidates)
+      return c.json(result)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: `优化失败：${msg}` }, 502)
+    }
+  })
+
   // POST /api/agents — create a new agent
   agents.post('/agents', async (c) => {
-    const body = await c.req.json<{ id?: string; name: string; model?: string }>()
+    const body = await c.req.json<{ id?: string; name: string; model?: string; persona?: string; skills?: string[] }>()
 
     if (!body.name || typeof body.name !== 'string') {
       return c.json({ error: 'Request body must include a "name" field (string)' }, 400)
@@ -175,6 +201,11 @@ export function createAgentsRoutes(agentManager: AgentManager) {
     // Create agent directory
     mkdirSync(agentDir, { recursive: true })
 
+    // [XJC] 技能白名单（人设优化的自动匹配结果随创建落盘；slug 校验防注入）
+    const skills = Array.isArray(body.skills)
+      ? [...new Set(body.skills.map((s) => String(s).trim()).filter((s) => /^[a-z0-9][a-z0-9-]{0,63}$/.test(s)))].slice(0, 30)
+      : []
+
     // Write agent.yaml
     const config: Record<string, unknown> = {
       id,
@@ -185,13 +216,18 @@ export function createAgentsRoutes(agentManager: AgentManager) {
       memory: {
         enabled: true,
       },
-      skills: [],
+      skills,
     }
     if (body.model) {
       config.model = body.model
     }
 
     writeFileSync(resolve(agentDir, 'agent.yaml'), stringifyYaml(config))
+    // [XJC] 人设：创建时给了 persona（如 AI 优化产物）则先写 SOUL.md，
+    // ensureAgentWorkspace 的 writeFileIfMissing 不会覆盖
+    if (typeof body.persona === 'string' && body.persona.trim()) {
+      writeFileSync(resolve(agentDir, 'SOUL.md'), `${body.persona.trim().slice(0, 4000)}\n`)
+    }
     ensureAgentWorkspace(agentDir, { ensureBootstrap: true })
 
     // Reload agents

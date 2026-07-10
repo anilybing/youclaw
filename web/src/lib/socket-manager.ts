@@ -1,4 +1,5 @@
-import { getWebSocketUrlSync } from '@/api/transport'
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+import { getAuthenticatedWebSocketUrl } from '@/api/transport'
 import { getMessages } from '@/api/client'
 import { useChatStore } from '@/stores/chat'
 import type { RealtimeChatSnapshot, ToolUseItem } from '@/stores/chat'
@@ -17,6 +18,7 @@ type AgentEvent = {
   fullText?: string
   error?: string
   errorCode?: string
+  cancelled?: boolean
   isProcessing?: boolean
   tool?: string
   input?: string
@@ -41,6 +43,7 @@ type ChatListListener = () => void
 class SocketManager {
   private socket: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private connectingAttempt: Promise<void> | null = null
   private reconnectAttempt = 0
   private manuallyDisconnected = false
   private readonly lastEventTime = new Map<string, number>()
@@ -66,8 +69,29 @@ class SocketManager {
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       return
     }
+    if (this.connectingAttempt) return
 
-    const ws = new WebSocket(getWebSocketUrlSync('/api/ws'))
+    const attempt = this.openAuthenticatedSocket()
+    this.connectingAttempt = attempt
+    void attempt.finally(() => {
+      if (this.connectingAttempt === attempt) this.connectingAttempt = null
+    })
+  }
+
+  private async openAuthenticatedSocket(): Promise<void> {
+    let ws: WebSocket
+    try {
+      const url = await getAuthenticatedWebSocketUrl('/api/ws')
+      if (this.manuallyDisconnected) return
+      if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+        return
+      }
+      ws = new WebSocket(url)
+    } catch {
+      if (!this.manuallyDisconnected) this.scheduleReconnect()
+      return
+    }
+
     this.socket = ws
 
     ws.onopen = () => {
@@ -227,6 +251,10 @@ class SocketManager {
         break
       case 'complete':
         if (event.chatId) {
+          if (event.cancelled) {
+            store.handleError(event.chatId, 'Request cancelled.', 'CANCELLED')
+            break
+          }
           const chatState = store.chats[event.chatId]
           const finalToolUse = event.toolUse ?? (chatState?.pendingToolUse ?? []).map((tool) => ({
             ...tool,

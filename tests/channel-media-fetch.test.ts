@@ -1,7 +1,11 @@
 import { describe, test, expect, mock } from 'bun:test'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import {
   assertSafeRemoteUrl,
   fetchRemoteMediaToBuffer,
+  fetchRemoteMediaToFile,
   inferMediaFileNameFromUrl,
 } from '../src/channel/media-fetch.ts'
 
@@ -108,12 +112,14 @@ function makeResponse(opts: {
   ok?: boolean
   status?: number
   contentLength?: string | null
+  headers?: Record<string, string>
   chunks?: Uint8Array[]
   noBody?: boolean
 }): Response {
-  const { ok = true, status = 200, contentLength = null, chunks = [], noBody = false } = opts
+  const { ok = true, status = 200, contentLength = null, headers = {}, chunks = [], noBody = false } = opts
   const headerMap = new Map<string, string>()
   if (contentLength !== null) headerMap.set('content-length', contentLength)
+  for (const [name, value] of Object.entries(headers)) headerMap.set(name.toLowerCase(), value)
 
   const body = noBody
     ? null
@@ -200,6 +206,23 @@ describe('fetchRemoteMediaToBuffer', () => {
     ).rejects.toThrow('HTTP 404')
   })
 
+  test('does not follow a 302 redirect to a private metadata address', async () => {
+    const fetchFn = mock(async (_url: string, init?: RequestInit) => {
+      expect(init?.redirect).toBe('error')
+      return makeResponse({
+        ok: false,
+        status: 302,
+        headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+        noBody: true,
+      })
+    }) as any
+
+    await expect(
+      fetchRemoteMediaToBuffer('https://public.example/redirect.png', { maxBytes: 1024, fetchFn }),
+    ).rejects.toThrow('HTTP 302')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
   test('maps an abort/timeout (TimeoutError) to a clear Chinese timeout error', async () => {
     // Real fetch aborts via the passed AbortSignal.timeout; here we synthesize the same
     // TimeoutError the runtime would surface, so the test stays fast and deterministic.
@@ -236,5 +259,35 @@ describe('fetchRemoteMediaToBuffer', () => {
       fetchRemoteMediaToBuffer('https://example.com/a.bin', { maxBytes: 0, fetchFn }),
     ).rejects.toThrow('maxBytes')
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  test('streams to a temporary file and removes partial data when the response is oversized', async () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'xjc-media-fetch-'))
+    const okPath = resolve(dir, 'ok.bin')
+    const oversizedPath = resolve(dir, 'oversized.bin')
+    try {
+      const okFetch = mock(async () =>
+        makeResponse({ chunks: [new Uint8Array([1, 2]), new Uint8Array([3, 4])] }),
+      ) as any
+      const result = await fetchRemoteMediaToFile('https://public.example/ok.bin', okPath, {
+        maxBytes: 4,
+        fetchFn: okFetch,
+      })
+      expect(result.bytesWritten).toBe(4)
+      expect(Array.from(readFileSync(okPath))).toEqual([1, 2, 3, 4])
+
+      const oversizedFetch = mock(async () =>
+        makeResponse({ chunks: [new Uint8Array(3), new Uint8Array(3)] }),
+      ) as any
+      await expect(
+        fetchRemoteMediaToFile('https://public.example/oversized.bin', oversizedPath, {
+          maxBytes: 5,
+          fetchFn: oversizedFetch,
+        }),
+      ).rejects.toThrow('超过上限')
+      expect(existsSync(oversizedPath)).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

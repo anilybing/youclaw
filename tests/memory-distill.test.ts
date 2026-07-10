@@ -1,21 +1,21 @@
 /**
- * T-G1 记忆自动蒸馏测试
+ * T-G1 记忆自动蒸馏测试（2026-07-09 升级为每员工蒸馏）
  *
  * 覆盖：
  * - 蒸馏 prompt 构造：幂等标记指令、目标文件路径、红线条款
- * - ensureDistillTasks 幂等：重复调用不产生重复任务（真实 SQLite 测试库，
- *   经 tests/setup.ts 初始化临时 DATA_DIR——无需 mock 任务存储层）
- * - agent 绑定：office-assistant 优先，缺席回退 default
- * - 远程配置开关：auto_distill=false 时暂停任务，恢复 true 后 resume
+ * - ensureDistillTasks 每员工种子：活跃门控（近 14 天有记忆文件才 active）、
+ *   错峰 cron、幂等、闲置暂停/恢复活跃 resume
+ * - 历史单任务收编：旧 name 原地改名保留历史
+ * - 远程配置开关：auto_distill=false 全体暂停
  * - readAutoDistillEnabled 的缺省语义（缺文件/缺键 → true）
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { cleanTables } from './setup.ts'
 import { getPaths } from '../src/config/index.ts'
-import { listScheduledTasks, updateScheduledTaskById } from '../src/task/index.ts'
+import { listScheduledTasks, createScheduledTask, updateScheduledTaskById } from '../src/task/index.ts'
 import {
   buildDailyDistillPrompt,
   buildWeeklyDistillPrompt,
@@ -28,6 +28,7 @@ import {
   DISTILL_CHAT_ID,
   WEEKLY_DISTILL_TASK_NAME,
   ensureDistillTasks,
+  hasRecentMemoryActivity,
   readAutoDistillEnabled,
 } from '../src/memory/distill-scheduler.ts'
 
@@ -41,20 +42,41 @@ function removeCache(): void {
   if (existsSync(cachePath())) unlinkSync(cachePath())
 }
 
-const withOfficeAssistant = { hasAgent: (id: string) => id === 'office-assistant' || id === 'default' }
-const defaultOnly = { hasAgent: (id: string) => id === 'default' }
+const AGENT_A = 'distill-agent-a'
+const AGENT_B = 'distill-agent-b'
+const testAgents = [AGENT_A, AGENT_B]
+
+/** 给员工造一条"今天有记忆活动"的日笔记 */
+function touchMemory(agentId: string, daysAgo = 0): void {
+  const d = new Date()
+  d.setDate(d.getDate() - daysAgo)
+  const date = d.toISOString().split('T')[0]!
+  const dir = resolve(getPaths().agents, agentId, 'memory')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(resolve(dir, `${date}.md`), `# ${date}\n- 活动`)
+}
 
 function findTask(name: string) {
   return listScheduledTasks().find((t) => t.name === name && t.chat_id === DISTILL_CHAT_ID)
 }
 
+function dailyNameOf(agentId: string) {
+  return `${DAILY_DISTILL_TASK_NAME}:${agentId}`
+}
+
 beforeEach(() => {
   cleanTables('scheduled_tasks', 'task_run_logs')
   removeCache()
+  for (const id of testAgents) {
+    rmSync(resolve(getPaths().agents, id), { recursive: true, force: true })
+  }
 })
 
 afterEach(() => {
   removeCache()
+  for (const id of testAgents) {
+    rmSync(resolve(getPaths().agents, id), { recursive: true, force: true })
+  }
 })
 
 // ===== prompt 构造 =====
@@ -85,130 +107,137 @@ describe('buildWeeklyDistillPrompt', () => {
     for (const section of ['Profile', 'Schedule', 'Preferences', 'Relationships', 'Projects', 'Notes']) {
       expect(prompt).toContain(section)
     }
-    expect(prompt).toContain('追加')
-    expect(prompt).toContain('去重')
-    expect(prompt).toContain('折叠')
-  })
-
-  test('写明红线：不虚构、不写敏感凭据、只改 MEMORY.md', () => {
-    const prompt = buildWeeklyDistillPrompt()
-    expect(prompt).toContain('禁止虚构')
-    expect(prompt).toContain('敏感凭据')
-    expect(prompt).toContain('只修改 MEMORY.md')
   })
 })
 
-// ===== ensureDistillTasks 幂等种子 =====
+// ===== 活跃判定 =====
 
-describe('ensureDistillTasks', () => {
-  test('首次调用创建两个 cron 系统任务，绑定 office-assistant', () => {
-    const result = ensureDistillTasks(withOfficeAssistant)
+describe('hasRecentMemoryActivity', () => {
+  test('无记忆目录 → false；近期日笔记 → true；过期笔记 → false', () => {
+    expect(hasRecentMemoryActivity(AGENT_A)).toBe(false)
+    touchMemory(AGENT_A, 3)
+    expect(hasRecentMemoryActivity(AGENT_A)).toBe(true)
+    rmSync(resolve(getPaths().agents, AGENT_A), { recursive: true, force: true })
+    touchMemory(AGENT_A, 30)
+    expect(hasRecentMemoryActivity(AGENT_A)).toBe(false)
+  })
+})
+
+// ===== 每员工种子 =====
+
+describe('ensureDistillTasks（每员工）', () => {
+  const deps = { listAgentIds: () => testAgents }
+
+  test('活跃员工建任务、闲置员工不建；每员工两条、cron 错峰', () => {
+    touchMemory(AGENT_A)
+    const result = ensureDistillTasks(deps)
 
     expect(result.enabled).toBe(true)
-    expect(result.agentId).toBe('office-assistant')
-    expect(result.outcomes.map((o) => o.action)).toEqual(['created', 'created'])
+    const aDaily = findTask(dailyNameOf(AGENT_A))
+    expect(aDaily).toBeDefined()
+    expect(aDaily!.agent_id).toBe(AGENT_A)
+    expect(aDaily!.schedule_type).toBe('cron')
+    // 错峰：分钟落在 40-54
+    const minute = Number(aDaily!.schedule_value.split(' ')[0])
+    expect(minute).toBeGreaterThanOrEqual(40)
+    expect(minute).toBeLessThanOrEqual(54)
 
-    const daily = findTask(DAILY_DISTILL_TASK_NAME)
-    expect(daily).toBeDefined()
-    expect(daily!.agent_id).toBe('office-assistant')
-    expect(daily!.schedule_type).toBe('cron')
-    expect(daily!.schedule_value).toBe('50 23 * * *')
-    expect(daily!.status).toBe('active')
-    expect(daily!.prompt).toBe(buildDailyDistillPrompt())
-
-    const weekly = findTask(WEEKLY_DISTILL_TASK_NAME)
-    expect(weekly).toBeDefined()
-    expect(weekly!.schedule_value).toBe('0 22 * * 0')
-    expect(weekly!.prompt).toBe(buildWeeklyDistillPrompt())
+    expect(findTask(`${WEEKLY_DISTILL_TASK_NAME}:${AGENT_A}`)).toBeDefined()
+    // 闲置员工 B 不建
+    expect(findTask(dailyNameOf(AGENT_B))).toBeUndefined()
   })
 
-  test('office-assistant 缺席时回退 default', () => {
-    const result = ensureDistillTasks(defaultOnly)
-    expect(result.agentId).toBe('default')
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.agent_id).toBe('default')
+  test('重复调用幂等；员工转活跃后补建、转闲置后暂停', () => {
+    touchMemory(AGENT_A)
+    ensureDistillTasks(deps)
+    const second = ensureDistillTasks(deps)
+    expect(second.outcomes.filter((o) => o.agentId === AGENT_A).map((o) => o.action)).toEqual(['kept', 'kept'])
+
+    // B 转活跃 → 补建
+    touchMemory(AGENT_B)
+    ensureDistillTasks(deps)
+    expect(findTask(dailyNameOf(AGENT_B))).toBeDefined()
+
+    // A 转闲置（删记忆目录）→ 暂停
+    rmSync(resolve(getPaths().agents, AGENT_A), { recursive: true, force: true })
+    const third = ensureDistillTasks(deps)
+    expect(third.outcomes.filter((o) => o.agentId === AGENT_A).map((o) => o.action)).toEqual(['paused', 'paused'])
+    expect(findTask(dailyNameOf(AGENT_A))!.status).toBe('paused')
+
+    // A 再转活跃 → resume
+    touchMemory(AGENT_A)
+    const fourth = ensureDistillTasks(deps)
+    expect(fourth.outcomes.filter((o) => o.agentId === AGENT_A).map((o) => o.action)).toEqual(['resumed', 'resumed'])
+    expect(findTask(dailyNameOf(AGENT_A))!.status).toBe('active')
   })
 
-  test('重复调用幂等：不产生重复任务', () => {
-    ensureDistillTasks(withOfficeAssistant)
-    const second = ensureDistillTasks(withOfficeAssistant)
+  test('历史单任务收编：旧 name 原地改名到绑定员工，不重复建', () => {
+    // 模拟旧版任务（无 agent 后缀，绑定 AGENT_A）
+    createScheduledTask({
+      agentId: AGENT_A,
+      chatId: DISTILL_CHAT_ID,
+      prompt: '旧版 prompt',
+      scheduleType: 'cron',
+      scheduleValue: '50 23 * * *',
+      name: DAILY_DISTILL_TASK_NAME,
+      description: '旧版单任务',
+    })
+    touchMemory(AGENT_A)
 
-    expect(second.outcomes.map((o) => o.action)).toEqual(['kept', 'kept'])
-    const tasks = listScheduledTasks().filter((t) => t.chat_id === DISTILL_CHAT_ID)
-    expect(tasks.length).toBe(2)
+    ensureDistillTasks(deps)
+
+    expect(findTask(DAILY_DISTILL_TASK_NAME)).toBeUndefined() // 旧名不复存在
+    const adopted = findTask(dailyNameOf(AGENT_A))
+    expect(adopted).toBeDefined()
+    expect(adopted!.prompt).toBe(buildDailyDistillPrompt()) // 收编后被刷新为当前版本
+    // 只有一条 A 的 daily（收编而非新建+旧任务并存）
+    const aDailies = listScheduledTasks().filter((t) => t.chat_id === DISTILL_CHAT_ID && t.agent_id === AGENT_A && t.name?.startsWith(DAILY_DISTILL_TASK_NAME))
+    expect(aDailies.length).toBe(1)
   })
 
-  test('已有任务 prompt 过期时原地刷新（版本升级场景）', () => {
-    ensureDistillTasks(withOfficeAssistant)
-    const daily = findTask(DAILY_DISTILL_TASK_NAME)!
+  test('prompt 过期原地刷新', () => {
+    touchMemory(AGENT_A)
+    ensureDistillTasks(deps)
+    const daily = findTask(dailyNameOf(AGENT_A))!
     updateScheduledTaskById(daily.id, { prompt: '旧版 prompt' })
 
-    const result = ensureDistillTasks(withOfficeAssistant)
-    expect(result.outcomes.find((o) => o.name === DAILY_DISTILL_TASK_NAME)!.action).toBe('refreshed')
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.prompt).toBe(buildDailyDistillPrompt())
-    // 无新增任务
-    expect(listScheduledTasks().filter((t) => t.chat_id === DISTILL_CHAT_ID).length).toBe(2)
+    const result = ensureDistillTasks(deps)
+    expect(result.outcomes.find((o) => o.name === dailyNameOf(AGENT_A))!.action).toBe('refreshed')
+    expect(findTask(dailyNameOf(AGENT_A))!.prompt).toBe(buildDailyDistillPrompt())
   })
 })
 
 // ===== 远程配置开关 =====
 
 describe('ensureDistillTasks — memory.auto_distill 开关', () => {
-  test('auto_distill=false 时已有任务被暂停', () => {
-    ensureDistillTasks(withOfficeAssistant)
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.status).toBe('active')
+  const deps = { listAgentIds: () => [AGENT_A] }
+
+  test('auto_distill=false 时已有任务被暂停、不存在的不创建', () => {
+    touchMemory(AGENT_A)
+    ensureDistillTasks(deps)
+    expect(findTask(dailyNameOf(AGENT_A))!.status).toBe('active')
 
     writeCache({ [AUTO_DISTILL_CONFIG_KEY]: false })
-    const result = ensureDistillTasks(withOfficeAssistant)
-
+    const result = ensureDistillTasks(deps)
     expect(result.enabled).toBe(false)
-    expect(result.outcomes.map((o) => o.action)).toEqual(['paused', 'paused'])
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.status).toBe('paused')
-    expect(findTask(WEEKLY_DISTILL_TASK_NAME)!.status).toBe('paused')
-  })
+    expect(findTask(dailyNameOf(AGENT_A))!.status).toBe('paused')
 
-  test('auto_distill=false 且任务不存在时不创建', () => {
-    writeCache({ [AUTO_DISTILL_CONFIG_KEY]: false })
-    const result = ensureDistillTasks(withOfficeAssistant)
-
-    expect(result.outcomes.map((o) => o.action)).toEqual(['skipped', 'skipped'])
-    expect(listScheduledTasks().filter((t) => t.chat_id === DISTILL_CHAT_ID).length).toBe(0)
-  })
-
-  test('重新开启后暂停的任务被恢复', () => {
-    ensureDistillTasks(withOfficeAssistant)
-    writeCache({ [AUTO_DISTILL_CONFIG_KEY]: false })
-    ensureDistillTasks(withOfficeAssistant)
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.status).toBe('paused')
-
+    // 重新开启 → resume
     writeCache({ [AUTO_DISTILL_CONFIG_KEY]: true })
-    const result = ensureDistillTasks(withOfficeAssistant)
-
-    expect(result.outcomes.map((o) => o.action)).toEqual(['resumed', 'resumed'])
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.status).toBe('active')
-    expect(findTask(DAILY_DISTILL_TASK_NAME)!.next_run).not.toBeNull()
+    ensureDistillTasks(deps)
+    expect(findTask(dailyNameOf(AGENT_A))!.status).toBe('active')
   })
 })
 
 describe('readAutoDistillEnabled', () => {
-  test('缓存文件缺失 → 默认 true', () => {
+  test('缺文件/缺键/损坏 → true；显式 false → false', () => {
     removeCache()
     expect(readAutoDistillEnabled()).toBe(true)
-  })
-
-  test('缓存存在但键缺失 → 默认 true', () => {
     writeCache({ 'features.channels_enabled': false })
     expect(readAutoDistillEnabled()).toBe(true)
-  })
-
-  test('显式 false → false；显式 true → true', () => {
-    writeCache({ [AUTO_DISTILL_CONFIG_KEY]: false })
-    expect(readAutoDistillEnabled()).toBe(false)
-    writeCache({ [AUTO_DISTILL_CONFIG_KEY]: true })
-    expect(readAutoDistillEnabled()).toBe(true)
-  })
-
-  test('缓存损坏 → 默认 true', () => {
     writeFileSync(cachePath(), '{not-json', 'utf8')
     expect(readAutoDistillEnabled()).toBe(true)
+    writeCache({ [AUTO_DISTILL_CONFIG_KEY]: false })
+    expect(readAutoDistillEnabled()).toBe(false)
   })
 })

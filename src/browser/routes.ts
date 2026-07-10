@@ -132,9 +132,11 @@ function extensionCorsHeaders(): Record<string, string> {
   }
 }
 
-export function createBrowserRoutes(browserManager: BrowserManager, _agentManager?: AgentManager) {
+export function createBrowserRoutes(browserManager: BrowserManager, agentManager?: AgentManager) {
   const app = new Hono()
-  void _agentManager
+  if (agentManager) {
+    browserManager.attachAgentManager(agentManager)
+  }
 
   app.get('/browser/discovery', (c) => {
     return c.json(detectInstalledBrowsers())

@@ -39,6 +39,8 @@ const MEMORY_EXTRACTION_SYSTEM_PROMPT = [
   '1. dailyMemories: short factual notes suitable for memory/YYYY-MM-DD.md',
   '2. curatedUpdates: stable facts suitable for MEMORY.md',
   'Good candidates: identity, occupation, timezone, recurring schedule, stable preferences, important relationships, durable project context.',
+  // [XJC] 纠正是最高优先级信号：用户在纠正助手的错误认知时，必须以"正确版本"覆盖写入
+  'HIGHEST priority: user corrections. When the user corrects the assistant ("不对/不是/错了/其实是…"), you MUST capture the CORRECTED fact as a curatedUpdate (the correct version, never the wrong one), reusing the same key as the outdated fact if one exists in current MEMORY so it gets overwritten.',
   'Bad candidates: greetings, temporary tasks, one-off requests, jokes, speculation, assistant capabilities, framework names, workspace paths.',
   'Schema: {"dailyMemories":[{"text":"The user is a programmer."}],"curatedUpdates":[{"section":"Profile","key":"occupation","value":"程序员"}]}',
   'Allowed curated sections: Profile, Schedule, Preferences, Relationships, Projects, Notes.',

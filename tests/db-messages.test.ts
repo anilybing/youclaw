@@ -163,13 +163,10 @@ describe('upsertChat', () => {
 
   test('upsert with undefined name preserves original name', () => {
     upsertChat('chat-keep', 'agent-1', 'Original')
-    upsertChat('chat-keep', 'agent-1') // name=undefined -> COALESCE preserves original name
+    upsertChat('chat-keep', 'agent-1')
 
     const chat = getChats().find((c) => c.chat_id === 'chat-keep')
-    // When upsert is called with undefined name, it becomes chatId,
-    // but COALESCE(excluded.name, chats.name) will use chatId
-    // because name ?? chatId results in 'chat-keep'
-    expect(chat!.name).toBe('chat-keep')
+    expect(chat!.name).toBe('Original')
   })
 })
 

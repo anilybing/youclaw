@@ -12,7 +12,7 @@ describe('chat abort wiring', () => {
   test('stop keeps realtime delivery connected until backend finishes abort cleanup', () => {
     const useChat = read('web/src/hooks/useChat.ts')
 
-    expect(useChat).toContain('abortChat(chatId).catch(() => {})')
+    expect(useChat).toContain('abortChat(chatId, turnId).catch(() => {})')
     expect(useChat).not.toContain('socketManager.disconnect(')
   })
 })

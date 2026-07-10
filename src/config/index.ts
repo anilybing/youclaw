@@ -6,6 +6,8 @@ export {
   getProductionDataDir,
   resolvePathInput,
   resolveProductionDataDir,
+  INSTALLED_LAYOUT_FILE,
+  PORTABLE_LAYOUT_FILE,
   ROOT_DIR,
   resetPathsCache,
 } from './paths.ts'

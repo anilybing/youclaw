@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
@@ -182,10 +183,24 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
   })
 
   // POST /api/chats/:chatId/abort — abort a running query
-  messages.post('/chats/:chatId/abort', (c) => {
+  messages.post('/chats/:chatId/abort', async (c) => {
     const chatId = c.req.param('chatId')
-    const aborted = abortRegistry.abort(chatId)
-    return c.json({ ok: true, aborted })
+    const body = await c.req.json().catch(() => ({})) as { turnId?: unknown }
+    if (body.turnId !== undefined && (typeof body.turnId !== 'string' || !body.turnId.trim())) {
+      return c.json({ error: 'turnId must be a non-empty string when provided' }, 400)
+    }
+    const turnId = typeof body.turnId === 'string' ? body.turnId.trim() : undefined
+    const cancelled = agentQueue.cancel(chatId, turnId)
+    // Compatibility bridge for direct runtime callers that are not represented
+    // in AgentQueue. Exact turn cancellation remains sibling-safe.
+    const legacyAborted = abortRegistry.abort(chatId, turnId)
+    const aborted = cancelled.queued > 0 || cancelled.running > 0 || legacyAborted
+    return c.json({
+      ok: true,
+      aborted,
+      queued: cancelled.queued,
+      running: cancelled.running,
+    })
   })
 
   // DELETE /api/chats/:chatId — delete a conversation and its messages

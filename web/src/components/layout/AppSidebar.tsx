@@ -24,6 +24,8 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useAppRuntimeStore } from "@/stores/app";
 import { KNOWLEDGE_ENABLED } from "@/config/features";
+import { isFloatingSupported, toggleFloatingWindow } from "@/lib/floating-window";
+import { notify } from "@/stores/app-runtime";
 import {
   BookOpen,
   Bot,
@@ -39,8 +41,11 @@ import {
   ScrollText,
   Settings2,
   KeyRound,
+  PictureInPicture2,
   SquarePen,
+  Ticket,
   User,
+  Workflow,
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
@@ -112,6 +117,14 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
   const { isMac } = usePlatform();
   const drag = useDragRegion();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const handleToggleFloating = async () => {
+    try {
+      const opened = await toggleFloatingWindow();
+      notify.info(opened ? t.floating.opened : t.floating.closed);
+    } catch {
+      notify.error(t.floating.openFailed);
+    }
+  };
   const feedbackUrl =
     typeof navigator !== "undefined" &&
     navigator.language.toLowerCase().startsWith("zh")
@@ -123,6 +136,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     { to: "/", icon: SquarePen, label: t.nav.chat },
     { to: "/agents", icon: Bot, label: t.nav.agents },
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },
+    // [XJC] 工作流（扣子对标）：列表/运行/历史/失败续跑
+    { to: "/workflows", icon: Workflow, label: t.nav.workflows },
     { to: "/skills", icon: Puzzle, label: t.nav.skills },
     // [XJC] 模板中心暂时隐藏：积分变现方向未定，且与「数字员工」功能重叠。
     // 恢复方法：取消下一行注释，并把 `Sparkles` 加回上面的 lucide-react 导入。
@@ -132,6 +147,8 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     { to: "/memory", icon: Brain, label: t.nav.memory },
     // [XJC] 知识库（通用能力对齐 · T-A1）：编译期开关门控，实现完成后启用
     ...(KNOWLEDGE_ENABLED ? [{ to: "/knowledge", icon: BookOpen, label: t.nav.knowledge }] : []),
+    // [XJC] 卡密库（闲鱼虚拟商品自动发货）：库存水位 + 发货台账
+    { to: "/fulfillment", icon: Ticket, label: t.nav.fulfillment },
     { to: "/logs", icon: ScrollText, label: t.nav.logs },
   ];
 
@@ -249,6 +266,28 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
             </span>
           </NavLink>
         ))}
+        {/* [XJC] 悬浮提醒窗开关（仅桌面端）：常驻置顶小窗即时提示 AI 结果 */}
+        {isFloatingSupported && (
+          <button
+            type="button"
+            onClick={handleToggleFloating}
+            className={cn(
+              "w-full flex items-center h-9 rounded-[10px] whitespace-nowrap overflow-hidden",
+              "transition-all duration-200 ease-[var(--ease-soft)]",
+              isCollapsed ? "px-0.5" : "px-1",
+              "text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]",
+            )}
+            aria-label={t.floating.toggle}
+            title={t.floating.toggle}
+          >
+            <div className="w-9 h-9 shrink-0 flex items-center justify-center">
+              <PictureInPicture2 className="h-4 w-4" />
+            </div>
+            <span className={cn("text-sm transition-opacity duration-200", isCollapsed ? "opacity-0" : "opacity-100")}>
+              {t.floating.toggle}
+            </span>
+          </button>
+        )}
       </nav>
 
       {/* Spacer — draggable for window movement */}

@@ -1,86 +1,137 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 
-// update-check 在模块顶层读取 isTauri 常量：mock 成 Tauri 环境。
-// 保留真实模块的其余导出并在本文件跑完后还原，避免污染同进程的其他测试文件。
 const realTransport = await import('../src/api/transport')
 mock.module('@/api/transport', () => ({ ...realTransport, isTauri: true }))
 
-let channelValue: unknown = 'installer'
+const realApi = await import('../src/api/client')
+let releaseChannel: 'stable' | 'beta' = 'stable'
+const getSettingsMock = mock(async () => ({
+  update: { channel: releaseChannel },
+}) as Awaited<ReturnType<typeof realApi.getSettings>>)
+mock.module('@/api/client', () => ({ ...realApi, getSettings: getSettingsMock }))
+
+let updateType: unknown = 'installer'
 let portableCheckResult: unknown = null
-const invokeMock = mock(async (cmd: string) => {
-  if (cmd === 'get_update_channel') return channelValue
-  if (cmd === 'portable_update_check') return portableCheckResult
-  throw new Error(`unexpected invoke: ${cmd}`)
+let installerCheckResult: unknown = null
+const invokeMock = mock(async (command: string) => {
+  if (command === 'get_update_channel') return updateType
+  if (command === 'portable_update_check') return portableCheckResult
+  if (command === 'installer_update_check') return installerCheckResult
+  if (command === 'portable_update_apply' || command === 'installer_update_apply') return undefined
+  throw new Error(`unexpected invoke: ${command}`)
 })
 mock.module('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
 
-const updaterCheckMock = mock(async (): Promise<unknown> => null)
-mock.module('@tauri-apps/plugin-updater', () => ({ check: updaterCheckMock }))
+const unlistenMock = mock(() => {})
+const listenMock = mock(async () => unlistenMock)
+mock.module('@tauri-apps/api/event', () => ({ listen: listenMock }))
 
-const { detectUpdate, getUpdateChannel } = await import('../src/lib/update-check')
+const {
+  applyInstallerUpdate,
+  detectUpdate,
+  getUpdateChannel,
+} = await import('../src/lib/update-check')
 
 afterAll(() => {
   mock.module('@/api/transport', () => ({ ...realTransport }))
+  mock.module('@/api/client', () => ({ ...realApi }))
 })
 
 function invokedCommands(): string[] {
-  return invokeMock.mock.calls.map(([cmd]) => cmd)
+  return invokeMock.mock.calls.map(([command]) => command)
 }
 
-describe('getUpdateChannel', () => {
+describe('canary update request routing', () => {
   beforeEach(() => {
     invokeMock.mockClear()
-    updaterCheckMock.mockClear()
+    getSettingsMock.mockClear()
+    listenMock.mockClear()
+    unlistenMock.mockClear()
+    updateType = 'installer'
+    releaseChannel = 'stable'
+    portableCheckResult = null
+    installerCheckResult = {
+      available: false,
+      version: '',
+      notes: '',
+      force_update: false,
+      release_id: '',
+      release_channel: 'stable',
+      cohort: { name: '', bucket: 0, identity: '', source: '', partial: false },
+      signature_verification: 'not-checked',
+    }
   })
 
-  test('maps rust "disabled" to disabled channel', async () => {
-    channelValue = 'disabled'
+  test('normalizes unknown update types to installer', async () => {
+    updateType = 'disabled'
     expect(await getUpdateChannel()).toBe('disabled')
-  })
-
-  test('maps unknown values to installer', async () => {
-    channelValue = 'whatever'
+    updateType = 'whatever'
     expect(await getUpdateChannel()).toBe('installer')
-    channelValue = 'portable'
-    expect(await getUpdateChannel()).toBe('portable')
-  })
-})
-
-describe('detectUpdate offline (disabled) channel', () => {
-  beforeEach(() => {
-    invokeMock.mockClear()
-    updaterCheckMock.mockClear()
   })
 
-  test('disabled channel returns NONE without any update query', async () => {
-    channelValue = 'disabled'
-    const res = await detectUpdate()
-
-    expect(res.available).toBe(false)
-    expect(res.version).toBe('')
-    expect(res.forceUpdate).toBe(false)
-    // 只允许查询通道本身，绝不 invoke portable_update_check
+  test('offline build returns without reading settings or checking endpoints', async () => {
+    updateType = 'disabled'
+    const result = await detectUpdate()
+    expect(result.available).toBe(false)
+    expect(result.channel).toBe('disabled')
     expect(invokedCommands()).toEqual(['get_update_channel'])
-    // 也不走 Tauri updater plugin 的 check()
-    expect(updaterCheckMock).toHaveBeenCalledTimes(0)
+    expect(getSettingsMock).toHaveBeenCalledTimes(0)
   })
 
-  test('portable channel still goes through portable_update_check', async () => {
-    channelValue = 'portable'
-    portableCheckResult = { available: true, version: '9.9.9', notes: 'notes', force_update: true }
-    const res = await detectUpdate()
-
-    expect(res).toEqual({ available: true, version: '9.9.9', notes: 'notes', channel: 'portable', forceUpdate: true })
-    expect(invokedCommands()).toEqual(['get_update_channel', 'portable_update_check'])
-    expect(updaterCheckMock).toHaveBeenCalledTimes(0)
+  test('cloud-disabled mode performs no Tauri or sidecar update calls', async () => {
+    const result = await detectUpdate(false)
+    expect(result.channel).toBe('disabled')
+    expect(invokeMock).toHaveBeenCalledTimes(0)
+    expect(getSettingsMock).toHaveBeenCalledTimes(0)
   })
 
-  test('installer channel still goes through updater plugin check()', async () => {
-    channelValue = 'installer'
-    const res = await detectUpdate()
+  test('portable check sends beta channel and preserves release dimensions', async () => {
+    updateType = 'portable'
+    releaseChannel = 'beta'
+    portableCheckResult = {
+      available: true,
+      version: '9.9.9',
+      notes: 'notes',
+      force_update: true,
+      release_id: 'prel_1',
+      release_channel: 'beta',
+      cohort: { name: 'percent:10', bucket: 4, identity: 'stable', source: 'device_hmac', partial: false },
+      signature_verification: 'verified',
+    }
 
-    expect(res).toEqual({ available: false, version: '', notes: '', channel: 'installer', forceUpdate: false })
-    expect(invokedCommands()).toEqual(['get_update_channel'])
-    expect(updaterCheckMock).toHaveBeenCalledTimes(1)
+    const result = await detectUpdate()
+
+    expect(result.releaseId).toBe('prel_1')
+    expect(result.releaseChannel).toBe('beta')
+    expect(result.cohort.name).toBe('percent:10')
+    expect(result.signatureVerification).toBe('verified')
+    expect(invokeMock.mock.calls[1]).toEqual(['portable_update_check', { channel: 'beta' }])
+  })
+
+  test('installer check uses the Rust command so identity headers stay scoped', async () => {
+    installerCheckResult = {
+      available: true,
+      version: '2.0.0',
+      notes: 'release',
+      force_update: false,
+      release_id: 'rel_1',
+      release_channel: 'stable',
+      cohort: { name: 'percent:25', bucket: 12, identity: 'stable', source: 'device_hmac', partial: false },
+      signature_verification: 'pending-artifact-verification',
+    }
+
+    const result = await detectUpdate()
+
+    expect(result.channel).toBe('installer')
+    expect(result.releaseId).toBe('rel_1')
+    expect(invokedCommands()).toEqual(['get_update_channel', 'installer_update_check'])
+    expect(invokeMock.mock.calls[1]).toEqual(['installer_update_check', { channel: 'stable' }])
+  })
+
+  test('installer apply consumes the checked Rust offer and always removes listener', async () => {
+    await applyInstallerUpdate()
+    expect(invokeMock).toHaveBeenCalledWith('installer_update_apply')
+    expect(listenMock).toHaveBeenCalledTimes(1)
+    expect(unlistenMock).toHaveBeenCalledTimes(1)
   })
 })

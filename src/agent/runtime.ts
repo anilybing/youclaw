@@ -1,13 +1,14 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
-import { createAgentSession, createCodingTools, SessionManager, AuthStorage, DefaultResourceLoader, getAgentDir } from '@mariozechner/pi-coding-agent'
+import { createAgentSession, createCodingTools, createFindTool, createGrepTool, createLsTool, SessionManager, AuthStorage, DefaultResourceLoader, getAgentDir } from '@mariozechner/pi-coding-agent'
 import type { AgentSession, AgentSessionEvent, SessionEntry, ToolDefinition } from '@mariozechner/pi-coding-agent'
+import type { AssistantMessage } from '@mariozechner/pi-ai'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, existsSync, statSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { writeModelInvocationLog } from '../logger/model-invocation.ts'
-import { getMessages, getSessionEntry, saveSession } from '../db/index.ts'
+import { deleteSession, getMessages, getSessionEntry, saveSession } from '../db/index.ts'
 import type { EventBus } from '../events/index.ts'
 import { ErrorCode } from '../events/types.ts'
 import type { AgentToolUse } from '../events/types.ts'
@@ -26,7 +27,27 @@ import type { AgentConfig, ProcessParams } from './types.ts'
 import { clearBootstrapSnapshotOnSessionRollover } from './bootstrap-cache.ts'
 import type { SecretsManager } from './secrets.ts'
 import { buildRuntimeCustomTools, filterConfiguredTools } from './runtime-tools.ts'
+import { createSubagentTool } from './subagent-mcp.ts'
+import { AgentCompiler } from './compiler.ts'
+import { getEvolutionService } from '../evolution/service.ts'
+import { buildLessonsBlock } from '../feedback/lessons.ts'
+import { buildPlanBlock } from '../plans/store.ts'
 import { resolveRuntimeModelConfig } from './runtime-model.ts'
+import {
+  classifyToolEffect,
+  isModelPriceKnown,
+  markAgentOpsCoverage,
+  recordAgentOpsModelUsage,
+  recordAgentOpsTool,
+  type AgentOpsTraceContext,
+} from '../agentops/index.ts'
+import {
+  authorizeWorkflowModel,
+  authorizeWorkflowTool,
+  isWorkflowBudgetError,
+  recordWorkflowModelUsage,
+  type WorkflowBudgetError,
+} from '../workflow/budget.ts'
 
 const COMPACTION_MEMORY_INSTRUCTIONS = [
   'Focus on durable context for future turns.',
@@ -53,6 +74,10 @@ type RuntimeAttachment = {
   filePath?: string
   data?: string
   size?: number
+}
+
+function buildAbortedSessionResult(fullText: string, sessionId: string) {
+  return { fullText, sessionId, aborted: true }
 }
 
 // [XJC] T-A3 视觉:附件图片转 base64 进多模态
@@ -177,8 +202,39 @@ export class AgentRuntime {
   async process(params: ProcessParams): Promise<string> {
     const { chatId, prompt, agentId, turnId, suppressOutbound } = params
     const logger = getLogger()
+    if (params.executionState) params.executionState.status = 'pending'
 
     this.emitProcessing(agentId, chatId, true, turnId)
+    const emitCancellationCompletion = (
+      fullText = '',
+      sessionId = '',
+      completedToolUse: AgentToolUse[] = [],
+    ): string => {
+      if (params.executionState) {
+        params.executionState.status = 'cancelled'
+        params.executionState.errorCode = ErrorCode.CANCELLED
+      }
+      this.eventBus.emit({
+        type: 'complete',
+        agentId,
+        chatId,
+        fullText,
+        sessionId,
+        turnId,
+        toolUse: completedToolUse,
+        suppressOutbound,
+        cancelled: true,
+      })
+      return fullText
+    }
+    const finishEarlyCancellation = (): string => {
+      const result = emitCancellationCompletion()
+      this.emitProcessing(agentId, chatId, false, turnId)
+      return result
+    }
+    if (params.abortController?.signal.aborted) {
+      return finishEarlyCancellation()
+    }
 
     if (this.hooksManager) {
       await this.hooksManager.execute(agentId, 'on_session_start', {
@@ -187,6 +243,9 @@ export class AgentRuntime {
         phase: 'on_session_start',
         payload: { chatId },
       })
+    }
+    if (params.abortController?.signal.aborted) {
+      return finishEarlyCancellation()
     }
 
     const existingSession = getSessionEntry(agentId, chatId)
@@ -209,6 +268,9 @@ export class AgentRuntime {
           phase: 'pre_process',
           payload: { prompt, chatId },
         })
+        if (params.abortController?.signal.aborted) {
+          return emitCancellationCompletion()
+        }
         if (preCtx.abort) {
           return preCtx.abortReason ?? 'Message blocked by hook'
         }
@@ -248,10 +310,15 @@ export class AgentRuntime {
         params.requestedSkills,
         params.attachments,
         turnId,
+        params.abortController,
+        params.agentOps,
       )
       toolUse = collectedToolUse
 
-      if (sessionId) {
+      if (aborted) {
+        if (params.executionState) params.executionState.status = 'cancelled'
+        deleteSession(agentId, chatId)
+      } else if (sessionId) {
         clearBootstrapSnapshotOnSessionRollover({
           cacheKey: `${agentId}:${chatId}`,
           previousSessionId: existingSession?.sessionId ?? null,
@@ -273,11 +340,19 @@ export class AgentRuntime {
         }
       }
 
-      if (!aborted && !finalText.trim()) {
+      const cancelled = aborted || params.abortController?.signal.aborted === true
+      if (cancelled && params.executionState) {
+        params.executionState.status = 'cancelled'
+        params.executionState.errorCode = ErrorCode.CANCELLED
+      }
+
+      if (!cancelled && !finalText.trim()) {
         throw new Error(buildEmptyAssistantResponseErrorMessage(modelConfig))
       }
 
-      if (!aborted || finalText.trim().length > 0) {
+      if (cancelled) {
+        emitCancellationCompletion(finalText, sessionId, toolUse)
+      } else if (finalText.trim().length > 0) {
         this.eventBus.emit({
           type: 'complete',
           agentId,
@@ -302,12 +377,23 @@ export class AgentRuntime {
         })
       }
 
+      if (!cancelled && params.executionState) params.executionState.status = 'success'
       return finalText
     } catch (err) {
       const rawError = err instanceof Error ? err.message : String(err)
       logger.error({ agentId, chatId, error: rawError, durationMs: Date.now() - startTime, category: 'agent' }, 'Message processing failed')
 
-      const { message: userError, errorCode } = this.humanizeError(rawError)
+      const budgetError = isWorkflowBudgetError(err) ? err : null
+      const cancelled = params.abortController?.signal.aborted === true
+      const { message: userError, errorCode } = cancelled
+        ? { message: 'Request cancelled.', errorCode: ErrorCode.CANCELLED }
+        : budgetError
+          ? { message: budgetError.message, errorCode: ErrorCode.WORKFLOW_BUDGET_EXCEEDED }
+          : this.humanizeError(rawError)
+      if (params.executionState) {
+        params.executionState.status = cancelled ? 'cancelled' : 'failed'
+        params.executionState.errorCode = errorCode
+      }
       logger.info({ agentId, chatId, errorCode, userError, category: 'agent' }, 'Error code identification result')
 
       if (this.hooksManager) {
@@ -325,6 +411,7 @@ export class AgentRuntime {
         chatId,
         error: userError,
         errorCode,
+        stopReason: cancelled ? 'cancelled' : budgetError?.stopReason,
         turnId,
         toolUse,
       })
@@ -348,10 +435,13 @@ export class AgentRuntime {
     requestedSkills?: string[],
     attachments?: RuntimeAttachment[],
     turnId?: string,
+    externalAbortController?: AbortController,
+    agentOps?: AgentOpsTraceContext,
   ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null; aborted: boolean; toolUse: AgentToolUse[] }> {
     const logger = getLogger()
-    const abortController = new AbortController()
-    abortRegistry.register(chatId, abortController)
+    const abortController = externalAbortController ?? new AbortController()
+    if (turnId) abortRegistry.register(chatId, turnId, abortController)
+    else abortRegistry.register(chatId, abortController)
     const invocationId = randomUUID()
     const toolUse: AgentToolUse[] = []
     const browserDisabled = browserProfileId === null
@@ -377,13 +467,41 @@ export class AgentRuntime {
       skillNames: skillSnapshot.skills.map((skill) => skill.name),
       category: 'agent',
     }, 'Skill snapshot prepared')
-    const memoryContext = this.memoryManager && this.config.memory?.enabled !== false
+    let memoryContext = this.memoryManager && this.config.memory?.enabled !== false
       ? this.memoryManager.getMemoryContext(agentId, {
           recentDays: this.config.memory?.recentDays,
           maxContextChars: this.config.memory?.maxContextChars,
           query: prompt,
         })
       : undefined
+    // [XJC] 自主进化：注入引擎行为提示 + covenant 活跃规则（均同步读缓存，零时延；开关关闭恒 null）
+    try {
+      const evolutionHint = getEvolutionService().getHintFor(agentId)
+      if (evolutionHint) {
+        const hintBlock = `<evolution_hint>\n以下是从你过往任务成败中学到的经验提示，作为做法参考（无需向用户提及）：\n${evolutionHint}\n</evolution_hint>`
+        memoryContext = memoryContext ? `${memoryContext}\n\n${hintBlock}` : hintBlock
+      }
+      // covenant 闭环最后一公里：引擎审批通过的行为规则（AGENTS.md）进入行为层
+      const evolutionRules = getEvolutionService().getRulesFor()
+      if (evolutionRules) {
+        const rulesBlock = `<evolution_rules>\n以下是进化引擎审批通过的行为规则，请遵循（无需向用户提及）：\n${evolutionRules}\n</evolution_rules>`
+        memoryContext = memoryContext ? `${memoryContext}\n\n${rulesBlock}` : rulesBlock
+      }
+    } catch { /* 进化提示注入失败不影响对话 */ }
+    // [XJC] 用户反馈教训（确定性，不依赖进化开关/Python）：近期点踩原因注入，立刻影响后续回答
+    try {
+      const lessonsBlock = buildLessonsBlock(agentId)
+      if (lessonsBlock) {
+        memoryContext = memoryContext ? `${memoryContext}\n\n${lessonsBlock}` : lessonsBlock
+      }
+    } catch { /* 教训注入失败不影响对话 */ }
+    // [XJC] 显式计划（自主强化）：本会话有未完成计划则每轮注入——压缩/重启后 agent 仍知道走到哪
+    try {
+      const planBlock = buildPlanBlock(chatId)
+      if (planBlock) {
+        memoryContext = memoryContext ? `${memoryContext}\n\n${planBlock}` : planBlock
+      }
+    } catch { /* 计划注入失败不影响对话 */ }
 
     let fullText = ''
 
@@ -430,26 +548,108 @@ export class AgentRuntime {
       ? SessionManager.open(existingSessionFile, sessionsDir)
       : SessionManager.create(cwd, sessionsDir)
 
-    const tools = filterConfiguredTools(createCodingTools(cwd), this.config)
+    // [XJC] 自主强化：补挂原生 Grep/Find/Ls 只读检索工具（此前只有 Read/Bash/Edit/Write，
+    // 检索全靠 Bash 绕行；office 子代理白名单里的 grep/find/ls 也自此真实可用）
+    const tools = filterConfiguredTools([
+      ...createCodingTools(cwd),
+      createGrepTool(cwd),
+      createFindTool(cwd),
+      createLsTool(cwd),
+    ], this.config)
     const customToolRuntime = await buildRuntimeCustomTools({
       config: this.config,
       browserManager: this.browserManager,
       secretsManager: this.secretsManager,
+      memoryManager: this.memoryManager,
       chatId,
       agentId,
+      workspaceDir: cwd,
+      documentAttachmentPaths: attachments
+        ?.map((attachment) => attachment.filePath)
+        .filter((filePath): filePath is string => typeof filePath === 'string' && filePath.length > 0),
       browserProfileId: effectiveBrowserProfileId,
       browserTarget,
       reservedToolNames: tools.map((tool) => tool.name),
     })
     const customTools = filterConfiguredTools(customToolRuntime.tools, this.config)
+    // [XJC] 子代理委派：ref 定义先编译为当前 runtime 使用的内联专员，再挂 delegate 工具。
+    // customTools 此时不含 delegate → 传给子代理的工具池天然防套娃。
+    let effectiveCustomTools = customTools
+    try {
+      if (this.config.agents && Object.keys(this.config.agents).length > 0) {
+        const subagents = new AgentCompiler(this.promptBuilder).resolve(this.config.agents, agentId)
+        const delegateTool = createSubagentTool({
+          subagents,
+          cwd,
+          builtinPool: tools,
+          customPool: customTools,
+          parentModel: model,
+          // 子代理独立模型：解析失败返回 null → 工具层回退父模型
+          resolveModel: (modelId: string) => {
+            try {
+              const resolved = resolveRuntimeModelConfig({ agentModel: modelId })
+              return resolved.config ? resolvePiModel(resolved.config) : null
+            } catch { return null }
+          },
+          // 注入父技能快照，专员可用父的技能脚本
+          skillsPrompt,
+        })
+        if (delegateTool) effectiveCustomTools = [...customTools, delegateTool]
+      }
+    } catch (err) {
+      getLogger().warn({ agentId, error: err instanceof Error ? err.message : String(err), category: 'subagent' }, 'Failed to mount delegate tool')
+    }
     let modelRound = 0
+    let workflowBudgetStop: WorkflowBudgetError | null = null
+    const pricingKnown = isModelPriceKnown(model)
+    if (agentOps && !pricingKnown) {
+      try {
+        markAgentOpsCoverage({
+          traceId: agentOps.traceId,
+          spanId: agentOps.spanId,
+          coverage: 'partial',
+          note: 'unknown_model_price',
+        })
+      } catch {
+        // Trace persistence is best-effort.
+      }
+    }
     const pendingModelCalls: Array<{ round: number; startedAt: number }> = []
+    const markProviderUsageUnavailable = (): void => {
+      if (!agentOps) return
+      try {
+        markAgentOpsCoverage({
+          traceId: agentOps.traceId,
+          spanId: agentOps.spanId,
+          coverage: 'partial',
+          note: 'provider_usage_unavailable',
+        })
+      } catch {
+        // Trace persistence is best-effort.
+      }
+    }
     const resourceLoader = new DefaultResourceLoader({
       cwd,
       agentDir: getAgentDir(),
       extensionFactories: [
         (pi) => {
-          pi.on('before_provider_request', (event) => {
+          pi.on('before_provider_request', (event, ctx) => {
+            if (workflowBudgetStop) {
+              ctx.abort()
+              return
+            }
+            if (agentOps?.workflowRunId) {
+              try {
+                authorizeWorkflowModel(agentOps.workflowRunId, pricingKnown)
+              } catch (err) {
+                if (isWorkflowBudgetError(err)) {
+                  workflowBudgetStop = err
+                  ctx.abort()
+                  return
+                }
+                throw err
+              }
+            }
             modelRound += 1
             const round = modelRound
             pendingModelCalls.push({ round, startedAt: Date.now() })
@@ -470,6 +670,30 @@ export class AgentRuntime {
               },
               payload: event.payload,
             })
+          })
+          pi.on('tool_call', (event) => {
+            if (!agentOps?.workflowRunId) return
+            const effect = classifyToolEffect(event.toolName)
+            try {
+              authorizeWorkflowTool(agentOps.workflowRunId, effect)
+            } catch (err) {
+              if (!isWorkflowBudgetError(err)) throw err
+              workflowBudgetStop = err
+              if (agentOps) {
+                try {
+                  recordAgentOpsTool({
+                    traceId: agentOps.traceId,
+                    spanId: agentOps.spanId,
+                    toolName: event.toolName,
+                    effect,
+                    executed: false,
+                  })
+                } catch {
+                  // Trace persistence is best-effort.
+                }
+              }
+              return { block: true, reason: err.message }
+            }
           })
         },
       ],
@@ -494,7 +718,7 @@ export class AgentRuntime {
         cwd,
         model,
         tools,
-        customTools,
+        customTools: effectiveCustomTools,
         resourceLoader,
         authStorage,
         sessionManager,
@@ -509,10 +733,43 @@ export class AgentRuntime {
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
         this.handleSessionEvent(event, agentId, chatId, (text) => {
           fullText += text
-        }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice)
+        }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice, agentOps)
 
         if (event.type === 'turn_end') {
           const current = pendingModelCalls.shift()
+          const assistantMessage = event.message as AssistantMessage
+          if (assistantMessage?.role === 'assistant' && assistantMessage.usage && agentOps) {
+            const latencyMs = current ? Date.now() - current.startedAt : undefined
+            try {
+              recordAgentOpsModelUsage({
+                traceId: agentOps.traceId,
+                spanId: agentOps.spanId,
+                model: { provider: model.provider, id: model.id },
+                usage: assistantMessage.usage,
+                pricingKnown,
+                latencyMs,
+              })
+            } catch {
+              // Trace persistence is best-effort and never changes the reply path.
+            }
+            if (agentOps.workflowRunId) {
+              try {
+                recordWorkflowModelUsage(
+                  agentOps.workflowRunId,
+                  assistantMessage.usage,
+                  pricingKnown,
+                  latencyMs ?? 0,
+                )
+              } catch (err) {
+                if (isWorkflowBudgetError(err)) {
+                  workflowBudgetStop = err
+                  void session.abort().catch(() => {})
+                }
+              }
+            }
+          } else if (current && agentOps) {
+            markProviderUsageUnavailable()
+          }
           if (!current) return
           const responseText = this.extractAssistantText(event.message)
           writeModelInvocationLog({
@@ -583,17 +840,39 @@ export class AgentRuntime {
 
       try {
         try {
+          // A queue cancellation can happen while session/tool setup is still
+          // awaiting. Do not call prompt after that registration race: aborting
+          // an idle session does not guarantee the next prompt stays aborted.
+          if (abortController.signal.aborted) {
+            return {
+              ...buildAbortedSessionResult(
+                fullText,
+                session.sessionManager.getSessionId(),
+              ),
+              sessionFile: session.sessionManager.getSessionFile() ?? null,
+              toolUse,
+            }
+          }
+          if (agentOps?.workflowRunId) {
+            authorizeWorkflowModel(agentOps.workflowRunId, pricingKnown)
+          }
           if (promptImages.length > 0) {
             await session.prompt(promptWithAttachments, { images: promptImages })
           } else {
             await session.prompt(promptWithAttachments)
           }
         } catch (err) {
+          if (workflowBudgetStop) {
+            throw workflowBudgetStop
+          }
+          if (isWorkflowBudgetError(err)) {
+            throw err
+          }
           if (abortController.signal.aborted) {
+            if (pendingModelCalls.length > 0) markProviderUsageUnavailable()
             logger.info({ agentId, chatId, category: 'agent' }, 'Agent session aborted by user, returning partial text')
             const finalSessionId = session.sessionManager.getSessionId()
             const finalSessionFile = session.sessionManager.getSessionFile() ?? null
-            saveSession(agentId, chatId, finalSessionId, finalSessionFile)
             const current = pendingModelCalls[0]
             if (current) {
               writeModelInvocationLog({
@@ -624,13 +903,12 @@ export class AgentRuntime {
               })
             }
             return {
-              fullText,
-              sessionId: finalSessionId,
+              ...buildAbortedSessionResult(fullText, finalSessionId),
               sessionFile: finalSessionFile,
-              aborted: true,
               toolUse,
             }
           }
+          if (pendingModelCalls.length > 0) markProviderUsageUnavailable()
           const current = pendingModelCalls[0]
           writeModelInvocationLog({
             event: 'error',
@@ -659,6 +937,10 @@ export class AgentRuntime {
           throw err
         }
 
+        if (pendingModelCalls.length > 0) markProviderUsageUnavailable()
+        if (workflowBudgetStop) {
+          throw workflowBudgetStop
+        }
         const sessionError = getLatestAssistantError(session.sessionManager.getEntries())
         if (sessionError) {
           throw new Error(sessionError)
@@ -691,7 +973,7 @@ export class AgentRuntime {
       }
     } finally {
       await customToolRuntime.dispose()
-      abortRegistry.unregister(chatId)
+      abortRegistry.unregister(chatId, turnId)
     }
   }
 
@@ -708,6 +990,7 @@ export class AgentRuntime {
     turnId: string | undefined,
     browserDisabled = false,
     browserDisabledNotice: { sent: boolean } = { sent: false },
+    agentOps?: AgentOpsTraceContext,
   ): void {
     switch (event.type) {
       case 'message_update': {
@@ -721,6 +1004,27 @@ export class AgentRuntime {
 
       case 'tool_execution_start': {
         const logger = getLogger()
+        if (agentOps) {
+          try {
+            const effect = classifyToolEffect(event.toolName)
+            recordAgentOpsTool({
+              traceId: agentOps.traceId,
+              spanId: agentOps.spanId,
+              toolName: event.toolName,
+              effect,
+            })
+            if (effect === 'unknown') {
+              markAgentOpsCoverage({
+                traceId: agentOps.traceId,
+                spanId: agentOps.spanId,
+                coverage: 'partial',
+                note: 'unknown_tool_effect',
+              })
+            }
+          } catch {
+            // Trace persistence is best-effort.
+          }
+        }
         logger.info({
           agentId,
           chatId,

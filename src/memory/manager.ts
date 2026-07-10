@@ -2,10 +2,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
-import type { MemoryIndexer } from './indexer.ts'
+import type { MemoryIndexer, SearchResult } from './indexer.ts'
 import {
   MemoryExtractor,
   type CuratedMemoryUpdate,
+  type CuratedMemorySection,
   type DailyMemoryItem,
   type MemoryExtractionResult,
   type MemoryExtractionRunner,
@@ -308,6 +309,32 @@ export class MemoryManager {
     writeFileSync(filePath, content, 'utf-8')
     this.indexFile(agentId, 'memory', filePath)
     getLogger().info({ agentId }, 'MEMORY.md updated')
+  }
+
+  /**
+   * [XJC] 确定性写入一条长期记忆——供 memory MCP 工具「记住」用（用户显式教学是最强学习信号，
+   * 此前只能靠 agent 自觉 Write 文件，不可靠）。走既有 applyCuratedMemoryUpdates 结构化去重路径，
+   * 自动落到规范化的 ## Section 下（Profile/Preferences/…）并重建 FTS 索引。返回是否新增/更新。
+   */
+  rememberFact(agentId: string, fact: { section?: string; key?: string; value: string }): boolean {
+    const value = fact.value.trim()
+    if (!value) return false
+    // section 交由 applyCuratedMemoryUpdates→normalizeMemorySection 规范化，任意字符串安全
+    const section = (fact.section?.trim() || 'Preferences') as CuratedMemorySection
+    // 未给 label 时用内容本身作 key（normalizeMemoryKey 会 slug/截断），保证相同内容幂等去重
+    const key = (fact.key?.trim() || value)
+    const applied = this.applyCuratedMemoryUpdates(agentId, [{ section, key, value }])
+    return applied.length > 0
+  }
+
+  /**
+   * [XJC] 显式检索长期记忆（FTS5）——供 memory MCP 工具「回忆」用。indexer 未就绪或空查询返回 []。
+   */
+  recallMemory(agentId: string, query: string, limit = 5): SearchResult[] {
+    if (!this.indexer) return []
+    const q = query.trim()
+    if (!q) return []
+    return this.indexer.search(q, { agentId, limit })
   }
 
   async rememberTurn(agentId: string, chatId: string, userMessage: string, assistantReply: string): Promise<MemoryExtractionResult> {

@@ -135,7 +135,7 @@ describe('documentService', () => {
     XLSX.utils.book_append_sheet(workbook, detailsSheet, 'Details')
 
     const filePath = `/tmp/report-${Date.now()}.xlsx`
-    XLSX.writeFile(workbook, filePath)
+    await Bun.write(filePath, XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }))
 
     try {
       const textOnly = await extractXlsxText(filePath)
@@ -193,7 +193,7 @@ describe('documentService', () => {
     }
   })
 
-  test('reuses parsed document content without leaking an old temporary filename', async () => {
+  test('scopes identical document content to each chat instead of transferring ownership', async () => {
     const filePath = `/tmp/reused-doc-${Date.now()}.pdf`
 
     try {
@@ -214,13 +214,16 @@ describe('documentService', () => {
       })
 
       expect(second.status).toBe('parsed')
-      expect(second.docId).toBe(first.docId)
+      expect(second.docId).not.toBe(first.docId)
       expect(second.meta.filename).toBe('爱懒科技使用手册docx.pdf')
       expect(second.sourcePath).toBe(filePath)
 
-      const stored = documentService.getDocument(first.docId)
-      expect(stored?.chatId).toBe('chat-docx-b')
-      expect(stored?.meta.filename).toBe('爱懒科技使用手册docx.pdf')
+      const firstStored = documentService.getDocument(first.docId)
+      const secondStored = documentService.getDocument(second.docId)
+      expect(firstStored?.chatId).toBe('chat-docx-a')
+      expect(firstStored?.meta.filename).toBe('_docx.pdf')
+      expect(secondStored?.chatId).toBe('chat-docx-b')
+      expect(secondStored?.meta.filename).toBe('爱懒科技使用手册docx.pdf')
     } finally {
       try { unlinkSync(filePath) } catch {}
     }
@@ -278,9 +281,13 @@ describe('documentService', () => {
     expect(hits[0]?.chunkId).toBe('chunk-1')
     expect(hits[0]?.documentId).toBe('doc_1')
 
-    const chunk = documentService.getChunk('doc_1', 'chunk-1')
+    const chunk = documentService.getChunk('chat-1', 'doc_1', 'chunk-1')
     expect(chunk?.content).toContain('Revenue grew 42 percent')
     expect(chunk?.page).toBe(1)
+
+    // A known document/chunk id is not enough to read another chat's data.
+    expect(documentService.searchDocument('chat-2', 'revenue', 'doc_1')).toEqual([])
+    expect(documentService.getChunk('chat-2', 'doc_1', 'chunk-1')).toBeNull()
   })
 })
 

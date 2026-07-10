@@ -1,3 +1,6 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+import type { AgentOpsTraceContext } from '../agentops/types.ts'
+
 export interface InboundMessage {
   id: string
   chatId: string          // format: "tg:123456" or "web:uuid"
@@ -13,6 +16,8 @@ export interface InboundMessage {
   requestedSkills?: string[]  // explicitly requested skills
   browserProfileId?: string | null   // null explicitly disables browser for this message
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
+  /** Internal execution metadata; never accepted from public HTTP bodies. */
+  agentOps?: AgentOpsTraceContext
 }
 
 export interface ChannelLoginStartResult {

@@ -25,4 +25,23 @@ describe('abort registry', () => {
     expect(closeCalled).toBe(false)
     expect(abortRegistry.has('chat-abort')).toBe(false)
   })
+
+  test('legacy overload coexists with exact turns without unregistering siblings', () => {
+    const legacy = new AbortController()
+    const first = new AbortController()
+    const sibling = new AbortController()
+    abortRegistry.register('chat-mixed', legacy)
+    abortRegistry.register('chat-mixed', 'turn-first', first)
+    abortRegistry.register('chat-mixed', 'turn-sibling', sibling)
+
+    abortRegistry.unregister('chat-mixed')
+    expect(abortRegistry.has('chat-mixed', 'turn-first')).toBe(true)
+    expect(abortRegistry.has('chat-mixed', 'turn-sibling')).toBe(true)
+    expect(abortRegistry.abort('chat-mixed', 'turn-first')).toBe(true)
+    expect(first.signal.aborted).toBe(true)
+    expect(sibling.signal.aborted).toBe(false)
+
+    expect(abortRegistry.abort('chat-mixed')).toBe(true)
+    expect(sibling.signal.aborted).toBe(true)
+  })
 })

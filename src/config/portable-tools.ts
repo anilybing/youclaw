@@ -1,7 +1,8 @@
 // [XJC-PATCH] new file — T-E2 便携工具平台子目录 + manifest 校验（实现自 src/routes/health.ts 迁出）
 /**
- * Portable Tools Directory — 所有工具安装到 XiaoJuClawData/tools/ 下
- * 这样 U 盘拔走换电脑不需要重新安装（"U 盘即环境"）
+ * Portable Tools Directory — 新版工具安装到 XiaoJuClawRuntime/tools/ 下，
+ * 与 XiaoJuClawData（数据库、密钥、聊天、工作区）物理分离。
+ * 旧 U 盘的 XiaoJuClawData/tools/ 仅作为只读兼容回退。
  *
  * 目录布局（v2 平台子目录，兼容 v1 扁平结构）：
  *   tools/<platformKey>/<tool>/   ← 优先：多平台共用一个 U 盘数据目录
@@ -46,13 +47,30 @@ const PORTABLE_TOOL_BIN_SUBPATHS: ReadonlyArray<readonly string[]> = [
 ]
 
 /**
- * 获取便携工具根目录（XiaoJuClawData/tools/）
+ * 获取首选工具根目录（新版便携为 XiaoJuClawRuntime/tools/）。
  * @param toolsDirOverride 测试注入用，生产代码不传
  */
 export function getPortableToolsDir(toolsDirOverride?: string): string {
-  const toolsDir = toolsDirOverride ?? resolve(getPaths().data, 'tools')
+  const toolsDir = toolsDirOverride ?? getPaths().tools
   mkdirSync(toolsDir, { recursive: true })
   return toolsDir
+}
+
+function getReadableToolsDirs(
+  toolsDirOverride?: string,
+  legacyToolsDirOverride?: string,
+): string[] {
+  const primary = getPortableToolsDir(toolsDirOverride)
+  const legacy = legacyToolsDirOverride
+    ?? (toolsDirOverride ? null : getPaths().legacyTools)
+  if (!legacy) return [primary]
+  const primaryPath = resolve(primary)
+  const legacyPath = resolve(legacy)
+  const samePath = process.platform === 'win32'
+    ? primaryPath.toLowerCase() === legacyPath.toLowerCase()
+    : primaryPath === legacyPath
+  if (samePath) return [primary]
+  return [primary, legacy]
 }
 
 /**
@@ -82,12 +100,17 @@ export function getPortableToolInstallDir(toolName: string, toolsDirOverride?: s
  * 判断某个可执行文件路径是否位于便携 tools 目录内（env-check 的 source 标注用）。
  * Windows 下 path.relative 已做大小写不敏感比较；跨盘符时 relative 返回绝对路径，判为 false。
  */
-export function isPathInPortableTools(filePath: string | null | undefined, toolsDirOverride?: string): boolean {
+export function isPathInPortableTools(
+  filePath: string | null | undefined,
+  toolsDirOverride?: string,
+  legacyToolsDirOverride?: string,
+): boolean {
   if (!filePath) return false
   try {
-    const toolsDir = getPortableToolsDir(toolsDirOverride)
-    const rel = relative(toolsDir, resolve(filePath))
-    return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+    return getReadableToolsDirs(toolsDirOverride, legacyToolsDirOverride).some((toolsDir) => {
+      const rel = relative(toolsDir, resolve(filePath))
+      return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+    })
   } catch {
     return false
   }
@@ -97,12 +120,17 @@ export function isPathInPortableTools(filePath: string | null | undefined, tools
  * 解析特定工具的【读取】目录：优先平台子目录 tools/<platformKey>/<tool>，
  * 不存在则回退旧扁平 tools/<tool>；都不存在返回 null
  */
-export function resolvePortableToolDir(toolName: string, toolsDirOverride?: string): string | null {
-  const toolsDir = getPortableToolsDir(toolsDirOverride)
-  const platformDir = resolve(toolsDir, getPlatformKey(), toolName)
-  if (existsSync(platformDir)) return platformDir
-  const flatDir = resolve(toolsDir, toolName)
-  if (existsSync(flatDir)) return flatDir
+export function resolvePortableToolDir(
+  toolName: string,
+  toolsDirOverride?: string,
+  legacyToolsDirOverride?: string,
+): string | null {
+  for (const toolsDir of getReadableToolsDirs(toolsDirOverride, legacyToolsDirOverride)) {
+    const platformDir = resolve(toolsDir, getPlatformKey(), toolName)
+    if (existsSync(platformDir)) return platformDir
+    const flatDir = resolve(toolsDir, toolName)
+    if (existsSync(flatDir)) return flatDir
+  }
   return null
 }
 
@@ -111,8 +139,10 @@ export function resolvePortableToolDir(toolName: string, toolsDirOverride?: stri
 // ---------------------------------------------------------------------------
 
 export interface EnsurePortableToolsInPathOptions {
-  /** 测试注入用：覆盖 tools 根目录（默认 XiaoJuClawData/tools/） */
+  /** 测试注入用：覆盖首选 tools 根目录（默认 getPaths().tools） */
   toolsDirOverride?: string
+  /** 测试注入用：覆盖旧 XiaoJuClawData/tools 回退目录 */
+  legacyToolsDirOverride?: string
   /** 测试注入用：覆盖环境变量对象（默认 process.env），避免测试污染真实 PATH */
   env?: Record<string, string | undefined>
 }
@@ -142,8 +172,8 @@ export function getInjectedPortablePaths(): string[] {
  * @returns 本次实际注入的路径数组（便于日志与测试）
  */
 export function ensurePortableToolsInPath(options: EnsurePortableToolsInPathOptions = {}): string[] {
-  const { toolsDirOverride, env = process.env } = options
-  const toolsDir = getPortableToolsDir(toolsDirOverride)
+  const { toolsDirOverride, legacyToolsDirOverride, env = process.env } = options
+  const toolsDirs = getReadableToolsDirs(toolsDirOverride, legacyToolsDirOverride)
   const sep = process.platform === 'win32' ? ';' : ':'
   const currentPath = env.PATH || ''
   const seen = new Set(currentPath.split(sep).filter(Boolean).map(normalizePathEntry))
@@ -158,13 +188,14 @@ export function ensurePortableToolsInPath(options: EnsurePortableToolsInPathOpti
     injected.push(dir)
   }
 
-  // 1) 平台子目录优先：tools/<platformKey>/{bun, git/cmd, git/bin, node, uv, python}
-  for (const subpath of PORTABLE_TOOL_BIN_SUBPATHS) {
-    collect(resolve(toolsDir, platformKey, ...subpath))
-  }
-  // 2) 旧扁平布局次之（兼容存量 U 盘）：tools/{bun, git/cmd, git/bin, node, uv, python}
-  for (const subpath of PORTABLE_TOOL_BIN_SUBPATHS) {
-    collect(resolve(toolsDir, ...subpath))
+  // 新 Runtime 根优先，旧 Data/tools 根回退；每个根内仍保持平台子目录优先于扁平布局。
+  for (const toolsDir of toolsDirs) {
+    for (const subpath of PORTABLE_TOOL_BIN_SUBPATHS) {
+      collect(resolve(toolsDir, platformKey, ...subpath))
+    }
+    for (const subpath of PORTABLE_TOOL_BIN_SUBPATHS) {
+      collect(resolve(toolsDir, ...subpath))
+    }
   }
 
   if (injected.length > 0) {
@@ -175,7 +206,7 @@ export function ensurePortableToolsInPath(options: EnsurePortableToolsInPathOpti
   }
 
   // manifest 版本校验：低于期望版本的工具逐条告警（manifest 缺失/损坏时静默跳过）
-  const manifest = readToolsManifest(toolsDirOverride)
+  const manifest = readToolsManifest(toolsDirOverride, legacyToolsDirOverride)
   if (manifest) {
     for (const warning of checkManifestVersions(manifest)) {
       safeWarn(warning.message)
@@ -213,15 +244,21 @@ export interface ManifestVersionWarning {
 /**
  * 读取 tools/manifest.json；文件不存在或解析/结构校验失败时返回 null（不抛错）
  */
-export function readToolsManifest(toolsDirOverride?: string): ToolsManifest | null {
-  try {
-    const manifestPath = resolve(getPortableToolsDir(toolsDirOverride), 'manifest.json')
-    if (!existsSync(manifestPath)) return null
-    const parsed: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
-    return isToolsManifest(parsed) ? parsed : null
-  } catch {
-    return null
+export function readToolsManifest(
+  toolsDirOverride?: string,
+  legacyToolsDirOverride?: string,
+): ToolsManifest | null {
+  for (const toolsDir of getReadableToolsDirs(toolsDirOverride, legacyToolsDirOverride)) {
+    try {
+      const manifestPath = resolve(toolsDir, 'manifest.json')
+      if (!existsSync(manifestPath)) continue
+      const parsed: unknown = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+      if (isToolsManifest(parsed)) return parsed
+    } catch {
+      // A damaged primary manifest must not block the legacy fallback.
+    }
   }
+  return null
 }
 
 /** 写入 tools/manifest.json（覆盖写，pretty JSON，与 make-usb-payload.ps1 产物格式一致） */

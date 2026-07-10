@@ -1,4 +1,5 @@
-import { basename } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { basename, extname, resolve } from 'node:path'
 import { Type } from '@mariozechner/pi-ai'
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
 import type { Attachment } from '../types/attachment.ts'
@@ -24,6 +25,76 @@ const ReadDocumentChunkParams = Type.Object({
   document_id: Type.String({ description: 'Parsed document id' }),
   chunk_id: Type.String({ description: 'Chunk id returned by search_document' }),
 })
+
+const DOCUMENT_EXTENSIONS = new Set(['.pdf', '.docx', '.xlsx', '.pptx'])
+const PDF_EXTENSIONS = new Set(['.pdf'])
+
+export interface DocumentPathPolicy {
+  /** The current agent's workspace only — not every agent workspace. */
+  workspaceDir: string
+  /** Exact files attached to the current turn. Sibling files are not allowed. */
+  attachmentPaths?: string[]
+}
+
+function normalizeFsPath(filePath: string): string {
+  return process.platform === 'win32' ? filePath.toLowerCase() : filePath
+}
+
+function isInsideRoot(filePath: string, rootPath: string): boolean {
+  const file = normalizeFsPath(filePath)
+  const root = normalizeFsPath(rootPath)
+  return file === root || file.startsWith(`${root}\\`) || file.startsWith(`${root}/`)
+}
+
+/**
+ * Restrict agent-requested document reads to the current agent workspace or
+ * exact files attached to this turn. Both sides use realpath so a junction or
+ * symlink inside the workspace cannot point at an arbitrary host file.
+ */
+export function assertReadableDocumentPath(
+  rawPath: string,
+  policy: DocumentPathPolicy,
+  allowedExtensions: ReadonlySet<string> = DOCUMENT_EXTENSIONS,
+): string {
+  const requested = (rawPath ?? '').trim()
+  const ext = extname(requested).toLowerCase()
+  if (!allowedExtensions.has(ext)) {
+    throw new Error(`仅支持 ${[...allowedExtensions].map((item) => item.slice(1)).join('/')} 文档`)
+  }
+
+  let realFile: string
+  try {
+    realFile = realpathSync(resolve(requested))
+  } catch {
+    throw new Error('文档不存在或不可读')
+  }
+
+  let realWorkspace: string
+  try {
+    realWorkspace = realpathSync(resolve(policy.workspaceDir))
+  } catch {
+    realWorkspace = resolve(policy.workspaceDir)
+  }
+
+  if (isInsideRoot(realFile, realWorkspace)) {
+    return realFile
+  }
+
+  const allowedAttachments = new Set(
+    (policy.attachmentPaths ?? []).flatMap((filePath) => {
+      try {
+        return [normalizeFsPath(realpathSync(resolve(filePath)))]
+      } catch {
+        return []
+      }
+    }),
+  )
+  if (allowedAttachments.has(normalizeFsPath(realFile))) {
+    return realFile
+  }
+
+  throw new Error('文档必须位于当前员工工作区，或是当前消息明确上传的附件')
+}
 
 function isDocumentAttachment(attachment: Attachment): boolean {
   return documentService.isSupportedAttachment(attachment)
@@ -101,7 +172,7 @@ export function buildParsedDocumentsPrompt(parsedDocuments: Array<{ docId: strin
   return parts.join('\n\n')
 }
 
-export function createDocumentTools(chatId: string): ToolDefinition[] {
+export function createDocumentTools(chatId: string, pathPolicy: DocumentPathPolicy): ToolDefinition[] {
   return [
     {
       name: 'mcp__document__parse_document',
@@ -111,10 +182,11 @@ export function createDocumentTools(chatId: string): ToolDefinition[] {
       async execute(_toolCallId, args: { file_path: string; media_type?: string }) {
         const logger = getLogger()
         try {
+          const safePath = assertReadableDocumentPath(args.file_path, pathPolicy)
           const parsed = await documentService.ingestAttachment(chatId, {
-            filename: basename(args.file_path),
+            filename: basename(safePath),
             mediaType: args.media_type ?? 'application/octet-stream',
-            filePath: args.file_path,
+            filePath: safePath,
           })
           if (parsed.status !== 'parsed') {
             throw new Error(parsed.error ?? 'unknown error')
@@ -133,7 +205,7 @@ export function createDocumentTools(chatId: string): ToolDefinition[] {
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          logger.error({ error: msg, file_path: args.file_path, category: 'document' }, 'parse_document tool failed')
+          logger.error({ error: msg, filename: basename(args.file_path), category: 'document' }, 'parse_document tool failed')
           throw new Error(`Failed to parse document: ${msg}`)
         }
       },
@@ -146,10 +218,11 @@ export function createDocumentTools(chatId: string): ToolDefinition[] {
       async execute(_toolCallId, args: { file_path: string }) {
         const logger = getLogger()
         try {
+          const safePath = assertReadableDocumentPath(args.file_path, pathPolicy, PDF_EXTENSIONS)
           const parsed = await documentService.ingestAttachment(chatId, {
-            filename: basename(args.file_path),
+            filename: basename(safePath),
             mediaType: 'application/pdf',
-            filePath: args.file_path,
+            filePath: safePath,
           })
           if (parsed.status !== 'parsed') {
             throw new Error(parsed.error ?? 'unknown error')
@@ -168,7 +241,7 @@ export function createDocumentTools(chatId: string): ToolDefinition[] {
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          logger.error({ error: msg, file_path: args.file_path, category: 'document' }, 'parse_pdf tool failed')
+          logger.error({ error: msg, filename: basename(args.file_path), category: 'document' }, 'parse_pdf tool failed')
           throw new Error(`Failed to parse PDF: ${msg}`)
         }
       },
@@ -201,7 +274,7 @@ export function createDocumentTools(chatId: string): ToolDefinition[] {
       parameters: ReadDocumentChunkParams,
       async execute(_toolCallId, args: { document_id: string; chunk_id: string }) {
         try {
-          const chunk = documentService.getChunk(args.document_id, args.chunk_id)
+          const chunk = documentService.getChunk(chatId, args.document_id, args.chunk_id)
           if (!chunk) {
             throw new Error(`Chunk not found: ${args.chunk_id}`)
           }

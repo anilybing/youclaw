@@ -453,7 +453,7 @@ async function installBun(): Promise<InstallResult> {
 
 
 /**
- * Download Git Portable and extract to XiaoJuClawData/tools/git/ on Windows.
+ * Download Git Portable into the resolved runtime tools directory on Windows.
  * Uses PortableGit self-extracting archive instead of system installer.
  * This way Git lives on the USB drive and doesn't need reinstalling on new machines.
  */

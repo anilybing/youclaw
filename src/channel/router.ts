@@ -14,6 +14,8 @@ import { inferChannelType } from './config-schema.ts'
 import { deriveChannelChatTitle } from './naming.ts'
 import type { InboundMessage, Channel } from './types.ts'
 import type { AgentToolUse } from '../events/types.ts'
+import { ErrorCode } from '../events/types.ts'
+import { isQueueCancellationError } from '../agent/queue.ts'
 
 export class MessageRouter {
   private channels: Channel[] = []
@@ -35,11 +37,30 @@ export class MessageRouter {
     }
     this.eventBus.subscribe({ types: ['complete'] }, (event) => {
       if (event.type === 'complete') {
-        this.persistCompletedReply(event.chatId, event.agentId, event.fullText, event.sessionId, event.turnId, event.toolUse)
+        if (event.fullText.trim()) {
+          this.persistCompletedReply(
+            event.chatId,
+            event.agentId,
+            event.fullText,
+            event.sessionId,
+            event.turnId,
+            event.toolUse,
+            event.cancelled ? ErrorCode.CANCELLED : undefined,
+          )
+        } else if (event.cancelled) {
+          this.persistErroredReply(
+            event.chatId,
+            event.agentId,
+            'Request cancelled.',
+            ErrorCode.CANCELLED,
+            event.turnId,
+            event.toolUse,
+          )
+        }
         // [XJC] 调度器发起的运行 suppressOutbound=true：仍落库,但不由此处向渠道发送,
         // 渠道投递统一交给 scheduler.deliver()（cleanText + 📎，且尊重 delivery_mode）。
         // 否则渠道会话上的定时任务会「双发」，且 delivery_mode='none' 也会泄漏原始结果。
-        if (!event.suppressOutbound) {
+        if (!event.suppressOutbound && !event.cancelled) {
           this.handleOutbound(event.chatId, event.fullText)
         }
       }
@@ -122,7 +143,10 @@ export class MessageRouter {
     }
 
     // Save to database
-    upsertChat(message.chatId, config.id, chatTitle, channel)
+    // Only seed the title for a new conversation. Passing chatTitle on every
+    // turn would overwrite a user-customized title now that upsertChat honors
+    // explicit name updates.
+    upsertChat(message.chatId, config.id, existingChat ? undefined : chatTitle, channel)
     saveMessage({
       id: message.id,
       chatId: message.chatId,
@@ -161,9 +185,14 @@ export class MessageRouter {
           requestedSkills: requestedSkills.length > 0 ? requestedSkills : undefined,
           browserProfileId: message.browserProfileId,
           attachments: message.attachments,
+          agentOps: message.agentOps,
           afterResult: async (result) => {
             if (!result.trim()) return
             if (!this.memoryManager) return
+            // Workflow turns are internal execution plumbing. Persisting their
+            // generated prompts/results as durable user memory pollutes future
+            // conversations and double-counts hidden model work.
+            if (message.agentOps?.internal || message.chatId.startsWith('workflow:')) return
 
             try {
               this.memoryManager.appendDailyLog(
@@ -191,6 +220,20 @@ export class MessageRouter {
       )
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
+      if (isQueueCancellationError(err)) {
+        logger.info({ chatId: message.chatId, turnId: message.id, phase: err.phase }, 'Message turn cancelled')
+        if (err.phase === 'queued') {
+          this.eventBus.emit({
+            type: 'error',
+            agentId: config.id,
+            chatId: message.chatId,
+            error: 'Request cancelled.',
+            errorCode: ErrorCode.CANCELLED,
+            turnId: message.id,
+          })
+        }
+        return
+      }
       logger.error({ error: err, chatId: message.chatId }, 'Message processing failed')
 
       // Emit error event so frontend and channels are notified
@@ -259,6 +302,7 @@ export class MessageRouter {
     sessionId: string,
     turnId?: string,
     toolUse?: AgentToolUse[],
+    errorCode?: string,
   ): void {
     if (!turnId || this.hasAssistantMessageForTurn(chatId, turnId)) return
     const senderName = this.getAgentDisplayName(agentId, chatId)
@@ -275,6 +319,7 @@ export class MessageRouter {
       toolUse: toolUse && toolUse.length > 0 ? JSON.stringify(toolUse) : undefined,
       sessionId: sessionId || undefined,
       turnId,
+      errorCode,
     })
     upsertChat(chatId, agentId)
   }

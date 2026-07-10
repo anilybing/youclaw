@@ -1,5 +1,7 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import type { AgentRuntime } from './runtime.ts'
 import type { AgentConfig as SchemaAgentConfig } from './schema.ts'
+import type { AgentOpsTraceContext } from '../agentops/types.ts'
 
 // Extend schema config with runtime fields
 export interface AgentConfig extends SchemaAgentConfig {
@@ -21,6 +23,15 @@ export interface ProcessParams {
   prompt: string
   agentId: string
   turnId?: string
+  /** Queue-owned controller. Direct runtime callers may omit it. */
+  abortController?: AbortController
+  /** Durable trace context; queue creates a root trace when omitted. */
+  agentOps?: AgentOpsTraceContext
+  /** Mutable queue/runtime outcome bridge; kept optional for legacy callers. */
+  executionState?: {
+    status: 'pending' | 'success' | 'failed' | 'cancelled'
+    errorCode?: string
+  }
   requestedSkills?: string[]
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>

@@ -1,10 +1,12 @@
-import { describe, test, beforeEach, beforeAll, afterAll, expect } from 'bun:test'
-import { mkdirSync, writeFileSync, rmSync, readdirSync, existsSync } from 'node:fs'
-import '../../tests/setup.ts'
-import { getPaths } from '../config/index.ts'
-import { getLogDates, readLogEntries, cleanOldLogs } from './reader.ts'
+import { describe, test, beforeEach, afterEach, expect } from 'bun:test'
+import { mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
+import { createLogReader } from './reader.ts'
 
-const logsDir = getPaths().logs
+const fixedNow = new Date('2026-03-31T12:00:00.000Z')
+let logsDir: string
+let reader: ReturnType<typeof createLogReader>
 
 // Sample log line
 function makeLogLine(overrides: Record<string, unknown> = {}): string {
@@ -16,51 +18,44 @@ function makeLogLine(overrides: Record<string, unknown> = {}): string {
   })
 }
 
-beforeAll(() => {
+beforeEach(() => {
+  logsDir = resolve(tmpdir(), `xjc-log-reader-${crypto.randomUUID()}`)
   mkdirSync(logsDir, { recursive: true })
+  reader = createLogReader(logsDir, () => fixedNow)
 })
 
-afterAll(() => {
-  if (existsSync(logsDir)) {
-    rmSync(logsDir, { recursive: true, force: true })
-  }
+afterEach(() => {
+  rmSync(logsDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 10 })
 })
-
-function cleanLogsDir() {
-  if (!existsSync(logsDir)) {
-    mkdirSync(logsDir, { recursive: true })
-    return
-  }
-  for (const f of readdirSync(logsDir)) {
-    rmSync(`${logsDir}/${f}`)
-  }
-}
 
 describe('getLogDates', () => {
-  beforeEach(cleanLogsDir)
-
   test('returns empty array when directory has no log files', () => {
-    const dates = getLogDates()
+    const dates = reader.getLogDates()
     expect(dates).toEqual([])
   })
 
   test('returns dates in descending order', () => {
-    writeFileSync(`${logsDir}/2026-03-09.log`, '')
-    writeFileSync(`${logsDir}/2026-03-11.log`, '')
-    writeFileSync(`${logsDir}/2026-03-10.log`, '')
+    writeFileSync(resolve(logsDir, '2026-03-09.log'), '')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), '')
+    writeFileSync(resolve(logsDir, '2026-03-10.log'), '')
     // Non-log files should be ignored
-    writeFileSync(`${logsDir}/random.txt`, '')
+    writeFileSync(resolve(logsDir, 'random.txt'), '')
 
-    const dates = getLogDates()
+    const dates = reader.getLogDates()
     expect(dates).toEqual(['2026-03-11', '2026-03-10', '2026-03-09'])
+  })
+
+  test('ignores subdirectories in the log root', () => {
+    mkdirSync(resolve(logsDir, 'model-invocations'), { recursive: true })
+    mkdirSync(resolve(logsDir, '2026-03-12.log'), { recursive: true })
+
+    expect(reader.getLogDates()).toEqual([])
   })
 })
 
 describe('readLogEntries', () => {
-  beforeEach(cleanLogsDir)
-
   test('returns empty result when file does not exist', async () => {
-    const result = await readLogEntries('2099-01-01', {})
+    const result = await reader.readLogEntries('2099-01-01', {})
     expect(result).toEqual({ entries: [], total: 0, hasMore: false })
   })
 
@@ -69,9 +64,9 @@ describe('readLogEntries', () => {
       makeLogLine({ msg: 'first', time: 1000 }),
       makeLogLine({ msg: 'second', time: 2000 }),
     ]
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', {})
+    const result = await reader.readLogEntries('2026-03-11', {})
     expect(result.total).toBe(2)
     expect(result.entries.length).toBe(2)
     expect(result.entries[0]!.msg).toBe('first')
@@ -86,9 +81,9 @@ describe('readLogEntries', () => {
       makeLogLine({ level: 40, msg: 'warn msg' }),
       makeLogLine({ level: 50, msg: 'error msg' }),
     ]
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', { level: 'warn' })
+    const result = await reader.readLogEntries('2026-03-11', { level: 'warn' })
     expect(result.total).toBe(2)
     expect(result.entries[0]!.msg).toBe('warn msg')
     expect(result.entries[1]!.msg).toBe('error msg')
@@ -100,9 +95,9 @@ describe('readLogEntries', () => {
       makeLogLine({ msg: 'agent log', category: 'agent' }),
       makeLogLine({ msg: 'tool log', category: 'tool_use' }),
     ]
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', { category: 'agent' })
+    const result = await reader.readLogEntries('2026-03-11', { category: 'agent' })
     expect(result.total).toBe(1)
     expect(result.entries[0]!.msg).toBe('agent log')
   })
@@ -112,9 +107,9 @@ describe('readLogEntries', () => {
       makeLogLine({ msg: 'system log' }),
       makeLogLine({ msg: 'agent log', category: 'agent' }),
     ]
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', { category: 'system' })
+    const result = await reader.readLogEntries('2026-03-11', { category: 'system' })
     expect(result.total).toBe(1)
     expect(result.entries[0]!.msg).toBe('system log')
   })
@@ -125,9 +120,9 @@ describe('readLogEntries', () => {
       makeLogLine({ msg: 'foo bar' }),
       makeLogLine({ msg: 'Hello Again' }),
     ]
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', { search: 'hello' })
+    const result = await reader.readLogEntries('2026-03-11', { search: 'hello' })
     expect(result.total).toBe(2)
   })
 
@@ -135,9 +130,9 @@ describe('readLogEntries', () => {
     const lines = Array.from({ length: 5 }, (_, i) =>
       makeLogLine({ msg: `msg-${i}` })
     )
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', { offset: 2, limit: 2 })
+    const result = await reader.readLogEntries('2026-03-11', { offset: 2, limit: 2 })
     expect(result.total).toBe(5)
     expect(result.entries.length).toBe(2)
     expect(result.entries[0]!.msg).toBe('msg-2')
@@ -149,9 +144,9 @@ describe('readLogEntries', () => {
     const lines = Array.from({ length: 3 }, (_, i) =>
       makeLogLine({ msg: `msg-${i}` })
     )
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', { offset: 2, limit: 2 })
+    const result = await reader.readLogEntries('2026-03-11', { offset: 2, limit: 2 })
     expect(result.entries.length).toBe(1)
     expect(result.hasMore).toBe(false)
   })
@@ -162,9 +157,9 @@ describe('readLogEntries', () => {
       makeLogLine({ msg: 'valid' }),
       '{ broken json',
     ].join('\n') + '\n'
-    writeFileSync(`${logsDir}/2026-03-11.log`, content)
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), content)
 
-    const result = await readLogEntries('2026-03-11', {})
+    const result = await reader.readLogEntries('2026-03-11', {})
     expect(result.total).toBe(1)
     expect(result.entries[0]!.msg).toBe('valid')
   })
@@ -176,9 +171,9 @@ describe('readLogEntries', () => {
       makeLogLine({ level: 50, msg: 'database error' }),
       makeLogLine({ level: 30, category: 'tool_use', msg: 'tool call: Bash' }),
     ]
-    writeFileSync(`${logsDir}/2026-03-11.log`, lines.join('\n') + '\n')
+    writeFileSync(resolve(logsDir, '2026-03-11.log'), lines.join('\n') + '\n')
 
-    const result = await readLogEntries('2026-03-11', {
+    const result = await reader.readLogEntries('2026-03-11', {
       level: 'error',
       category: 'agent',
       search: 'failed',
@@ -189,21 +184,13 @@ describe('readLogEntries', () => {
 })
 
 describe('cleanOldLogs', () => {
-  beforeEach(cleanLogsDir)
-
   test('deletes log files older than retention days', () => {
-    // Create a 60-day-old log
-    const old = new Date()
-    old.setDate(old.getDate() - 60)
-    const oldDate = old.toISOString().split('T')[0]!
+    const oldDate = '2026-01-30'
+    const today = '2026-03-31'
+    writeFileSync(resolve(logsDir, `${oldDate}.log`), 'old')
+    writeFileSync(resolve(logsDir, `${today}.log`), 'new')
 
-    // Today's log
-    const today = new Date().toISOString().split('T')[0]!
-
-    writeFileSync(`${logsDir}/${oldDate}.log`, 'old')
-    writeFileSync(`${logsDir}/${today}.log`, 'new')
-
-    const deleted = cleanOldLogs(30)
+    const deleted = reader.cleanOldLogs(30)
     expect(deleted).toBe(1)
 
     // Today's file remains
@@ -213,10 +200,10 @@ describe('cleanOldLogs', () => {
   })
 
   test('files within retainDays are not deleted', () => {
-    const today = new Date().toISOString().split('T')[0]!
-    writeFileSync(`${logsDir}/${today}.log`, 'keep')
+    const today = '2026-03-31'
+    writeFileSync(resolve(logsDir, `${today}.log`), 'keep')
 
-    const deleted = cleanOldLogs(7)
+    const deleted = reader.cleanOldLogs(7)
     expect(deleted).toBe(0)
     expect(readdirSync(logsDir).length).toBe(1)
   })

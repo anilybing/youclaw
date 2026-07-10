@@ -5,9 +5,58 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>XiaoJuClaw</title>
+    <style>
+      /* [XJC] 即时启动页：消除窗口显示后到 React 挂载完成之间的白屏。
+         窗口 visible:false 由 Rust 尽早 show，而前端 startup() 要先 await 端口探测+hydrate 才渲染，
+         这段空白期由本遮罩覆盖；React 挂载后 main.tsx 淡出并移除 #xjc-splash。
+         主题跟随系统 prefers-color-scheme（应用默认主题即 system），避免白闪。 */
+      html, body { margin: 0; height: 100%; background: oklch(0.985 0 0); }
+      @media (prefers-color-scheme: dark) { html, body { background: oklch(0.13 0 0); } }
+      #xjc-splash {
+        position: fixed; inset: 0; z-index: 2147483000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+        background: oklch(0.985 0 0); color: oklch(0.15 0 0);
+        font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        transition: opacity .28s ease;
+      }
+      @media (prefers-color-scheme: dark) { #xjc-splash { background: oklch(0.13 0 0); color: oklch(0.93 0 0); } }
+      #xjc-splash.xjc-hide { opacity: 0; pointer-events: none; }
+      #xjc-splash .xjc-spinner {
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 3px solid oklch(0.5 0.2 25 / 0.22);
+        border-top-color: oklch(0.5 0.2 25);
+        animation: xjc-spin .8s linear infinite;
+      }
+      #xjc-splash .xjc-brand { font-size: 18px; font-weight: 600; letter-spacing: .3px; }
+      #xjc-splash .xjc-sub { font-size: 12px; opacity: .5; }
+      @keyframes xjc-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #xjc-splash .xjc-spinner { animation-duration: 2s; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="xjc-splash">
+      <div class="xjc-spinner"></div>
+      <div class="xjc-brand">XiaoJuClaw</div>
+      <div id="xjc-splash-status" class="xjc-sub">正在启动…</div>
+    </div>
+    <script>
+      // Keep the 100s hard ceiling for slow USB/antivirus environments, but
+      // communicate progress instead of showing one unchanged line throughout.
+      (() => {
+        const updates = [
+          [12000, '正在初始化本地服务，首次启动可能稍慢…'],
+          [30000, '本地服务启动较慢，可能正在被安全软件扫描…'],
+          [60000, '仍在尝试连接；超过 100 秒后将显示诊断页面。'],
+        ]
+        for (const [delay, message] of updates) {
+          window.setTimeout(() => {
+            const status = document.getElementById('xjc-splash-status')
+            if (status) status.textContent = message
+          }, delay)
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

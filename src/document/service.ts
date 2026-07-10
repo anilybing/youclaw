@@ -38,9 +38,18 @@ interface StoredChunkRow {
   metadata_json: string | null
 }
 
-function computeFileHash(filePath: string): string {
+function computeDocumentId(chatId: string, filePath: string): string {
   const content = readFileSync(filePath)
-  return createHash('sha256').update(content).digest('hex').slice(0, 16)
+  // A content-only id allowed the same file uploaded in chat B to overwrite
+  // the ownership of chat A. Scope the id to the chat while retaining stable
+  // deduplication inside one conversation.
+  const digest = createHash('sha256')
+    .update(chatId)
+    .update('\0')
+    .update(content)
+    .digest('hex')
+    .slice(0, 16)
+  return `doc_${digest}`
 }
 
 function getDocumentsDir(): string {
@@ -92,8 +101,7 @@ export class DocumentService {
       throw new Error(`Unsupported document type: ${attachment.filename}`)
     }
 
-    const fileHash = computeFileHash(attachment.filePath)
-    const docId = `doc_${fileHash}`
+    const docId = computeDocumentId(chatId, attachment.filePath)
     const existing = this.getDocument(docId)
     if (existing && existing.status === 'parsed') {
       const refreshed = this.refreshExistingDocument(existing, chatId, attachment)
@@ -183,10 +191,11 @@ export class DocumentService {
 
     if (documentId) {
       rows = db.query(
-        `SELECT id, document_id, ordinal, title, content, page, sheet, slide, metadata_json
-         FROM document_chunks
-         WHERE document_id = ?`,
-      ).all(documentId) as StoredChunkRow[]
+        `SELECT dc.id, dc.document_id, dc.ordinal, dc.title, dc.content, dc.page, dc.sheet, dc.slide, dc.metadata_json
+         FROM document_chunks dc
+         JOIN documents d ON d.id = dc.document_id
+         WHERE dc.document_id = ? AND d.chat_id = ? AND d.status = 'parsed'`,
+      ).all(documentId, chatId) as StoredChunkRow[]
     } else {
       rows = db.query(
         `SELECT dc.id, dc.document_id, dc.ordinal, dc.title, dc.content, dc.page, dc.sheet, dc.slide, dc.metadata_json
@@ -216,13 +225,14 @@ export class DocumentService {
       .slice(0, limit)
   }
 
-  getChunk(documentId: string, chunkId: string): DocumentChunk | null {
+  getChunk(chatId: string, documentId: string, chunkId: string): DocumentChunk | null {
     const db = getDatabase()
     const row = db.query(
-      `SELECT id, document_id, ordinal, title, content, page, sheet, slide, metadata_json
-       FROM document_chunks
-       WHERE document_id = ? AND id = ?`,
-    ).get(documentId, chunkId) as StoredChunkRow | null
+      `SELECT dc.id, dc.document_id, dc.ordinal, dc.title, dc.content, dc.page, dc.sheet, dc.slide, dc.metadata_json
+       FROM document_chunks dc
+       JOIN documents d ON d.id = dc.document_id
+       WHERE dc.document_id = ? AND dc.id = ? AND d.chat_id = ? AND d.status = 'parsed'`,
+    ).get(documentId, chunkId, chatId) as StoredChunkRow | null
 
     if (!row) return null
     return {

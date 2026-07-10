@@ -270,4 +270,33 @@ describe('settings routes', () => {
 
     expect(parsed.activeModel.provider).toBe('builtin')
   })
+
+  test('update channel defaults to stable and persists beta without login state', async () => {
+    const app = createSettingsRoutes()
+    const initial = await app.request('/settings')
+    const initialBody = await initial.json() as { update: { channel: string } }
+    expect(initialBody.update.channel).toBe('stable')
+
+    const changed = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ update: { channel: 'beta' } }),
+    })
+    const changedBody = await changed.json() as { update: { channel: string } }
+    expect(changed.status).toBe(200)
+    expect(changedBody.update.channel).toBe('beta')
+  })
+
+  test('PATCH /settings rejects unknown update channels', async () => {
+    const app = createSettingsRoutes()
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ update: { channel: 'nightly' } }),
+    })
+    const body = await res.json() as { error: string }
+
+    expect(res.status).toBe(400)
+    expect(body.error).toBe('Invalid update channel')
+  })
 })

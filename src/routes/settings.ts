@@ -1,6 +1,15 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { Hono } from 'hono'
-import { getSettings, updateSettings, getActiveModelConfig, getBuiltinModelId } from '../settings/manager.ts'
-import { RegistrySourceSettingSchema } from '../settings/schema.ts'
+import { randomBytes } from 'node:crypto'
+import {
+  getSettings,
+  getStoredSettings,
+  updateSettings,
+  getActiveModelConfig,
+  getBuiltinModelId,
+  resolveCustomModelApiKey,
+} from '../settings/manager.ts'
+import { RegistrySourceSettingSchema, UpdateReleaseChannelSchema } from '../settings/schema.ts'
 import { getDatabase } from '../db/index.ts'
 
 const app = new Hono()
@@ -13,9 +22,28 @@ function maskVoice(voice: ReturnType<typeof getSettings>['voice']) {
   }
 }
 
+// [XJC] 媒体配置 apiKey 打码（图像/视频组）
+function maskMedia(media: ReturnType<typeof getSettings>['media']) {
+  return {
+    image: { ...media.image, apiKey: media.image.apiKey ? `****${media.image.apiKey.slice(-4)}` : '' },
+    video: { ...media.video, apiKey: media.video.apiKey ? `****${media.video.apiKey.slice(-4)}` : '' },
+  }
+}
+
+function maskCustomModels(models: ReturnType<typeof getStoredSettings>['customModels']) {
+  return models.map((model) => {
+    const apiKey = resolveCustomModelApiKey(model)
+    return {
+      ...model,
+      apiKey: apiKey ? `****${apiKey.slice(-4)}` : '',
+    }
+  })
+}
+
 // GET /settings — return full settings (apiKey masked)
 app.get('/settings', (c) => {
   const settings = getSettings()
+  const storedSettings = getStoredSettings()
 
   // Get the actual modelId of the built-in model for frontend display
   const builtinModelId = getBuiltinModelId()
@@ -30,11 +58,9 @@ app.get('/settings', (c) => {
       },
       tencent: settings.registrySources.tencent,
     },
-    customModels: settings.customModels.map((m) => ({
-      ...m,
-      apiKey: m.apiKey ? `****${m.apiKey.slice(-4)}` : '',
-    })),
+    customModels: maskCustomModels(storedSettings.customModels),
     voice: maskVoice(settings.voice),
+    media: maskMedia(settings.media),
   }
 
   return c.json(masked)
@@ -77,6 +103,40 @@ app.patch('/settings', async (c) => {
     }
   }
 
+  // [XJC] 自主进化开关（进化引擎桥）
+  if ('evolution' in body && body.evolution && typeof body.evolution === 'object') {
+    const incoming = body.evolution as { enabled?: unknown }
+    partial.evolution = { enabled: incoming.enabled === true }
+  }
+
+  // [XJC] Stable/beta canary preference. Reject unknown values rather than
+  // silently opting a user into a pre-release channel.
+  if ('update' in body) {
+    if (!body.update || typeof body.update !== 'object') {
+      return c.json({ error: 'Invalid update channel' }, 400)
+    }
+    const incoming = body.update as { channel?: unknown }
+    const parsed = UpdateReleaseChannelSchema.safeParse(incoming.channel)
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid update channel' }, 400)
+    }
+    partial.update = { channel: parsed.data }
+  }
+
+  // [XJC] 内置 MCP Server 开关：首次开启且无 token 时自动生成。
+  // token 永不接受 PATCH 写入，只能由「重新生成」动作产生，见 POST /settings/mcp-server/regenerate-token。
+  // 关闭主开关时一并关闭危险工具，确保下次开启仍需用户二次授权。
+  if ('mcpServer' in body && body.mcpServer && typeof body.mcpServer === 'object') {
+    const incoming = body.mcpServer as { enabled?: unknown; allowDangerousTools?: unknown }
+    const enabled = typeof incoming.enabled === 'boolean' ? incoming.enabled : current.mcpServer.enabled
+    const requestedDangerous = typeof incoming.allowDangerousTools === 'boolean'
+      ? incoming.allowDangerousTools
+      : current.mcpServer.allowDangerousTools
+    const allowDangerousTools = enabled && requestedDangerous
+    const token = enabled && !current.mcpServer.token ? randomBytes(24).toString('hex') : current.mcpServer.token
+    partial.mcpServer = { enabled, allowDangerousTools, token }
+  }
+
   // [XJC] 语音配置（T-A2）：apiKey 为 ****打码值时保留原值，其余透传
   if ('voice' in body && body.voice && typeof body.voice === 'object') {
     const incoming = body.voice as { asr?: Record<string, unknown>; tts?: Record<string, unknown> }
@@ -91,6 +151,23 @@ app.patch('/settings', async (c) => {
     partial.voice = {
       ...(incoming.asr ? { asr: resolveKey('asr', incoming.asr) } : {}),
       ...(incoming.tts ? { tts: resolveKey('tts', incoming.tts) } : {}),
+    }
+  }
+
+  // [XJC] 媒体生成配置：同款 ****保留原值语义
+  if ('media' in body && body.media && typeof body.media === 'object') {
+    const incoming = body.media as { image?: Record<string, unknown>; video?: Record<string, unknown> }
+    const resolveMediaKey = (kind: 'image' | 'video', group?: Record<string, unknown>) => {
+      if (!group) return undefined
+      const apiKey = typeof group.apiKey === 'string' ? group.apiKey : undefined
+      if (apiKey !== undefined && apiKey.startsWith('****')) {
+        return { ...group, apiKey: current.media[kind].apiKey }
+      }
+      return group
+    }
+    partial.media = {
+      ...(incoming.image ? { image: resolveMediaKey('image', incoming.image) } : {}),
+      ...(incoming.video ? { video: resolveMediaKey('video', incoming.video) } : {}),
     }
   }
 
@@ -117,6 +194,7 @@ app.patch('/settings', async (c) => {
   }
 
   const updated = updateSettings(partial)
+  const storedUpdated = getStoredSettings()
 
   // Return masked result
   const masked = {
@@ -127,14 +205,19 @@ app.patch('/settings', async (c) => {
       },
       tencent: updated.registrySources.tencent,
     },
-    customModels: updated.customModels.map((m) => ({
-      ...m,
-      apiKey: m.apiKey ? `****${m.apiKey.slice(-4)}` : '',
-    })),
+    customModels: maskCustomModels(storedUpdated.customModels),
     voice: maskVoice(updated.voice),
+    media: maskMedia(updated.media),
   }
 
   return c.json(masked)
+})
+
+// [XJC] POST /settings/mcp-server/regenerate-token — 轮换 MCP Server 鉴权 token（旧 token 立即失效）
+app.post('/settings/mcp-server/regenerate-token', (c) => {
+  const token = randomBytes(24).toString('hex')
+  const updated = updateSettings({ mcpServer: { ...getSettings().mcpServer, token } })
+  return c.json({ token: updated.mcpServer.token })
 })
 
 // GET /settings/active-model — return full config of active model (internal use, unmasked)

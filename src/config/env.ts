@@ -83,6 +83,15 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(62601),
   DATA_DIR: z.string().default('./data'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  // Tauri-owned storage layout. Portable builds use an explicit marker and
+  // inject separate data/runtime roots; installed builds inject AppData.
+  XiaoJuClaw_PORTABLE: z.enum(['0', '1']).optional(),
+  XiaoJuClaw_RUNTIME_DIR: z.string().optional(),
+  XiaoJuClaw_LEGACY_DATA_DIR: z.string().optional(),
+  XiaoJuClaw_SETTINGS_FILE: z.string().optional(),
+  // Per-application sidecar token injected by the Tauri host at runtime.
+  // Optional only for standalone Bun / browser development compatibility.
+  XiaoJuClaw_LOCAL_API_TOKEN: z.string().min(32).optional(),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   FEISHU_APP_ID: z.string().optional(),
   FEISHU_APP_SECRET: z.string().optional(),
@@ -118,17 +127,20 @@ export function loadEnv(): EnvConfig {
   // Dev runs should only respect .env so local development stays deterministic.
   if (process.env.XiaoJuClaw_USE_PREFERRED_PORT === '1') {
     try {
-      const home = process.env.HOME || process.env.USERPROFILE || ''
-      const platform = process.platform
-      let storeDir: string
-      if (platform === 'darwin') {
-        storeDir = resolve(home, 'Library/Application Support/com.xiaojuclaw.app')
-      } else if (platform === 'win32') {
-        storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.xiaojuclaw.app')
-      } else {
-        storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.xiaojuclaw.app')
+      let storeFile = process.env.XiaoJuClaw_SETTINGS_FILE?.trim()
+      if (!storeFile) {
+        const home = process.env.HOME || process.env.USERPROFILE || ''
+        const platform = process.platform
+        let storeDir: string
+        if (platform === 'darwin') {
+          storeDir = resolve(home, 'Library/Application Support/com.xiaojuclaw.app')
+        } else if (platform === 'win32') {
+          storeDir = resolve(process.env.APPDATA || resolve(home, 'AppData/Roaming'), 'com.xiaojuclaw.app')
+        } else {
+          storeDir = resolve(process.env.XDG_CONFIG_HOME || resolve(home, '.config'), 'com.xiaojuclaw.app')
+        }
+        storeFile = resolve(storeDir, 'settings.json')
       }
-      const storeFile = resolve(storeDir, 'settings.json')
       const storeContent = JSON.parse(readFileSync(storeFile, 'utf-8'))
       if (storeContent.preferred_port) {
         process.env.PORT = storeContent.preferred_port
@@ -141,7 +153,9 @@ export function loadEnv(): EnvConfig {
   // Build-time constant injection: build-sidecar.mjs generates build-constants.ts
   // with compile-time env vars as a plain JS object, merged into process.env here
   for (const [key, val] of Object.entries(BUILD_CONSTANTS)) {
-    if (val && !process.env[key]) {
+    // Presence, not truthiness, controls precedence. Release smoke and offline
+    // launchers deliberately pass an empty value to suppress compiled cloud URLs.
+    if (val && !(key in process.env)) {
       process.env[key] = val
     }
   }

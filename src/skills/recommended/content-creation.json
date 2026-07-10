@@ -11,18 +11,6 @@
     ]
   },
   {
-    "slug": "humanizer",
-    "displayName": "Humanizer",
-    "summary": "Remove signs of AI-generated writing from text.",
-    "category": "content-creation",
-    "tags": [
-      "content",
-      "media",
-      "publishing",
-      "humanizer"
-    ]
-  },
-  {
     "slug": "video-generator-seedance",
     "displayName": "video-generator-seedance",
     "summary": "Create, transform, and analyze video workflows with video-generator-seedance.",

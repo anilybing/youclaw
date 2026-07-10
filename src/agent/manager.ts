@@ -31,6 +31,8 @@ import {
   SUPPORT_ASSISTANT_IDENTITY_MD, SUPPORT_ASSISTANT_BOOTSTRAP_MD,
   RESEARCH_ASSISTANT_AGENT_YAML, RESEARCH_ASSISTANT_SOUL_MD,
   RESEARCH_ASSISTANT_IDENTITY_MD, RESEARCH_ASSISTANT_BOOTSTRAP_MD,
+  XIANYU_CS_AGENT_YAML, XIANYU_CS_SOUL_MD,
+  XIANYU_CS_IDENTITY_MD, XIANYU_CS_BOOTSTRAP_MD,
 } from './templates.ts'
 import { ensureAgentWorkspace } from './workspace.ts'
 
@@ -145,6 +147,7 @@ export class AgentManager {
       { id: 'hr-assistant', yaml: HR_ASSISTANT_AGENT_YAML, soul: HR_ASSISTANT_SOUL_MD, identity: HR_ASSISTANT_IDENTITY_MD, bootstrap: HR_ASSISTANT_BOOTSTRAP_MD },
       { id: 'support-assistant', yaml: SUPPORT_ASSISTANT_AGENT_YAML, soul: SUPPORT_ASSISTANT_SOUL_MD, identity: SUPPORT_ASSISTANT_IDENTITY_MD, bootstrap: SUPPORT_ASSISTANT_BOOTSTRAP_MD },
       { id: 'research-assistant', yaml: RESEARCH_ASSISTANT_AGENT_YAML, soul: RESEARCH_ASSISTANT_SOUL_MD, identity: RESEARCH_ASSISTANT_IDENTITY_MD, bootstrap: RESEARCH_ASSISTANT_BOOTSTRAP_MD },
+      { id: 'xianyu-cs', yaml: XIANYU_CS_AGENT_YAML, soul: XIANYU_CS_SOUL_MD, identity: XIANYU_CS_IDENTITY_MD, bootstrap: XIANYU_CS_BOOTSTRAP_MD },
     ]
     for (const seed of backOfficeSeeds) {
       const dir = resolve(paths.agents, seed.id)
@@ -200,7 +203,7 @@ export class AgentManager {
     const RESERVED = new Set([
       'default', '_global',
       'office-assistant', 'ecommerce-assistant', 'content-creator',
-      'finance-assistant', 'hr-assistant', 'support-assistant', 'research-assistant',
+      'finance-assistant', 'hr-assistant', 'support-assistant', 'research-assistant', 'xianyu-cs',
     ])
     const seeded: string[] = []
     let skipped = 0

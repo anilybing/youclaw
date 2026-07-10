@@ -65,14 +65,20 @@ export class VoiceService {
     }
   }
 
-  async transcribe(audio: Uint8Array, mimeType: string): Promise<TranscribeResult> {
+  async transcribe(
+    audio: Uint8Array,
+    mimeType: string,
+    // [XJC] 录音文件转写（voice-mcp）：部分网关按扩展名识别格式，须传真实文件名；
+    // 长录音（会议）30s 不够，允许上调超时。
+    options?: { filename?: string; timeoutMs?: number },
+  ): Promise<TranscribeResult> {
     const cfg = asrConfig()
     if (!isAsrConfigured(cfg)) {
       throw new VoiceError(VOICE_NOT_CONFIGURED, '语音识别未配置，请到 设置 → 语音 填写服务信息')
     }
 
     const form = new FormData()
-    form.append('file', new File([audio], 'audio.webm', { type: mimeType }))
+    form.append('file', new File([audio], options?.filename || 'audio.webm', { type: mimeType }))
     form.append('model', cfg.model)
 
     let res: Response
@@ -81,7 +87,7 @@ export class VoiceService {
         method: 'POST',
         headers: { Authorization: `Bearer ${cfg.apiKey}` },
         body: form,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
       })
     } catch (err) {
       throw providerErrorFromNetwork('语音识别', err)

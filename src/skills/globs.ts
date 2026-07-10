@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { minimatch } from 'minimatch'
 import type { Skill } from './types.ts'
 
@@ -10,27 +11,25 @@ const EXCLUDED = new Set(['.git', 'node_modules', '.DS_Store', 'data'])
  * Excludes .git, node_modules, .DS_Store, data/.
  */
 export function scanWorkspaceFiles(workspaceDir: string): string[] {
-  try {
-    const entries = readdirSync(workspaceDir, { recursive: true, withFileTypes: true })
-    const files: string[] = []
+  const files: string[] = []
 
+  const walk = (directory: string, relativeParts: string[]): void => {
+    const entries = readdirSync(directory, { withFileTypes: true })
     for (const entry of entries) {
-      if (!entry.isFile()) continue
+      if (EXCLUDED.has(entry.name) || entry.isSymbolicLink()) continue
 
-      // Build relative path
-      const parentPath = entry.parentPath ?? (entry as any).path ?? ''
-      const relativeDir = parentPath
-        ? parentPath.replace(workspaceDir, '').replace(/^\//, '')
-        : ''
-      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name
-
-      // Check if path contains an excluded directory
-      const parts = relativePath.split('/')
-      if (parts.some((p) => EXCLUDED.has(p))) continue
-
-      files.push(relativePath)
+      const absolutePath = join(directory, entry.name)
+      const nextParts = [...relativeParts, entry.name]
+      if (entry.isDirectory()) {
+        walk(absolutePath, nextParts)
+      } else if (entry.isFile()) {
+        files.push(nextParts.join('/'))
+      }
     }
+  }
 
+  try {
+    walk(workspaceDir, [])
     return files
   } catch {
     return []

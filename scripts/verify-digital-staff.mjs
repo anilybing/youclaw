@@ -9,8 +9,8 @@
  *   3. skills-dev golden 测试全绿（bun test）
  *   4. 预置数字员工模板：office-assistant（10 办公/简报技能）、ecommerce-assistant（7 电商技能）、
  *      content-creator（4 创作技能 + web-search）agent.yaml 可解析、白名单齐全
- *   5. 工作台任务卡配置：22 张卡、promptTemplate 双语、办公卡绑定 office-assistant、
- *      电商卡绑定 ecommerce-assistant、创作卡绑定 content-creator
+ *   5. 工作台任务卡配置：43 张卡、promptTemplate 双语、办公卡绑定 office-assistant、
+ *      电商卡绑定 ecommerce-assistant、创作卡绑定 content-creator（含媒体/知识库/录音转写真能力卡）
  *
  * 不覆盖（需人工/真机，见 doc/数字员工验收清单.md）：
  *   真实模型端到端产出、打包后资源加载、U 盘断网场景。
@@ -75,6 +75,17 @@ const SKILLS = [
   { slug: 'translate', script: null },
   { slug: 'web-extract', script: null },
   { slug: 'mind-map', script: null },
+  // 腾讯技能市场收编（2026-07-09，纯 prompt/文档技能，安全审查后内置）
+  { slug: 'ecommerce-product-selector', script: null },
+  { slug: 'global-biblio-base', script: null },
+  { slug: 'humanizer', script: null },
+  { slug: 'promptmaster', script: null },
+  { slug: 'law-skills', script: null },
+  { slug: 'office-automation', script: null },
+  { slug: 'one-person-company', script: null },
+  { slug: 'sa-pro-workbench', script: null },
+  { slug: 'skill-vetter', script: null },
+  { slug: 'weixin-article-writer', script: null },
 ]
 
 // 各预置数字员工的技能白名单（与 templates.ts 的 agent.yaml 对齐）
@@ -82,13 +93,16 @@ const OFFICE_ASSISTANT_SKILLS = [
   'office-ppt', 'office-doc', 'office-excel', 'office-pdf',
   'meeting-notes', 'weekly-report', 'email-draft', 'file-organizer',
   'daily-briefing', 'web-monitor',
+  'office-automation', 'law-skills',
 ]
 const ECOMMERCE_ASSISTANT_SKILLS = [
   'ecom-copywriter', 'ecom-compliance', 'ecom-image', 'ecom-analytics', 'office-excel', 'office-doc',
   'web-monitor',
+  'ecommerce-product-selector',
 ]
 const CONTENT_CREATOR_SKILLS = [
   'content-article', 'content-xiaohongshu', 'content-video-script', 'content-calendar', 'web-search',
+  'humanizer', 'promptmaster', 'weixin-article-writer',
 ]
 const FINANCE_ASSISTANT_SKILLS = [
   'finance-bookkeeping', 'finance-invoice', 'finance-report', 'finance-budget', 'office-excel',
@@ -101,6 +115,10 @@ const SUPPORT_ASSISTANT_SKILLS = [
 ]
 const RESEARCH_ASSISTANT_SKILLS = [
   'doc-summarize', 'research-report', 'translate', 'web-extract', 'mind-map', 'web-search', 'agent-browser',
+  'global-biblio-base',
+]
+const XIANYU_CS_SKILLS = [
+  'support-reply', 'support-faq',
 ]
 
 for (const skill of SKILLS) {
@@ -174,6 +192,7 @@ try {
     { name: 'HR_ASSISTANT', id: 'hr-assistant', skills: HR_ASSISTANT_SKILLS },
     { name: 'SUPPORT_ASSISTANT', id: 'support-assistant', skills: SUPPORT_ASSISTANT_SKILLS },
     { name: 'RESEARCH_ASSISTANT', id: 'research-assistant', skills: RESEARCH_ASSISTANT_SKILLS },
+    { name: 'XIANYU_CS', id: 'xianyu-cs', skills: XIANYU_CS_SKILLS },
   ]
   for (const staff of backOffice) {
     const m = templates.match(new RegExp(`${staff.name}_AGENT_YAML = \`\\\\?\\n?([\\s\\S]*?)\``))
@@ -195,7 +214,7 @@ try {
 try {
   const cardsSrc = readFileSync(resolve(REPO, 'web/src/config/workbench-tasks.ts'), 'utf8')
   const cardIds = [...cardsSrc.matchAll(/^\s{4}id:\s*'([a-z-]+)'/gm)].map((m) => m[1])
-  check('工作台任务卡数量(38)', cardIds.length === 38, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
+  check('工作台任务卡数量(46)', cardIds.length === 46, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
   check('工作台绑定 office-assistant', /WORKBENCH_AGENT_ID = 'office-assistant'/.test(cardsSrc))
   check('电商卡绑定 ecommerce-assistant', /ECOMMERCE_AGENT_ID = 'ecommerce-assistant'/.test(cardsSrc))
   check('创作卡绑定 content-creator', /CONTENT_AGENT_ID = 'content-creator'/.test(cardsSrc))
@@ -209,6 +228,11 @@ try {
   const contentBindCount = (cardsSrc.match(/agentId:\s*CONTENT_AGENT_ID/g) ?? []).length
   check('创作卡均显式绑定 content-creator', contentCardIds.length > 0 && contentBindCount === contentCardIds.length,
     `创作卡 ${contentCardIds.length} 张 / agentId 绑定 ${contentBindCount} 处`)
+  // 每张 xianyu-* 卡都必须显式绑定 agentId: XIANYU_AGENT_ID（漏绑会误派给办公助理）
+  const xianyuCardIds = cardIds.filter((id) => id.startsWith('xianyu-'))
+  const xianyuBindCount = (cardsSrc.match(/agentId:\s*XIANYU_AGENT_ID/g) ?? []).length
+  check('闲鱼卡均显式绑定 xianyu-cs', xianyuCardIds.length > 0 && xianyuBindCount === xianyuCardIds.length,
+    `闲鱼卡 ${xianyuCardIds.length} 张 / agentId 绑定 ${xianyuBindCount} 处`)
   const zhCount = (cardsSrc.match(/zh:/g) ?? []).length
   const enCount = (cardsSrc.match(/en:/g) ?? []).length
   check('任务卡双语文案', zhCount > 20 && enCount > 20 && zhCount === enCount, `zh=${zhCount} en=${enCount}`)

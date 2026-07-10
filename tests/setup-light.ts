@@ -17,4 +17,7 @@ import { initLogger } from '../src/logger/index.ts'
 
 // Initialize
 loadEnv()
+// Keep lightweight tests independent from the repository .env, whose model
+// keys intentionally override process.env during load.
+process.env.MODEL_API_KEY = 'test-key'
 initLogger()

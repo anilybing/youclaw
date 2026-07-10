@@ -1,16 +1,5 @@
 [
   {
-    "slug": "skill-vetter",
-    "displayName": "Skill Vetter",
-    "summary": "Review third-party skills for risk, permissions, and suspicious behavior before installation.",
-    "category": "security-compliance",
-    "tags": [
-      "security",
-      "review",
-      "skills"
-    ]
-  },
-  {
     "slug": "moltguard",
     "displayName": "MoltGuard",
     "summary": "Add guardrails against prompt injection, data exfiltration, and other malicious skill behavior.",

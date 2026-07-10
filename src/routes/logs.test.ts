@@ -1,5 +1,6 @@
 import { describe, test, beforeEach, beforeAll, afterAll, expect } from 'bun:test'
-import { mkdirSync, writeFileSync, rmSync, readdirSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import '../../tests/setup.ts'
 import { getPaths } from '../config/index.ts'
 import { createLogsRoutes } from './logs.ts'
@@ -21,18 +22,17 @@ beforeAll(() => {
 })
 
 afterAll(() => {
-  if (existsSync(logsDir)) {
-    rmSync(logsDir, { recursive: true, force: true })
-  }
+  cleanLogsDir()
 })
 
 function cleanLogsDir() {
-  if (!existsSync(logsDir)) {
-    mkdirSync(logsDir, { recursive: true })
-    return
-  }
-  for (const f of readdirSync(logsDir)) {
-    rmSync(`${logsDir}/${f}`)
+  mkdirSync(logsDir, { recursive: true })
+  for (const entry of readdirSync(logsDir, { withFileTypes: true })) {
+    // The same root contains model-invocations/. On Bun/Windows, calling
+    // rmSync(path) on that directory reports EFAULT instead of EISDIR.
+    if (entry.isFile() && /^\d{4}-\d{2}-\d{2}\.log$/.test(entry.name)) {
+      rmSync(resolve(logsDir, entry.name), { force: true })
+    }
   }
 }
 

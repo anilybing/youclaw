@@ -12,12 +12,17 @@ import { initDatabase } from './db/index.ts'
 import { EventBus } from './events/index.ts'
 import { AgentManager, AgentQueue, PromptBuilder, AgentRouter, HooksManager, SecretsManager } from './agent/index.ts'
 import { configureSkillsMcpRuntime } from './agent/skills-mcp.ts'
+import { configureEmployeeMcpRuntime } from './agent/employee-mcp.ts'
+import { configureWorkflowRuntime } from './workflow/runner.ts'
+import { reconcileInterruptedRuns, seedBuiltinWorkflows } from './workflow/store.ts'
+import { runSingleCompletion } from './agent/persona-optimizer.ts'
 import { MessageRouter, ChannelManager } from './channel/index.ts'
 import { registerChannelOutboundService } from './channel/outbound-service.ts'
 import { SkillsLoader, SkillsWatcher, RegistryManager } from './skills/index.ts'
 import { MemoryManager, MemoryIndexer } from './memory/index.ts'
 import { ensureDistillTasks } from './memory/distill-scheduler.ts'
 import { ensureChannelDigestTask, ensureIngestTask } from './ingest/ingest-scheduler.ts'
+import { initEvolutionBridge } from './evolution/service.ts'
 import { Scheduler } from './scheduler/index.ts'
 import { BrowserManager } from './browser/index.ts'
 import { createApp } from './routes/index.ts'
@@ -26,6 +31,7 @@ import { ensureBunRuntime } from './agent/runtime.ts'
 import { resetShellEnvCache } from './utils/shell-env.ts'
 import { ensurePortableToolsInPath, getInjectedPortablePaths } from './config/portable-tools.ts'
 import { isPortableMode } from './config/paths.ts'
+import { reconcileInterruptedAgentOpsTraces } from './agentops/store.ts'
 
 async function main() {
   // 1. Load environment variables
@@ -74,6 +80,10 @@ async function main() {
   // 3. Initialize database
   try {
     initDatabase()
+    const interruptedTraces = reconcileInterruptedAgentOpsTraces()
+    if (interruptedTraces > 0) {
+      logger.warn({ interruptedTraces }, 'Recovered interrupted execution traces')
+    }
     logger.info('Database initialized')
   } catch (err) {
     logger.error({ err }, '[STARTUP] Step 3 failed: init database')
@@ -174,6 +184,8 @@ async function main() {
 
   // 10b. [XJC] 对话式技能自管理工具依赖装配（skills-mcp 运行时单例）
   configureSkillsMcpRuntime({ agentManager, skillsLoader, registryManager })
+  // 10c. [XJC] 对话式建员工工具依赖装配（employee-mcp 运行时单例）
+  configureEmployeeMcpRuntime({ agentManager })
 
   // 11. Create AgentQueue
   const agentQueue = new AgentQueue(agentManager)
@@ -199,11 +211,90 @@ async function main() {
   scheduler.start()
   logger.info('Task scheduler started')
 
-  // [XJC-PATCH] T-G1 记忆自动蒸馏：幂等种子日纪要/周蒸馏系统任务（src/memory/distill-scheduler.ts）
-  ensureDistillTasks({ hasAgent: (id) => Boolean(agentManager.getAgent(id)) })
+  // [XJC] 工作流引擎装配：逐步执行走 web 消息同款链路（handleInbound + complete/error 桥）
+  // + 首启预置内置流水线（垂直 3 + 通用 1；用户删过不复活）
+  try {
+    configureWorkflowRuntime({
+      hasEmployee: (id) => Boolean(agentManager.getAgent(id)),
+      dispatchMessage: ({ agentId, chatId, messageId, content, agentOps }) => {
+        router.handleInbound({
+          id: messageId,
+          chatId,
+          sender: 'user',
+          senderName: '工作流',
+          content,
+          timestamp: new Date().toISOString(),
+          isGroup: false,
+          agentId,
+          agentOps,
+        })
+      },
+      subscribeChatEvents: (chatId, handler) =>
+        eventBus.subscribe({ chatId, types: ['complete', 'error'] }, (event) => {
+          if (event.type === 'complete' && event.turnId) {
+            handler({
+              type: 'complete',
+              fullText: event.fullText,
+              turnId: event.turnId,
+              cancelled: event.cancelled,
+            })
+          } else if (event.type === 'error' && event.turnId) {
+            handler({
+              type: 'error',
+              error: event.error,
+              turnId: event.turnId,
+              errorCode: event.errorCode,
+              stopReason: event.stopReason,
+            })
+          }
+        }),
+      // llm 节点：沿用工作流员工的显式模型；未显式配置才继承全局激活模型。
+      runLlm: (agentId, prompt, context) => {
+        const employee = agentManager.getAgent(agentId)
+        if (!employee) throw new Error(`执行员工「${agentId}」不存在`)
+        return runSingleCompletion(
+          '你是工作流中的一个执行节点。只输出本步骤要求的成果本体，不要寒暄、不要解释过程。',
+          prompt,
+          {
+            agentModel: employee.config.hasExplicitModel ? employee.config.model : undefined,
+            agentId,
+            purpose: 'workflow_llm',
+            agentOps: context
+              ? {
+                  traceId: context.traceId,
+                  spanId: context.spanId,
+                  workflowId: context.workflowId,
+                  workflowRunId: context.workflowRunId,
+                  internal: true,
+                }
+              : undefined,
+          },
+        )
+      },
+      cancelTurn: (chatId, turnId) => agentQueue.cancel(chatId, turnId),
+    })
+    const interruptedRuns = reconcileInterruptedRuns()
+    if (interruptedRuns > 0) {
+      logger.warn({ interruptedRuns }, 'Recovered interrupted workflow runs as failed')
+    }
+    seedBuiltinWorkflows()
+  } catch (err) {
+    logger.warn({ err }, 'Workflow engine init failed (feature degrades silently)')
+  }
+
+  // [XJC-PATCH] T-G1 记忆自动蒸馏：幂等种子日纪要/周蒸馏系统任务（每员工，活跃门控+错峰）
+  ensureDistillTasks({ listAgentIds: () => agentManager.getAgents().map((a) => a.id) })
 
   ensureIngestTask({ hasAgent: (id) => Boolean(agentManager.getAgent(id)) }) // [XJC-PATCH] T-G6 本地文档摄取轮询（src/ingest/）
   ensureChannelDigestTask({ hasAgent: (id) => Boolean(agentManager.getAgent(id)) }) // [XJC-PATCH] G6.2 渠道消息日摘要（23:40，先于 G1 蒸馏）
+
+  // [XJC] 自主进化引擎桥：事件驱动零 token 学习（settings.evolution.enabled 开关门控）
+  // + 启动预热各员工 hint 缓存（重启后首轮对话即有经验提示）
+  try {
+    initEvolutionBridge(eventBus, () => agentManager.getAgents().map((a) => a.id))
+  } catch (err) {
+    logger.warn({ err }, 'Evolution bridge init failed (feature degrades silently)')
+  }
 
   // 16. Startup memory maintenance: log cleanup + snapshot restore
   for (const agentConfig of agentManager.getAgents()) {

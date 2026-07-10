@@ -288,13 +288,15 @@ export const useChatStore = create<ChatStore>((set) => ({
     set((state) => ({
       chats: updateChat(state.chats, chatId, (chat) => ({
         ...(() => {
-          if (!chat.isProcessing || chat.ignoreLateAssistantEvents) {
+          if (chat.ignoreLateAssistantEvents) {
             return {}
           }
 
           // Ignore late deltas that arrive after a completed/error turn.
           // The canonical full reply is already in `messages`, so rendering
-          // trailing stream chunks creates duplicate assistant bubbles.
+          // trailing stream chunks creates duplicate assistant bubbles. Do
+          // not require processing=true here: realtime stream/tool events can
+          // legitimately arrive before the processing status event.
           return {
             streamingText: chat.streamingText + text,
             timelineItems: (() => {
@@ -354,7 +356,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   addToolUse: (chatId, tool) =>
     set((state) => ({
       chats: updateChat(state.chats, chatId, (chat) => {
-        if (!chat.isProcessing || chat.ignoreLateAssistantEvents) {
+        if (chat.ignoreLateAssistantEvents) {
           return {}
         }
         const timelineItems = chat.timelineItems.map((item) =>

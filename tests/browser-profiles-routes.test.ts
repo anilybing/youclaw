@@ -10,6 +10,7 @@ import { createBrowserProfile } from '../src/db/index.ts'
 import { AgentManager } from '../src/agent/manager.ts'
 import { PromptBuilder } from '../src/agent/prompt-builder.ts'
 import { EventBus } from '../src/events/bus.ts'
+import { BrowserManager } from '../src/browser/manager.ts'
 
 const createdAgentIds = new Set<string>()
 const createdProfileIds = new Set<string>()
@@ -67,7 +68,7 @@ describe('browser profile routes', () => {
   test('DELETE /browser-profiles/:id clears agent browserProfile bindings and reloads agents', async () => {
     const manager = await createRealManager()
     const agentsApp = createAgentsRoutes(manager)
-    const browserProfilesApp = createBrowserProfilesRoutes(manager)
+    const browserProfilesApp = createBrowserProfilesRoutes(manager, new BrowserManager())
     const agentId = createAgentId('browser-binding')
     const profileId = createProfileId('browser-profile')
 
@@ -102,7 +103,7 @@ describe('browser profile routes', () => {
   test('DELETE /browser-profiles/:id also clears structured browser.defaultProfile bindings', async () => {
     const manager = await createRealManager()
     const agentsApp = createAgentsRoutes(manager)
-    const browserProfilesApp = createBrowserProfilesRoutes(manager)
+    const browserProfilesApp = createBrowserProfilesRoutes(manager, new BrowserManager())
     const agentId = createAgentId('browser-structured-binding')
     const profileId = createProfileId('browser-profile')
 

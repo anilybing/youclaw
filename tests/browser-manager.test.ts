@@ -20,7 +20,7 @@ describe('browser manager', () => {
     expect(profile.id).toBe('XiaoJuClaw')
     expect(profile.driver).toBe('managed')
     expect(profile.isDefault).toBe(true)
-    expect(profile.userDataDir?.endsWith('/browser-profiles/XiaoJuClaw')).toBe(true)
+    expect(profile.userDataDir).toBe(resolve(getPaths().browserProfiles, 'XiaoJuClaw'))
   })
 
   test('browser routes expose the new profile endpoints', async () => {

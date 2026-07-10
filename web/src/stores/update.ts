@@ -1,5 +1,6 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { create } from 'zustand'
+import type { UpdateCohort, UpdateReleaseChannel } from '@/lib/update-check'
 
 // 'disabled' 仅为与 update-check 的通道类型对齐：离线版 detectUpdate 恒返回
 // 「无更新」，运行期不会以 'disabled' 写入本 store。
@@ -16,11 +17,19 @@ interface UpdateState {
   notes: string
   channel: UpdateChannel
   forceUpdate: boolean
+  releaseId: string
+  releaseChannel: UpdateReleaseChannel
+  cohort: UpdateCohort
+  signatureVerification: string
   setAvailable: (info: {
     version: string
     notes: string
     channel: Exclude<UpdateChannel, ''>
     forceUpdate?: boolean
+    releaseId?: string
+    releaseChannel?: UpdateReleaseChannel
+    cohort?: UpdateCohort
+    signatureVerification?: string
   }) => void
   clear: () => void
 }
@@ -31,7 +40,40 @@ export const useUpdateStore = create<UpdateState>((set) => ({
   notes: '',
   channel: '',
   forceUpdate: false,
-  setAvailable: ({ version, notes, channel, forceUpdate }) =>
-    set({ available: true, version, notes, channel, forceUpdate: !!forceUpdate }),
-  clear: () => set({ available: false, version: '', notes: '', channel: '', forceUpdate: false }),
+  releaseId: '',
+  releaseChannel: 'stable',
+  cohort: { name: '', bucket: 0, identity: '', source: '', partial: false },
+  signatureVerification: 'not-checked',
+  setAvailable: ({
+    version,
+    notes,
+    channel,
+    forceUpdate,
+    releaseId,
+    releaseChannel,
+    cohort,
+    signatureVerification,
+  }) =>
+    set({
+      available: true,
+      version,
+      notes,
+      channel,
+      forceUpdate: !!forceUpdate,
+      releaseId: releaseId || '',
+      releaseChannel: releaseChannel === 'beta' ? 'beta' : 'stable',
+      cohort: cohort || { name: '', bucket: 0, identity: '', source: '', partial: false },
+      signatureVerification: signatureVerification || 'not-checked',
+    }),
+  clear: () => set({
+    available: false,
+    version: '',
+    notes: '',
+    channel: '',
+    forceUpdate: false,
+    releaseId: '',
+    releaseChannel: 'stable',
+    cohort: { name: '', bucket: 0, identity: '', source: '', partial: false },
+    signatureVerification: 'not-checked',
+  }),
 }))

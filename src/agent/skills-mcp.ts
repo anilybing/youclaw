@@ -39,6 +39,13 @@ export interface AgentSkillsState {
   installed: AgentSkillSummary[]
 }
 
+/** 推荐目录里"尚未安装"的可发现技能（离线本地目录，供 agent 按需发现/推荐） */
+export interface DiscoverableSkill {
+  slug: string
+  displayName: string
+  summary: string
+}
+
 export interface SkillsMcpService {
   getAgentSkillsState(agentId: string): Promise<AgentSkillsState> | AgentSkillsState
   /** 将新的 skills 白名单写回 agent.yaml 并热重载所有 agent */
@@ -46,6 +53,8 @@ export interface SkillsMcpService {
   installSkillFromMarketplace(source: MarketplaceInstallSource, slug: string): Promise<void> | void
   /** 第三方技能源是否开放（默认关，只留自有源） */
   isThirdPartySourcesEnabled(): boolean
+  /** 按关键词检索"推荐但尚未安装"的技能目录（离线，供 discover_skills 工具） */
+  discoverRecommendedSkills(query: string, limit: number): Promise<DiscoverableSkill[]> | DiscoverableSkill[]
 }
 
 export interface SkillsMcpOptions {
@@ -158,6 +167,20 @@ function createDefaultService(): SkillsMcpService {
     isThirdPartySourcesEnabled(): boolean {
       return readThirdPartySourcesFlag()
     },
+    discoverRecommendedSkills(query: string, limit: number): DiscoverableSkill[] {
+      const deps = requireRuntimeDeps()
+      const needle = query.trim().toLowerCase()
+      // getRecommended 已过滤掉"本机已安装"的条目，返回的天然是"可新增"的技能
+      const all = deps.registryManager.getRecommended()
+      const matched = needle
+        ? all.filter((s) => `${s.slug} ${s.displayName} ${s.summary}`.toLowerCase().includes(needle))
+        : all
+      return matched.slice(0, Math.max(1, limit)).map((s) => ({
+        slug: s.slug,
+        displayName: s.displayName,
+        summary: s.summary,
+      }))
+    },
   }
 }
 
@@ -175,6 +198,10 @@ const SetSkillEnabledParams = Type.Object({
 const InstallSkillParams = Type.Object({
   slug: Type.String({ description: 'Marketplace slug of the skill to install' }),
   source: Type.Optional(Type.String({ description: 'Marketplace source id. Defaults to "xiaojuclaw" (the first-party skill library). Third-party sources are rejected unless enabled by configuration.' })),
+})
+
+const DiscoverSkillsParams = Type.Object({
+  query: Type.String({ description: 'A capability/need keyword to look up in the recommended skill catalog (e.g. "PDF", "翻译", "股票", "notion", "海报"). Use the core noun of what the user wants.' }),
 })
 
 // ─── 内部工具函数 ──────────────────────────────────────────────────────────
@@ -335,6 +362,34 @@ export function createSkillsMcpServer(context: SkillsToolContext, options?: Skil
         }
       },
     },
+    discover_skills: {
+      handler: async (rawArgs: Record<string, unknown>) => {
+        const logger = getLogger()
+        const query = typeof rawArgs.query === 'string' ? rawArgs.query.trim() : ''
+        try {
+          if (!query) {
+            return textResult('discover_skills 需要提供 query（用户需求的核心能力关键词）', true)
+          }
+          const results = await service.discoverRecommendedSkills(query, 8)
+          if (results.length === 0) {
+            return textResult(JSON.stringify({
+              query,
+              recommended: [],
+              note: '推荐目录里没有匹配的技能。请改用 mcp__skills__list_skills 看本机已装技能能否胜任，或直接用现有工具/技能完成任务。',
+            }, null, 2))
+          }
+          return textResult(JSON.stringify({
+            query,
+            recommended: results,
+            note: '这些是「推荐但本机尚未安装」的技能。若某个正好匹配用户需求：先用一句话向用户说明它的用途并征得同意，再用 mcp__skills__install_skill 安装（自有源可直接装；第三方源需用户在 设置 中开启「第三方技能源」）。若本机已装技能即可胜任，则无需安装。',
+          }, null, 2))
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          logger.error({ error: msg, query, agentId: context.agentId, category: 'skills' }, 'discover_skills failed')
+          return textResult(`检索推荐技能失败：${msg}`, true)
+        }
+      },
+    },
     install_skill: {
       handler: async (rawArgs: Record<string, unknown>) => {
         const logger = getLogger()
@@ -395,7 +450,7 @@ export function createSkillsMcpServer(context: SkillsToolContext, options?: Skil
 // ─── 运行时 ToolDefinition 工厂 ────────────────────────────────────────────
 
 function createJsonSkillsTool<T extends Record<string, unknown>>(
-  name: 'list_skills' | 'set_skill_enabled' | 'install_skill',
+  name: 'list_skills' | 'set_skill_enabled' | 'install_skill' | 'discover_skills',
   description: string,
   parameters: ToolDefinition['parameters'],
   handler: (args: T) => Promise<SkillsToolResult>,
@@ -418,13 +473,14 @@ function createJsonSkillsTool<T extends Record<string, unknown>>(
   }
 }
 
-const SELF_SERVE_FLOW = 'When the user asks for something your current skills cannot handle, first call mcp__skills__list_skills to check locally installed skills, then enable one with mcp__skills__set_skill_enabled (or install one with mcp__skills__install_skill), and immediately continue the user\'s original request yourself. Never tell the user to open the settings page to toggle skills.'
+const SELF_SERVE_FLOW = 'When the user asks for something your current skills cannot handle: (1) call mcp__skills__list_skills to check locally installed skills and enable a fit with mcp__skills__set_skill_enabled; (2) if nothing installed fits, call mcp__skills__discover_skills with the core need keyword to find recommended skills, and if one matches, install it (with the user\'s consent) via mcp__skills__install_skill; then immediately continue the user\'s original request yourself. Never tell the user to open the settings page to toggle skills.'
 
 export function createSkillsTools(context: SkillsToolContext, options?: SkillsMcpOptions): ToolDefinition[] {
   const server = createSkillsMcpServer(context, options)
   const listSkillsHandler = server.instance._registeredTools.list_skills!.handler
   const setSkillEnabledHandler = server.instance._registeredTools.set_skill_enabled!.handler
   const installSkillHandler = server.instance._registeredTools.install_skill!.handler
+  const discoverSkillsHandler = server.instance._registeredTools.discover_skills!.handler
 
   return [
     createJsonSkillsTool(
@@ -432,6 +488,12 @@ export function createSkillsTools(context: SkillsToolContext, options?: SkillsMc
       `List skills for the current agent in two groups: skills already enabled for this agent, and skills installed on this machine but not yet enabled. Supports an optional keyword query. A whitelist of ["*"] means every installed skill is already enabled. ${SELF_SERVE_FLOW}`,
       ListSkillsParams,
       (args) => listSkillsHandler(args),
+    ),
+    createJsonSkillsTool(
+      'discover_skills',
+      `Search the recommended skill catalog for skills that are NOT yet installed on this machine, matching a capability keyword. Use this when the user needs a capability that mcp__skills__list_skills shows no installed skill for, to find something installable. Returns recommended skills (slug/name/summary). Installing them still requires user consent (and third-party sources may need to be enabled in settings). ${SELF_SERVE_FLOW}`,
+      DiscoverSkillsParams,
+      (args) => discoverSkillsHandler(args),
     ),
     createJsonSkillsTool(
       'set_skill_enabled',

@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 // Error codes for frontend to identify specific errors and show corresponding UI
 export enum ErrorCode {
   INSUFFICIENT_CREDITS = 'INSUFFICIENT_CREDITS',
@@ -5,6 +6,8 @@ export enum ErrorCode {
   MODEL_CONNECTION_FAILED = 'MODEL_CONNECTION_FAILED',
   NETWORK_ERROR = 'NETWORK_ERROR',
   RATE_LIMITED = 'RATE_LIMITED',
+  CANCELLED = 'CANCELLED',
+  WORKFLOW_BUDGET_EXCEEDED = 'WORKFLOW_BUDGET_EXCEEDED',
   UNKNOWN = 'UNKNOWN',
 }
 
@@ -19,8 +22,8 @@ export type AgentToolUse = {
 export type AgentEvent =
   | { type: 'stream'; agentId: string; chatId: string; text: string; turnId?: string }
   | { type: 'tool_use'; agentId: string; chatId: string; tool: string; input?: string; turnId?: string }
-  | { type: 'complete'; agentId: string; chatId: string; fullText: string; sessionId: string; turnId?: string; toolUse?: AgentToolUse[]; suppressOutbound?: boolean }
-  | { type: 'error'; agentId: string; chatId: string; error: string; errorCode?: ErrorCode; turnId?: string; toolUse?: AgentToolUse[] }
+  | { type: 'complete'; agentId: string; chatId: string; fullText: string; sessionId: string; turnId?: string; toolUse?: AgentToolUse[]; suppressOutbound?: boolean; cancelled?: boolean }
+  | { type: 'error'; agentId: string; chatId: string; error: string; errorCode?: ErrorCode; stopReason?: string; turnId?: string; toolUse?: AgentToolUse[] }
   | { type: 'processing'; agentId: string; chatId: string; isProcessing: boolean; turnId?: string }
   | { type: 'document_status'; agentId: string; chatId: string; documentId: string; filename: string; status: 'parsing' | 'parsed' | 'failed'; error?: string; turnId?: string }
   // Phase 3: Sub-agent events

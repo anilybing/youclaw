@@ -73,7 +73,7 @@ const CUSTOM_MODEL_PROVIDER_META: Record<CustomModelDTO['provider'], { label: st
   qwen: {
     label: 'Qwen',
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    modelIdExample: 'qwen-max',
+    modelIdExample: 'qwen3-max',
   },
   moonshot: {
     label: 'Moonshot',

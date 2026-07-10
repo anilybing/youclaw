@@ -8,7 +8,16 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getPortableSetting, getTauriInvoke, isTauri, updateCachedBaseUrl, savePreferredPort } from '@/api/transport'
-import { apiFetch } from '@/api/client'
+import {
+  apiFetch,
+  getEvolutionStatus,
+  getSettings,
+  regenerateMcpServerToken,
+  updateSettings,
+  type EvolutionStatusDTO,
+  type McpServerSettingsDTO,
+} from '@/api/client'
+import { getBackendBaseUrl } from '@/api/transport'
 
 // [XJC-PATCH] T-G6 本地文档摄取配置（后端 /api/ingest/config，存 kv_state）
 interface IngestConfigDTO {
@@ -35,6 +44,12 @@ const closeBehaviorOptions: { value: CloseAction; titleKey: 'closeBehaviorAsk' |
   { value: 'quit', titleKey: 'closeBehaviorQuit', descriptionKey: 'closeBehaviorQuitDesc' },
 ]
 
+const DEFAULT_MCP_SERVER_SETTINGS: McpServerSettingsDTO = {
+  enabled: false,
+  allowDangerousTools: false,
+  token: '',
+}
+
 export function GeneralPanel() {
   const { t } = useI18n()
   const theme = useAppPreferencesStore((s) => s.theme)
@@ -50,6 +65,14 @@ export function GeneralPanel() {
   const [ingestConfig, setIngestConfig] = useState<IngestConfigDTO | null>(null)
   const [ingestFolderInput, setIngestFolderInput] = useState('')
   const [ingestSaveFailed, setIngestSaveFailed] = useState(false)
+  // [XJC] 自主进化引擎（进化引擎桥）
+  const [evolution, setEvolution] = useState<EvolutionStatusDTO | null>(null)
+  const [evolutionSaving, setEvolutionSaving] = useState(false)
+  // [XJC] 内置 MCP Server（对接 Cursor）：主开关与危险工具开关默认关，token 由后端生成
+  const [mcpServer, setMcpServer] = useState<McpServerSettingsDTO | null>(null)
+  const [mcpSaving, setMcpSaving] = useState(false)
+  const [mcpBaseUrl, setMcpBaseUrl] = useState('')
+  const [mcpCopied, setMcpCopied] = useState(false)
 
   useEffect(() => {
     if (!isTauri) return
@@ -63,6 +86,109 @@ export function GeneralPanel() {
       .then(setIngestConfig)
       .catch(() => setIngestConfig(null))
   }, [])
+
+  useEffect(() => {
+    getEvolutionStatus()
+      .then(setEvolution)
+      .catch(() => setEvolution(null))
+  }, [])
+
+  useEffect(() => {
+    getSettings()
+      .then((s) => setMcpServer({ ...DEFAULT_MCP_SERVER_SETTINGS, ...s.mcpServer }))
+      .catch(() => setMcpServer(DEFAULT_MCP_SERVER_SETTINGS))
+    getBackendBaseUrl()
+      .then(setMcpBaseUrl)
+      .catch(() => setMcpBaseUrl(''))
+  }, [])
+
+  const handleToggleMcp = useCallback(async () => {
+    if (!mcpServer || mcpSaving) return
+    setMcpSaving(true)
+    try {
+      const enabled = !mcpServer.enabled
+      const updated = await updateSettings({
+        mcpServer: {
+          enabled,
+          allowDangerousTools: enabled ? mcpServer.allowDangerousTools : false,
+        },
+      })
+      setMcpServer(updated.mcpServer)
+    } catch (err) {
+      console.error('Failed to toggle MCP server:', err)
+    } finally {
+      setMcpSaving(false)
+    }
+  }, [mcpServer, mcpSaving])
+
+  const handleToggleDangerousMcp = useCallback(async () => {
+    if (!mcpServer?.enabled || mcpSaving) return
+    setMcpSaving(true)
+    try {
+      const updated = await updateSettings({
+        mcpServer: {
+          enabled: true,
+          allowDangerousTools: !mcpServer.allowDangerousTools,
+        },
+      })
+      setMcpServer(updated.mcpServer)
+    } catch (err) {
+      console.error('Failed to toggle dangerous MCP tools:', err)
+    } finally {
+      setMcpSaving(false)
+    }
+  }, [mcpServer, mcpSaving])
+
+  const handleRegenerateMcpToken = useCallback(async () => {
+    if (mcpSaving) return
+    setMcpSaving(true)
+    try {
+      const { token } = await regenerateMcpServerToken()
+      setMcpServer((prev) => (prev ? { ...prev, token } : prev))
+    } catch (err) {
+      console.error('Failed to regenerate MCP token:', err)
+    } finally {
+      setMcpSaving(false)
+    }
+  }, [mcpSaving])
+
+  const mcpSnippet = mcpServer?.token
+    ? JSON.stringify({
+        mcpServers: {
+          xiaojuclaw: {
+            url: `${mcpBaseUrl || 'http://127.0.0.1:62601'}/mcp`,
+            headers: { Authorization: `Bearer ${mcpServer.token}` },
+          },
+        },
+      }, null, 2)
+    : ''
+
+  const handleCopyMcpSnippet = useCallback(async () => {
+    if (!mcpSnippet) return
+    try {
+      await navigator.clipboard.writeText(mcpSnippet)
+      setMcpCopied(true)
+      setTimeout(() => setMcpCopied(false), 2000)
+    } catch {
+      /* clipboard 不可用时静默 */
+    }
+  }, [mcpSnippet])
+
+  const handleToggleEvolution = useCallback(async () => {
+    if (!evolution || evolutionSaving) return
+    setEvolutionSaving(true)
+    const nextEnabled = !evolution.enabled
+    try {
+      await updateSettings({ evolution: { enabled: nextEnabled } })
+      // 开启后立刻拉一次状态（触发引擎物料化与 python 探测）
+      const fresh = await getEvolutionStatus().catch(() => null)
+      setEvolution(fresh ?? { ...evolution, enabled: nextEnabled })
+    } catch (err) {
+      console.error('Failed to toggle evolution:', err)
+    } finally {
+      setEvolutionSaving(false)
+    }
+  }, [evolution, evolutionSaving])
 
   const saveIngestConfig = useCallback(async (partial: Partial<IngestConfigDTO>) => {
     setIngestSaveFailed(false)
@@ -269,6 +395,143 @@ export function GeneralPanel() {
                 )}
               />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* [XJC] 自主进化引擎：事件驱动零 token 学习 + 行为提示注入（默认关闭） */}
+      {evolution && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
+            {t.settings.evolutionTitle}
+          </h4>
+          <div className="flex items-center justify-between gap-4 rounded-2xl border-2 border-border p-4">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-foreground">{t.settings.evolutionEnable}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{t.settings.evolutionEnableDesc}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{t.settings.evolutionTokenNote}</div>
+              {evolution.enabled && !evolution.pythonOk && (
+                <div className="mt-2 text-xs text-amber-500">{t.settings.evolutionPythonMissing}</div>
+              )}
+              {evolution.enabled && evolution.pythonOk && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {t.settings.evolutionStage}: {evolution.stage ?? 'embryonic'} · {t.settings.evolutionRecords}: {evolution.records}
+                  {evolution.records > 0 && ` (${evolution.successes}✓/${evolution.failures}✗)`}
+                  {evolution.activeRules > 0 && ` · ${t.settings.evolutionRules}: ${evolution.activeRules}`}
+                </div>
+              )}
+              {/* [XJC] 学习成果可见：引擎审批通过的行为规则原文（这些规则每轮注入对话） */}
+              {evolution.enabled && evolution.rulesText && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-primary/80 hover:text-primary select-none">
+                    {t.settings.evolutionViewRules}
+                  </summary>
+                  <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[var(--subtle-border)] bg-muted/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
+                    {evolution.rulesText}
+                  </pre>
+                </details>
+              )}
+            </div>
+            <button
+              role="switch"
+              aria-checked={evolution.enabled}
+              disabled={evolutionSaving}
+              onClick={() => void handleToggleEvolution()}
+              className={cn(
+                'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                evolution.enabled ? 'bg-primary' : 'bg-muted',
+                evolutionSaving && 'opacity-60',
+              )}
+            >
+              <span
+                className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
+                  evolution.enabled ? 'translate-x-6' : 'translate-x-1',
+                )}
+              />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* [XJC] 内置 MCP Server（路线 A）：默认关闭，开启后 Cursor 等 MCP 客户端可凭 token 调用白名单工具 */}
+      {mcpServer && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
+            {t.settings.mcpTitle}
+          </h4>
+          <div className="rounded-2xl border-2 border-border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{t.settings.mcpEnable}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{t.settings.mcpEnableDesc}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{t.settings.mcpToolsNote}</div>
+              </div>
+              <button
+                role="switch"
+                aria-checked={mcpServer.enabled}
+                disabled={mcpSaving}
+                onClick={() => void handleToggleMcp()}
+                className={cn(
+                  'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                  mcpServer.enabled ? 'bg-primary' : 'bg-muted',
+                  mcpSaving && 'opacity-60',
+                )}
+              >
+                <span
+                  className={cn(
+                    'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
+                    mcpServer.enabled ? 'translate-x-6' : 'translate-x-1',
+                  )}
+                />
+              </button>
+            </div>
+            {mcpServer.enabled && (
+              <div className="mt-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-destructive">{t.settings.mcpDangerousEnable}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.settings.mcpDangerousEnableDesc}</div>
+                  </div>
+                  <button
+                    role="switch"
+                    aria-checked={mcpServer.allowDangerousTools}
+                    disabled={mcpSaving}
+                    onClick={() => void handleToggleDangerousMcp()}
+                    className={cn(
+                      'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                      mcpServer.allowDangerousTools ? 'bg-destructive' : 'bg-muted',
+                      mcpSaving && 'opacity-60',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
+                        mcpServer.allowDangerousTools ? 'translate-x-6' : 'translate-x-1',
+                      )}
+                    />
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-destructive">{t.settings.mcpDangerousWarning}</div>
+              </div>
+            )}
+            {mcpServer.enabled && mcpServer.token && (
+              <div className="mt-3 border-t border-[var(--subtle-border)] pt-3">
+                <div className="text-xs text-muted-foreground">{t.settings.mcpSnippetHint}</div>
+                <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--subtle-border)] bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                  {mcpSnippet}
+                </pre>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => void handleCopyMcpSnippet()}>
+                    {mcpCopied ? t.settings.mcpCopied : t.settings.mcpCopy}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={mcpSaving} onClick={() => void handleRegenerateMcpToken()}>
+                    {t.settings.mcpRegenerate}
+                  </Button>
+                </div>
+                <div className="mt-2 text-xs text-amber-500">{t.settings.mcpSecurityNote}</div>
+              </div>
+            )}
           </div>
         </div>
       )}

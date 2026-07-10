@@ -80,6 +80,17 @@ export function updateSettings(partial: Partial<Settings>): Settings {
       asr: { ...current.voice.asr, ...partial.voice?.asr },
       tts: { ...current.voice.tts, ...partial.voice?.tts },
     },
+    // [XJC] 自主进化开关
+    evolution: { ...current.evolution, ...partial.evolution },
+    // [XJC] 内置 MCP Server（对接 Cursor）
+    mcpServer: { ...current.mcpServer, ...partial.mcpServer },
+    // [XJC] 媒体生成配置：image/video 分组浅合并
+    media: {
+      image: { ...current.media.image, ...partial.media?.image },
+      video: { ...current.media.video, ...partial.media?.video },
+    },
+    // [XJC] Update release channel is local, stable-by-default configuration.
+    update: { ...current.update, ...partial.update },
   }
 
   // Validate and write

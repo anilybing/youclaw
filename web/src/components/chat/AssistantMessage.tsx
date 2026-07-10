@@ -1,6 +1,6 @@
 ﻿// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useState } from 'react'
-import { Copy, Check, Coins, RotateCcw } from 'lucide-react'
+import { Copy, Check, Coins, RotateCcw, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Message as AIMessage,
@@ -13,9 +13,11 @@ import { ToolUseBlock } from './ToolUseBlock'
 import { TtsPlayButton } from './TtsPlayButton'
 import { useI18n } from '@/i18n'
 import { useAppRuntimeStore } from '@/stores/app'
+import { notify } from '@/stores/app'
 import { useChatContext } from '@/hooks/chatCtx'
 import { useChatActions } from '@/hooks/useChat'
 import type { Message } from '@/hooks/useChat'
+import { submitMessageFeedback } from '@/api/client'
 
 function InsufficientCreditsMessage() {
   const { t } = useI18n()
@@ -43,9 +45,14 @@ function InsufficientCreditsMessage() {
 // [XJC] T-A3：isLast = 是否最后一条 assistant 消息（由 ChatMessages 计算传入），控制「重新生成」按钮显隐
 export function AssistantMessage({ message, isLast = false }: { message: Message; isLast?: boolean }) {
   const { t } = useI18n()
-  const { agentId, isProcessing } = useChatContext()
+  const { agentId, currentChatAgentId, chatId, isProcessing } = useChatContext()
   const { regenerate } = useChatActions(agentId)
   const [copied, setCopied] = useState(false)
+  // [XJC] 用户反馈信号：null=未评 / 'up' / 'down'（乐观置位，失败回滚）
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null)
+  // [XJC] 点踩后可选填原因（教训会注入该员工后续对话，见 src/feedback/lessons.ts）
+  const [reasonOpen, setReasonOpen] = useState(false)
+  const [reason, setReason] = useState('')
   const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
@@ -55,6 +62,54 @@ export function AssistantMessage({ message, isLast = false }: { message: Message
     await navigator.clipboard.writeText(message.content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleFeedback = async (rating: 'up' | 'down') => {
+    if (!chatId) return
+    const next = feedback === rating ? null : rating // 再次点击取消（本地）
+    setFeedback(next)
+    if (next !== 'down') setReasonOpen(false)
+    if (!next) return // 取消评价不回传（保持简单：只上报有效评价）
+    try {
+      await submitMessageFeedback({
+        chatId,
+        messageId: message.id,
+        agentId: currentChatAgentId ?? agentId ?? undefined,
+        rating: next,
+      })
+      if (next === 'down') {
+        setReasonOpen(true) // 邀请补充原因（可选），教训会影响该员工后续回答
+      } else {
+        notify.success(t.chat.feedbackThanksUp)
+      }
+    } catch {
+      setFeedback(feedback) // 回滚
+      setReasonOpen(false)
+      notify.error(t.chat.feedbackFailed)
+    }
+  }
+
+  const handleSubmitReason = async () => {
+    const trimmed = reason.trim()
+    if (!chatId || !trimmed) {
+      setReasonOpen(false)
+      return
+    }
+    try {
+      // 同键 upsert：保持 rating=down，补写 comment
+      await submitMessageFeedback({
+        chatId,
+        messageId: message.id,
+        agentId: currentChatAgentId ?? agentId ?? undefined,
+        rating: 'down',
+        comment: trimmed,
+      })
+      setReasonOpen(false)
+      setReason('')
+      notify.success(t.chat.feedbackReasonThanks)
+    } catch {
+      notify.error(t.chat.feedbackFailed)
+    }
   }
 
   const isInsufficientCredits = message.errorCode === 'INSUFFICIENT_CREDITS'
@@ -102,8 +157,48 @@ export function AssistantMessage({ message, isLast = false }: { message: Message
                         <RotateCcw className="h-3.5 w-3.5" />
                       </MessageAction>
                     )}
+                    <MessageAction
+                      tooltip={t.chat.feedbackGood}
+                      onClick={() => void handleFeedback('up')}
+                    >
+                      <ThumbsUp className={`h-3.5 w-3.5 ${feedback === 'up' ? 'text-green-500 fill-green-500/20' : ''}`} />
+                    </MessageAction>
+                    <MessageAction
+                      tooltip={t.chat.feedbackBad}
+                      onClick={() => void handleFeedback('down')}
+                    >
+                      <ThumbsDown className={`h-3.5 w-3.5 ${feedback === 'down' ? 'text-red-500 fill-red-500/20' : ''}`} />
+                    </MessageAction>
                     <TtsPlayButton text={message.content} />
                   </MessageActions>
+                  {reasonOpen && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmitReason(); if (e.key === 'Escape') setReasonOpen(false) }}
+                        placeholder={t.chat.feedbackReasonPlaceholder}
+                        maxLength={500}
+                        autoFocus
+                        className="flex-1 max-w-md rounded-lg border border-[var(--subtle-border)] bg-background px-2.5 py-1.5 text-xs outline-none focus:border-[var(--ring)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleSubmitReason()}
+                        className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-xs text-primary-foreground hover:opacity-90"
+                      >
+                        {t.chat.feedbackReasonSubmit}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReasonOpen(false)}
+                        className="shrink-0 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        {t.chat.feedbackReasonSkip}
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </div>

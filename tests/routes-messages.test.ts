@@ -86,6 +86,29 @@ describe('messages routes', () => {
     expect(handleInbound.mock.calls[0]?.[0]?.id).toBe('client-msg-1')
   })
 
+  test('POST /chats/:chatId/abort forwards optional turnId and preserves count response', async () => {
+    const cancel = mock(() => ({ queued: 2, running: 1 }))
+    const app = createMessagesRoutes(
+      { getAgent: () => ({ id: 'agent-1' }) } as any,
+      { cancel } as any,
+      { handleInbound: mock(() => Promise.resolve()) } as any,
+    )
+
+    const res = await app.request('/chats/chat-1/abort', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ turnId: 'turn-1' }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ok: true,
+      aborted: true,
+      queued: 2,
+      running: 1,
+    })
+    expect(cancel).toHaveBeenCalledWith('chat-1', 'turn-1')
+  })
+
   test('POST /agents/:id/message rejects switching agent for an existing chat', async () => {
     upsertChat('web:chat-1', 'agent-1', 'Existing Chat')
     const db = getDatabase()

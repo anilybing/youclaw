@@ -121,21 +121,6 @@
   },
   {
     "category": "ai-intelligence",
-    "description": "A self-evolution engine for AI agents. Analyzes runtime history to identify improvements and applies protocol-constrained evolution.",
-    "description_zh": "AI智能体自进化引擎，分析运行时历史识别改进并应用协议约束的进化。",
-    "downloads": 25743,
-    "homepage": "https://clawhub.ai/autogame-17/evolver",
-    "installs": 1462,
-    "name": "Evolver",
-    "ownerName": "autogame-17",
-    "score": 9433.95564781956,
-    "slug": "evolver",
-    "stars": 58,
-    "updated_at": 1774507996836,
-    "version": "1.31.0"
-  },
-  {
-    "category": "ai-intelligence",
     "description": "Gemini CLI for one-shot Q&A, summaries, and generation.",
     "description_zh": "Gemini CLI，支持一次性问答、摘要与生成。",
     "downloads": 23169,

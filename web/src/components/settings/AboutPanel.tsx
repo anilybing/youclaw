@@ -3,11 +3,23 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { isTauri, openExternal } from "@/api/transport"
+import { getSettings, updateSettings } from "@/api/client"
 import { useI18n } from "@/i18n"
 import { Globe, Cog } from "lucide-react"
 import appConfig from "../../../../app.config.ts"
 import { useUpdateStore } from "@/stores/update"
-import { getUpdateChannel } from "@/lib/update-check"
+import { useAppRuntimeStore } from "@/stores/app-runtime"
+import {
+  applyInstallerUpdate,
+  applyPortableUpdate,
+  detectUpdate,
+  getUpdateChannel,
+  getUpdateRuntimeDiagnostics,
+  getUpdateStartupStatus,
+  type UpdateReleaseChannel,
+  type UpdateRuntimeDiagnostics,
+  type UpdateStartupStatus,
+} from "@/lib/update-check"
 
 type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error"
 
@@ -18,27 +30,22 @@ interface UpdateState {
   newVersion?: string
 }
 
-interface PortableUpdateCheck {
-  available: boolean
-  version: string
-  notes: string
-  force_update: boolean
-  main_needs_update: boolean
-  server_needs_update: boolean
-  total_bytes: number
-}
-
 export function AboutPanel() {
   const { t } = useI18n()
+  const cloudEnabled = useAppRuntimeStore((state) => state.cloudEnabled)
   const [version, setVersion] = useState("")
   // "portable" = 免安装/U盘版，走双 exe 就地替换；"installer" = 安装版，走 Tauri updater；
-  // "disabled" = 离线版，编译期禁用更新，整个更新区块不渲染。
+  // "disabled" = 离线版，编译期禁用联网更新；诊断信息仍可查看。
   const [channel, setChannel] = useState<"portable" | "installer" | "disabled" | "">("")
   const [update, setUpdate] = useState<UpdateState>({
     status: "idle",
     message: "",
     progress: 0,
   })
+  const [releaseChannel, setReleaseChannel] = useState<UpdateReleaseChannel>("stable")
+  const [savingChannel, setSavingChannel] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<UpdateRuntimeDiagnostics | null>(null)
+  const [startupStatus, setStartupStatus] = useState<UpdateStartupStatus | null>(null)
   const setUpdateAvailable = useUpdateStore((s) => s.setAvailable)
   const clearUpdate = useUpdateStore((s) => s.clear)
   const storeAvailable = useUpdateStore((s) => s.available)
@@ -53,12 +60,17 @@ export function AboutPanel() {
       invoke<string>("get_version").then((v) => setVersion("v" + v))
     })
     void getUpdateChannel().then(setChannel)
+    void getSettings()
+      .then((settings) => setReleaseChannel(settings.update?.channel === "beta" ? "beta" : "stable"))
+      .catch(() => {})
+    void getUpdateRuntimeDiagnostics().then(setDiagnostics).catch(() => {})
+    void getUpdateStartupStatus().then(setStartupStatus).catch(() => {})
   }, [])
 
-  // 从启动检测的角标/toast 点进来时，若已知便携版有更新则直接预置「立即更新」。
+  // 从启动检测的角标/toast 点进来时直接预置「立即更新」。
   useEffect(() => {
     if (!isTauri) return
-    if (storeAvailable && storeChannel === "portable" && storeVersion) {
+    if (storeAvailable && storeChannel && storeVersion) {
       setUpdate({
         status: "available",
         message: storeNotes || `v${storeVersion}`,
@@ -70,53 +82,27 @@ export function AboutPanel() {
   }, [])
 
   const handleCheck = async () => {
-    if (!isTauri) return
-    if (channel === "portable") {
-      await handlePortableCheck()
-      return
-    }
+    if (!isTauri || !cloudEnabled || channel === "disabled") return
     setUpdate({ status: "checking", message: t.settings.checkingUpdates, progress: 0 })
 
     try {
-      const { check } = await import("@tauri-apps/plugin-updater")
-      const update = await check()
-
-      if (update) {
+      const result = await detectUpdate(cloudEnabled, false)
+      if (result.available) {
         setUpdate({
           status: "available",
-          message: `${t.settings.downloading} v${update.version}...`,
+          message: result.notes || `v${result.version}`,
           progress: 0,
-          newVersion: update.version,
+          newVersion: result.version,
         })
-        setUpdateAvailable({ version: update.version, notes: update.body ?? "", channel: "installer" })
-
-        let downloaded = 0
-        let contentLength = 0
-
-        await update.downloadAndInstall((event) => {
-          switch (event.event) {
-            case "Started":
-              contentLength = event.data.contentLength ?? 0
-              break
-            case "Progress": {
-              downloaded += event.data.chunkLength
-              const pct = contentLength > 0 ? Math.round((downloaded / contentLength) * 100) : 0
-              setUpdate((prev) => ({
-                ...prev,
-                status: "downloading",
-                message: `${t.settings.downloading}... ${pct}%`,
-                progress: pct,
-              }))
-              break
-            }
-            case "Finished":
-              setUpdate({
-                status: "ready",
-                message: t.settings.readyToInstall,
-                progress: 100,
-              })
-              break
-          }
+        setUpdateAvailable({
+          version: result.version,
+          notes: result.notes,
+          channel: result.channel,
+          forceUpdate: result.forceUpdate,
+          releaseId: result.releaseId,
+          releaseChannel: result.releaseChannel,
+          cohort: result.cohort,
+          signatureVerification: result.signatureVerification,
         })
       } else {
         clearUpdate()
@@ -131,26 +117,47 @@ export function AboutPanel() {
         message: `${t.settings.updateError}: ${err instanceof Error ? err.message : String(err)}`,
         progress: 0,
       })
+    } finally {
+      void getUpdateRuntimeDiagnostics().then(setDiagnostics).catch(() => {})
     }
   }
 
-  const handlePortableCheck = async () => {
-    setUpdate({ status: "checking", message: t.settings.checkingUpdates, progress: 0 })
+  const handleApply = async () => {
+    setUpdate((prev) => ({
+      ...prev,
+      status: "downloading",
+      message: `${t.settings.downloading}... 0%`,
+      progress: 0,
+    }))
     try {
-      const { invoke } = await import("@tauri-apps/api/core")
-      const info = await invoke<PortableUpdateCheck>("portable_update_check")
-      if (info && info.available) {
-        setUpdate({
-          status: "available",
-          message: info.notes ? info.notes : `v${info.version}`,
-          progress: 0,
-          newVersion: info.version,
-        })
-        setUpdateAvailable({ version: info.version, notes: info.notes || "", channel: "portable", forceUpdate: info.force_update })
+      const onProgress = (event: { phase: string; percent: number }) => {
+        if (event.phase === "applying") {
+          setUpdate((prev) => ({
+            ...prev,
+            status: "ready",
+            message: t.settings.updatingRestart,
+            progress: 100,
+          }))
+        } else {
+          setUpdate((prev) => ({
+            ...prev,
+            status: "downloading",
+            message: `${t.settings.downloading}... ${event.percent}%`,
+            progress: event.percent,
+          }))
+        }
+      }
+      if (channel === "portable") {
+        // Success spawns the external swap process and exits; normally does not return.
+        await applyPortableUpdate(onProgress)
       } else {
-        clearUpdate()
-        setUpdate({ status: "up-to-date", message: t.settings.upToDate, progress: 0 })
-        setTimeout(() => setUpdate({ status: "idle", message: "", progress: 0 }), 3000)
+        await applyInstallerUpdate(onProgress)
+        setUpdate((prev) => ({
+          ...prev,
+          status: "ready",
+          message: t.settings.readyToInstall,
+          progress: 100,
+        }))
       }
     } catch (err) {
       setUpdate({
@@ -158,33 +165,26 @@ export function AboutPanel() {
         message: `${t.settings.updateError}: ${err instanceof Error ? err.message : String(err)}`,
         progress: 0,
       })
+    } finally {
+      void getUpdateRuntimeDiagnostics().then(setDiagnostics).catch(() => {})
     }
   }
 
-  const handlePortableApply = async () => {
-    let unlisten: (() => void) | undefined
-    setUpdate((prev) => ({ ...prev, status: "downloading", message: `${t.settings.downloading}... 0%`, progress: 0 }))
+  const handleReleaseChannelChange = async (next: UpdateReleaseChannel) => {
+    if (next === releaseChannel) return
+    const previous = releaseChannel
+    setReleaseChannel(next)
+    setSavingChannel(true)
     try {
-      const { invoke } = await import("@tauri-apps/api/core")
-      const { listen } = await import("@tauri-apps/api/event")
-      unlisten = await listen<{ phase: string; percent: number }>("portable-update-progress", (event) => {
-        const { phase, percent } = event.payload
-        if (phase === "applying") {
-          setUpdate((prev) => ({ ...prev, status: "ready", message: t.settings.updatingRestart, progress: 100 }))
-        } else {
-          setUpdate((prev) => ({ ...prev, status: "downloading", message: `${t.settings.downloading}... ${percent}%`, progress: percent }))
-        }
-      })
-      // 成功后 Rust 侧会关闭本进程并由脚本重启，本调用通常不会正常返回。
-      await invoke("portable_update_apply")
-    } catch (err) {
-      setUpdate({
-        status: "error",
-        message: `${t.settings.updateError}: ${err instanceof Error ? err.message : String(err)}`,
-        progress: 0,
-      })
+      await updateSettings({ update: { channel: next } })
+      clearUpdate()
+      setUpdate({ status: "idle", message: "", progress: 0 })
+      const latest = await getUpdateRuntimeDiagnostics()
+      setDiagnostics(latest)
+    } catch {
+      setReleaseChannel(previous)
     } finally {
-      if (unlisten) unlisten()
+      setSavingChannel(false)
     }
   }
 
@@ -200,15 +200,14 @@ export function AboutPanel() {
 
   const isPortable = channel === "portable"
   const isChecking = update.status === "checking"
-  // 便携版：available 时显示「立即更新」按钮（不自动下载）；ready 表示正在应用+重启。
-  const portableAvailable = isPortable && update.status === "available"
+  const updateAvailable = update.status === "available"
   const showInstall = !isPortable && update.status === "ready"
   const busy = update.status === "checking" || update.status === "downloading" || (isPortable && update.status === "ready")
-  const showCheckBtn = !busy && !portableAvailable && !showInstall
+  const showCheckBtn = !busy && !updateAvailable && !showInstall
   const showProgress =
     update.status === "downloading" ||
     (isPortable && update.status === "ready") ||
-    (!isPortable && update.status === "available")
+    (!isPortable && update.status === "ready")
 
   return (
     <div className="flex flex-col items-center py-12 space-y-8">
@@ -228,35 +227,76 @@ export function AboutPanel() {
         </p>
       </div>
 
-      {/* Update feature（离线版通道为 "disabled"：整个更新区块不渲染，只显示版本号） */}
-      {isTauri && channel !== "disabled" && (
-        <div className="w-full max-w-xs">
-          {showCheckBtn && (
-            <Button
-              className="w-full rounded-xl"
-              onClick={handleCheck}
-              disabled={isChecking || !channel}
+      {isTauri && (
+        <div className="w-full max-w-md space-y-4">
+          {startupStatus?.previousFailure && (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm">
+              <p className="font-medium text-destructive">{t.settings.previousUpdateFailed}</p>
+              <p className="mt-1 text-muted-foreground">{t.settings.previousUpdateFailedDesc}</p>
+            </div>
+          )}
+
+          <div className="rounded-xl border px-4 py-3 space-y-2">
+            <label className="text-sm font-medium" htmlFor="update-release-channel">
+              {t.settings.updateChannel}
+            </label>
+            <select
+              id="update-release-channel"
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={releaseChannel}
+              disabled={savingChannel || !cloudEnabled || channel === "disabled"}
+              onChange={(event) => void handleReleaseChannelChange(event.target.value as UpdateReleaseChannel)}
             >
-              {t.settings.checkForUpdates}
-            </Button>
+              <option value="stable">{t.settings.updateChannelStable}</option>
+              <option value="beta">{t.settings.updateChannelBeta}</option>
+            </select>
+            <p className="text-xs text-muted-foreground">{t.settings.updateChannelHint}</p>
+          </div>
+
+          {cloudEnabled && channel !== "disabled" ? (
+            <div>
+              {showCheckBtn && (
+                <Button
+                  className="w-full rounded-xl"
+                  onClick={handleCheck}
+                  disabled={isChecking || !channel}
+                >
+                  {t.settings.checkForUpdates}
+                </Button>
+              )}
+              {updateAvailable && (
+                <Button className="w-full rounded-xl" onClick={handleApply}>
+                  {t.settings.updateNow}
+                  {update.newVersion ? ` · v${update.newVersion}` : ""}
+                </Button>
+              )}
+              {showInstall && (
+                <Button className="w-full rounded-xl" onClick={handleRelaunch}>
+                  {t.settings.restartAndUpdate}
+                </Button>
+              )}
+              {showProgress && <Progress className="mt-3" value={update.progress} />}
+              <p className="mt-3 text-sm text-muted-foreground min-h-[1.2em] text-center">
+                {update.message}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">{t.settings.updateDisabledHint}</p>
           )}
-          {portableAvailable && (
-            <Button className="w-full rounded-xl" onClick={handlePortableApply}>
-              {t.settings.updateNow}
-              {update.newVersion ? ` · v${update.newVersion}` : ""}
-            </Button>
+
+          {diagnostics && (
+            <div className="rounded-xl border px-4 py-3 text-xs space-y-1">
+              <p className="text-sm font-medium mb-2">{t.settings.updateDiagnostics}</p>
+              <p>{t.settings.updateDiagnosticType}: {diagnostics.updateType}</p>
+              <p>{t.settings.updateDiagnosticChannel}: {diagnostics.releaseChannel}</p>
+              <p>{t.settings.updateDiagnosticCommit}: {diagnostics.commit || "—"}</p>
+              <p>{t.settings.updateDiagnosticProvenance}: {diagnostics.provenanceStatus}</p>
+              <p>{t.settings.updateDiagnosticSignature}: {diagnostics.signatureVerification}</p>
+              {diagnostics.signatureKeyId && (
+                <p>{t.settings.updateDiagnosticKey}: {diagnostics.signatureKeyId}</p>
+              )}
+            </div>
           )}
-          {showInstall && (
-            <Button className="w-full rounded-xl" onClick={handleRelaunch}>
-              {t.settings.restartAndUpdate}
-            </Button>
-          )}
-          {showProgress && (
-            <Progress className="mt-3" value={update.progress} />
-          )}
-          <p className="mt-3 text-sm text-muted-foreground min-h-[1.2em] text-center">
-            {update.message}
-          </p>
         </div>
       )}
 

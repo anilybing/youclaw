@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { getAgents, getAgentDocs, updateAgentDoc, createAgent, deleteAgent, getAgentConfig, updateAgentConfig, getSkills, getMarketplaceSkill, installRecommendedSkill, getSettings, ActiveModelProvider } from '../api/client'
+import { getAgents, getAgentDocs, updateAgentDoc, createAgent, deleteAgent, getAgentConfig, updateAgentConfig, getSkills, getMarketplaceSkill, installRecommendedSkill, getSettings, ActiveModelProvider, optimizeAgentPersona } from '../api/client'
 import type { BrowserProfileDTO, Skill, MarketplaceSkill, MarketplaceSkillDetail, CustomModelDTO } from '../api/client'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, FolderOpen, MessageSquare, Plus, Trash2,
   FileText, Save, Pencil, X, ChevronRight,
   Activity, Clock, AlertCircle, Layers, Globe, Puzzle,
-  Store, Loader2,
+  Store, Loader2, Sparkles,
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -159,6 +159,9 @@ export function Agents() {
   // Create Agent form
   const [newName, setNewName] = useState('')
   const [newModel, setNewModel] = useState('default')
+  // [XJC] 人设一键优化：随手写的需求 → 结构化人设 + 自动匹配技能
+  const [newPersona, setNewPersona] = useState('')
+  const [newSkills, setNewSkills] = useState<string[]>([])
   const [isCreating, setIsCreating] = useState(false)
 
   // Expanded document
@@ -309,13 +312,20 @@ export function Agents() {
     if (!newName.trim()) return
     setIsCreating(true)
     try {
-      const result = await createAgent({ name: newName.trim(), model: newModel })
+      const result = await createAgent({
+        name: newName.trim(),
+        model: newModel,
+        ...(newPersona.trim() ? { persona: newPersona.trim() } : {}),
+        ...(newSkills.length ? { skills: newSkills } : {}),
+      })
       loadAgents()
       refreshChatAgents()
       setSelected(result.id)
       setViewMode('detail')
       setNewName('')
       setNewModel('default')
+      setNewPersona('')
+      setNewSkills([])
     } catch {
       // silently ignore
     } finally {
@@ -401,6 +411,10 @@ export function Agents() {
             t={t}
             newName={newName}
             setNewName={setNewName}
+            newPersona={newPersona}
+            setNewPersona={setNewPersona}
+            newSkills={newSkills}
+            setNewSkills={setNewSkills}
             newModel={newModel}
             setNewModel={setNewModel}
             customModels={customModels}
@@ -482,6 +496,10 @@ function CreateAgentForm({
   t,
   newName,
   setNewName,
+  newPersona,
+  setNewPersona,
+  newSkills,
+  setNewSkills,
   newModel,
   setNewModel,
   customModels,
@@ -493,6 +511,10 @@ function CreateAgentForm({
   t: ReturnType<typeof useI18n>['t']
   newName: string
   setNewName: (v: string) => void
+  newPersona: string
+  setNewPersona: (v: string) => void
+  newSkills: string[]
+  setNewSkills: (v: string[]) => void
   newModel: string
   setNewModel: (v: string) => void
   customModels: CustomModelDTO[]
@@ -501,6 +523,27 @@ function CreateAgentForm({
   onCreate: () => void
   onCancel: () => void
 }) {
+  // [XJC] 人设一键优化：把随手写的需求改写成结构化人设 + 自动匹配技能
+  const [isOptimizing, setIsOptimizing] = useState(false)
+  const handleOptimize = async () => {
+    const draft = newPersona.trim()
+    if (!draft || isOptimizing) return
+    setIsOptimizing(true)
+    try {
+      const result = await optimizeAgentPersona(draft)
+      setNewPersona(result.persona)
+      setNewSkills(result.suggestedSkills)
+      if (!newName.trim() && result.suggestedName) setNewName(result.suggestedName)
+      notify.success(t.agents.personaOptimized, {
+        description: result.suggestedSkills.length ? `${t.agents.personaMatchedSkills}: ${result.suggestedSkills.join(', ')}` : undefined,
+      })
+    } catch (err) {
+      notify.error(t.agents.personaOptimizeFailed, { description: err instanceof Error ? err.message : undefined })
+    } finally {
+      setIsOptimizing(false)
+    }
+  }
+
   return (
     <div className="p-6 max-w-lg">
       <h1 className="text-lg font-semibold mb-6">{t.agents.createTitle}</h1>
@@ -515,6 +558,50 @@ function CreateAgentForm({
             placeholder={t.agents.agentNamePlaceholder}
             className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-sm font-medium">{t.agents.personaLabel}</label>
+            <button
+              type="button"
+              onClick={() => void handleOptimize()}
+              disabled={isOptimizing || !newPersona.trim()}
+              className="flex items-center gap-1 rounded-lg border border-primary/40 px-2 py-1 text-xs text-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+            >
+              {isOptimizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+              {isOptimizing ? t.agents.personaOptimizing : t.agents.personaOptimize}
+            </button>
+          </div>
+          <textarea
+            value={newPersona}
+            onChange={(e) => setNewPersona(e.target.value)}
+            placeholder={t.agents.personaPlaceholder}
+            rows={5}
+            maxLength={2000}
+            className="w-full px-3 py-2 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">{t.agents.personaHint}</p>
+          {newSkills.length > 0 && (
+            <div className="mt-2">
+              <p className="mb-1 text-xs text-muted-foreground">{t.agents.personaMatchedSkills}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {newSkills.map((skill) => (
+                  <span key={skill} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                    {skill}
+                    <button
+                      type="button"
+                      onClick={() => setNewSkills(newSkills.filter((s) => s !== skill))}
+                      className="hover:text-destructive"
+                      aria-label={`remove ${skill}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

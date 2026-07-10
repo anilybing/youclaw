@@ -1,6 +1,6 @@
 import { type ChildProcess } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { getLogger } from '../logger/index.ts'
 import { getPaths } from '../config/index.ts'
@@ -88,7 +88,11 @@ export class BrowserManager {
   private readonly managedProcesses = new Map<string, ChildProcess>()
   private readonly startPromises = new Map<string, Promise<BrowserProfileRuntime>>()
 
-  constructor(private readonly agentManager?: AgentManager) {}
+  constructor(private agentManager?: AgentManager) {}
+
+  attachAgentManager(agentManager: AgentManager): void {
+    this.agentManager = agentManager
+  }
 
   ensureDefaultProfile(): BrowserProfile {
     return ensureDefaultManagedProfile()
@@ -791,7 +795,28 @@ export class BrowserManager {
 
   private isManagedDataDir(userDataDir: string): boolean {
     const managedRoot = resolve(getPaths().browserProfiles)
-    return userDataDir === managedRoot || userDataDir.startsWith(`${managedRoot}/`)
+    const candidate = resolve(userDataDir)
+    const lexicalRelative = relative(managedRoot, candidate)
+    if (
+      !lexicalRelative ||
+      lexicalRelative === '..' ||
+      lexicalRelative.startsWith(`..${sep}`) ||
+      isAbsolute(lexicalRelative)
+    ) {
+      return false
+    }
+
+    try {
+      const realRoot = realpathSync(managedRoot)
+      const realCandidate = realpathSync(candidate)
+      const realRelative = relative(realRoot, realCandidate)
+      return Boolean(realRelative)
+        && realRelative !== '..'
+        && !realRelative.startsWith(`..${sep}`)
+        && !isAbsolute(realRelative)
+    } catch {
+      return false
+    }
   }
 
   private clearAgentBrowserProfileBindings(profileId: string): string[] {

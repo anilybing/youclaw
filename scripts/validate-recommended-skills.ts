@@ -16,6 +16,11 @@ import { resolve } from 'node:path'
 
 const TENCENT_DOWNLOAD_URL = 'https://lightmake.site/api/v1/download'
 const VALID_CATEGORIES = new Set(recommendedCategoryOrder)
+// USB/production builds must be deterministic and offline-capable. Recommended
+// marketplace entries are optional runtime downloads, so remote availability is
+// checked only in the explicit maintenance/CI mode:
+//   bun run validate:recommended-skills:remote
+const VALIDATE_REMOTE_DOWNLOADS = process.argv.includes('--remote')
 
 async function fetchWithRetry(url: string): Promise<Response> {
   for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -37,7 +42,7 @@ async function fetchWithRetry(url: string): Promise<Response> {
   throw new Error(`Unexpected retry loop for ${url}`)
 }
 
-async function validateEntry(entry: RecommendedEntry) {
+function validateEntryStructure(entry: RecommendedEntry) {
   if (!VALID_CATEGORIES.has(entry.category)) {
     throw new Error(`Unsupported category "${entry.category}"`)
   }
@@ -54,7 +59,9 @@ async function validateEntry(entry: RecommendedEntry) {
   if (!sourceEntry) {
     throw new Error('Recommended slug is missing from recommendation sources')
   }
+}
 
+async function validateRemoteDownload(entry: RecommendedEntry) {
   const downloadResponse = await fetchWithRetry(`${TENCENT_DOWNLOAD_URL}?slug=${encodeURIComponent(entry.slug)}`)
   if (!downloadResponse.ok) {
     throw new Error(`Download request failed: HTTP ${downloadResponse.status}`)
@@ -108,7 +115,10 @@ async function main() {
     seen.add(entry.slug)
 
     try {
-      await validateEntry(entry)
+      validateEntryStructure(entry)
+      if (VALIDATE_REMOTE_DOWNLOADS) {
+        await validateRemoteDownload(entry)
+      }
       console.log(`OK   ${entry.slug}`)
     } catch (error) {
       hasFailure = true
@@ -122,7 +132,12 @@ async function main() {
     return
   }
 
-  console.log(`Validated ${entries.length} recommended skills`)
+  if (VALIDATE_REMOTE_DOWNLOADS) {
+    console.log(`Validated ${entries.length} recommended skills (catalog + remote archives)`)
+  } else {
+    console.log(`Validated ${entries.length} recommended skills (local catalog only)`)
+    console.log('Remote archive checks skipped; run validate:recommended-skills:remote for maintenance/CI.')
+  }
 }
 
 await main()

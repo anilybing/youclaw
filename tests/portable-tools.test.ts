@@ -128,6 +128,26 @@ describe('目录解析与 PATH 注入', () => {
     mkdirSync(platformBun, { recursive: true })
     expect(resolvePortableToolDir('bun', toolsDir)).toBe(platformBun)
   })
+
+  test('新版 Runtime/tools 优先，旧 Data/tools 作为只读回退', () => {
+    const runtimeTools = makeToolsDir()
+    const legacyTools = makeToolsDir()
+    const runtimeUv = resolve(runtimeTools, getPlatformKey(), 'uv')
+    const legacyBun = resolve(legacyTools, getPlatformKey(), 'bun')
+    mkdirSync(runtimeUv, { recursive: true })
+    mkdirSync(legacyBun, { recursive: true })
+
+    expect(resolvePortableToolDir('uv', runtimeTools, legacyTools)).toBe(runtimeUv)
+    expect(resolvePortableToolDir('bun', runtimeTools, legacyTools)).toBe(legacyBun)
+
+    const env: Record<string, string | undefined> = { PATH: '' }
+    const injected = ensurePortableToolsInPath({
+      toolsDirOverride: runtimeTools,
+      legacyToolsDirOverride: legacyTools,
+      env,
+    })
+    expect(injected).toEqual([runtimeUv, legacyBun])
+  })
 })
 
 describe('manifest 读取与版本校验', () => {
@@ -161,6 +181,15 @@ describe('manifest 读取与版本校验', () => {
     expect(parsed?.tools[0]?.name).toBe('bun')
     expect(parsed?.tools[0]?.sha256).toBe('abc123')
     expect(parsed?.tools[1]?.version).toBe('2.53.0.2')
+  })
+
+  test('首选 Runtime manifest 缺失时读取旧 Data/tools manifest', () => {
+    const runtimeTools = makeToolsDir()
+    const legacyTools = makeToolsDir()
+    const manifest = makeManifest([{ name: 'bun', version: '1.2.15', dir: 'win-x64/bun' }])
+    writeManifest(legacyTools, manifest)
+
+    expect(readToolsManifest(runtimeTools, legacyTools)).toEqual(manifest)
   })
 
   test('低版本产生告警条目，达标版本不告警', () => {

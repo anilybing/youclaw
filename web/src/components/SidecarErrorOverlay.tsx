@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { AlertTriangle, Loader2, Mail, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
-import { isTauri } from '@/api/transport'
+import { isTauri, waitForBackendReady } from '@/api/transport'
 import { WindowsTitleBar } from '@/components/layout/WindowsTitleBar'
 import logoUrl from '@/assets/logo.png'
 import appConfig from '../../../app.config.ts'
@@ -36,8 +36,13 @@ export function SidecarErrorOverlay({ status, onRecovered }: SidecarErrorOverlay
     try {
       const { invoke } = await import('@tauri-apps/api/core')
       await invoke('restart_sidecar')
-      // 成功后 Rust 会 emit sidecar-event ready，由 App.tsx 清除覆盖层；此处兜底再清一次。
-      onRecovered()
+      // Rust command success already implies its health window passed; query + HTTP
+      // probing is a second guard against stale IPC state before hiding the overlay.
+      if (await waitForBackendReady()) {
+        onRecovered()
+      } else {
+        setFailed(true)
+      }
     } catch {
       setFailed(true)
     } finally {

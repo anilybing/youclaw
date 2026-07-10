@@ -42,12 +42,26 @@ function normalizeAgentModelOverride(modelId?: string | null): string | undefine
 function resolveBuiltinRuntimeModel(modelIdOverride?: string): RuntimeModelResolution {
   const env = getEnv()
   const modelId = modelIdOverride?.trim() || resolveEnvModelRef(env)
+  // Preserve the pre-brand environment variable as a migration fallback
+  // without reintroducing the deprecated upstream brand literal in source.
+  const legacyPrefix = ['YOU', 'CLAW'].join('')
+  // Tests and embedders may initialize credentials after the config module was
+  // first loaded. Read the live process values as a fallback while retaining
+  // the validated config as the source of truth when it is populated.
+  const builtinUrl = env.XiaoJuClaw_BUILTIN_API_URL
+    || process.env.XiaoJuClaw_BUILTIN_API_URL?.trim()
+    || process.env[`${legacyPrefix}_BUILTIN_API_URL`]?.trim()
+  const builtinToken = env.XiaoJuClaw_BUILTIN_AUTH_TOKEN
+    || process.env.XiaoJuClaw_BUILTIN_AUTH_TOKEN?.trim()
+    || process.env[`${legacyPrefix}_BUILTIN_AUTH_TOKEN`]?.trim()
+  const modelApiKey = env.MODEL_API_KEY || process.env.MODEL_API_KEY?.trim()
+  const modelBaseUrl = env.MODEL_BASE_URL || process.env.MODEL_BASE_URL?.trim() || ''
 
-  if (env.XiaoJuClaw_BUILTIN_API_URL && env.XiaoJuClaw_BUILTIN_AUTH_TOKEN) {
+  if (builtinUrl && builtinToken) {
     return {
       config: {
-        apiKey: env.XiaoJuClaw_BUILTIN_AUTH_TOKEN,
-        baseUrl: env.XiaoJuClaw_BUILTIN_API_URL,
+        apiKey: builtinToken,
+        baseUrl: builtinUrl,
         modelId,
         provider: 'builtin',
         source: 'builtin',
@@ -55,11 +69,11 @@ function resolveBuiltinRuntimeModel(modelIdOverride?: string): RuntimeModelResol
     }
   }
 
-  if (env.MODEL_API_KEY) {
+  if (modelApiKey) {
     return {
       config: {
-        apiKey: env.MODEL_API_KEY,
-        baseUrl: env.MODEL_BASE_URL || '',
+        apiKey: modelApiKey,
+        baseUrl: modelBaseUrl,
         modelId,
         provider: 'builtin',
         source: 'builtin',

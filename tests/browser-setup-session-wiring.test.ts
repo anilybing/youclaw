@@ -22,6 +22,7 @@ describe('browser setup session wiring', () => {
   test('client and browser profile page use the setup session drawer flow', () => {
     const client = read('web/src/api/client.ts')
     const page = read('web/src/pages/BrowserProfiles.tsx')
+    const drawer = read('web/src/components/ui/drawer.tsx')
 
     expect(client).toContain('export async function createBrowserSetupSession')
     expect(client).toContain('export async function getBrowserSetupSessionMainBridge')
@@ -29,6 +30,9 @@ describe('browser setup session wiring', () => {
     expect(page).toContain('BrowserProfileSetupDrawer')
     expect(page).toContain("createBrowserSetupSession({ driver: 'extension-relay' })")
     expect(page).toContain('finalizeBrowserSetupSession(setupSession.id')
-    expect(page).toContain('right-0 top-0 h-full')
+    expect(page).toContain('direction="right"')
+    expect(page).toContain('<DrawerContent className="p-0">')
+    expect(drawer).toContain('data-[vaul-drawer-direction=right]:right-0')
+    expect(drawer).toContain('data-[vaul-drawer-direction=right]:h-full')
   })
 })

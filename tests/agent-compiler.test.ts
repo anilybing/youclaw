@@ -153,6 +153,29 @@ describe('AgentCompiler', () => {
     expect(() => compiler.resolve(agents, 'parent')).toThrow()
   })
 
+  test('rejects agent refs that can escape the agents directory', () => {
+    expect(() => compiler.resolve({
+      unsafe: {
+        ref: '../outside-agent',
+        description: 'Unsafe reference',
+      },
+    }, 'parent')).toThrow('Invalid agent reference')
+  })
+
+  test('rejects oversized referenced agent configs', () => {
+    const targetId = createAgentId('oversized')
+    createAgentOnDisk(targetId, {
+      padding: 'x'.repeat(300 * 1024),
+    })
+
+    expect(() => compiler.resolve({
+      oversized: {
+        ref: targetId,
+        description: 'Oversized reference',
+      },
+    }, 'parent')).toThrow('safety limit')
+  })
+
   test('circular reference detection', () => {
     // create A -> B reference
     const agentA = createAgentId('cycle-a')

@@ -159,10 +159,13 @@ export function useChatActions(selectedAgentId: string) {
     const store = useChatStore.getState()
     const chatId = store.activeChatId
     if (!chatId) return
+    const turnId = [...(store.chats[chatId]?.messages ?? [])]
+      .reverse()
+      .find((message) => message.role === 'user')?.id
 
     // Keep the realtime socket connected so the backend can deliver the final
     // partial assistant reply and processing=false after abort.
-    abortChat(chatId).catch(() => {})
+    abortChat(chatId, turnId).catch(() => {})
   }, [])
 
   const setShowInsufficientCredits = useCallback((show: boolean) => {

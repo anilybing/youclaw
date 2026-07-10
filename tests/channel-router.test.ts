@@ -1,9 +1,11 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import { cleanTables } from './setup.ts'
-import { getChats, getMessages } from '../src/db/index.ts'
+import { getChats, getMessages, updateChatFields } from '../src/db/index.ts'
 import { EventBus } from '../src/events/bus.ts'
 import { MessageRouter } from '../src/channel/router.ts'
 import type { InboundMessage, Channel } from '../src/channel/types.ts'
+import { QueueCancellationError } from '../src/agent/queue.ts'
+import { ErrorCode } from '../src/events/types.ts'
 
 function expectTimestampedPrompt(value: unknown, expectedMessage: string) {
   expect(value).toEqual(expect.stringMatching(
@@ -155,6 +157,108 @@ describe('MessageRouter.handleInbound', () => {
     expect(messages.length).toBe(2)
     expect(messages.some((message) => message.content === '/pdf /agent-browser summarize report')).toBe(true)
     expect(messages.some((message) => message.content === 'router reply')).toBe(true)
+  })
+
+  test('internal workflow turns never enter durable memory extraction', async () => {
+    const enqueue = mock(() => Promise.resolve('internal result'))
+    const appendDailyLog = mock(() => {})
+    const rememberTurn = mock(() => Promise.resolve([]))
+    const router = new MessageRouter(
+      { resolveAgent: () => createManagedAgent() } as any,
+      { enqueue } as any,
+      new EventBus(),
+      { appendDailyLog, rememberTurn } as any,
+    )
+
+    await router.handleInbound(createMessage({
+      chatId: 'workflow:trace-test:run-1',
+      agentOps: {
+        traceId: 'trace-1',
+        spanId: 'span-1',
+        workflowId: 'trace-test',
+        workflowRunId: 'run-1',
+        internal: true,
+      },
+    }))
+    const afterResult = enqueue.mock.calls[0]?.[3]?.afterResult as (result: string) => Promise<void>
+    await afterResult('internal result')
+    expect(appendDailyLog).not.toHaveBeenCalled()
+    expect(rememberTurn).not.toHaveBeenCalled()
+  })
+
+  test('emits one terminal cancellation event for queued and running turns', async () => {
+    const queuedBus = new EventBus()
+    const queuedTerminalEvents: string[] = []
+    queuedBus.subscribe({ types: ['complete', 'error'] }, (event) => {
+      queuedTerminalEvents.push(event.type)
+    })
+    const queuedRouter = new MessageRouter(
+      { resolveAgent: () => createManagedAgent() } as any,
+      {
+        enqueue: () => Promise.reject(
+          new QueueCancellationError('web:queued-cancel', 'queued-turn', 'queued'),
+        ),
+      } as any,
+      queuedBus,
+    )
+    await queuedRouter.handleInbound(createMessage({
+      id: 'queued-turn',
+      chatId: 'web:queued-cancel',
+    }))
+    expect(queuedTerminalEvents).toEqual(['error'])
+    expect(getMessages('web:queued-cancel', 10).filter((message) => message.is_bot_message === 1))
+      .toEqual([expect.objectContaining({
+        turn_id: 'queued-turn',
+        error_code: ErrorCode.CANCELLED,
+      })])
+
+    const runningBus = new EventBus()
+    const runningTerminalEvents: string[] = []
+    runningBus.subscribe({ types: ['complete', 'error'] }, (event) => {
+      runningTerminalEvents.push(event.type)
+    })
+    const runningRouter = new MessageRouter(
+      { resolveAgent: () => createManagedAgent() } as any,
+      {
+        enqueue: async () => {
+          runningBus.emit({
+            type: 'complete',
+            agentId: 'agent-1',
+            chatId: 'web:running-cancel',
+            fullText: '',
+            sessionId: '',
+            turnId: 'running-turn',
+            cancelled: true,
+          })
+          throw new QueueCancellationError('web:running-cancel', 'running-turn', 'running')
+        },
+      } as any,
+      runningBus,
+    )
+    await runningRouter.handleInbound(createMessage({
+      id: 'running-turn',
+      chatId: 'web:running-cancel',
+    }))
+    expect(runningTerminalEvents).toEqual(['complete'])
+    expect(getMessages('web:running-cancel', 10).filter((message) => message.is_bot_message === 1))
+      .toEqual([expect.objectContaining({
+        turn_id: 'running-turn',
+        error_code: ErrorCode.CANCELLED,
+      })])
+  })
+
+  test('does not overwrite a customized title on later inbound messages', async () => {
+    const router = new MessageRouter(
+      { resolveAgent: () => createManagedAgent() } as any,
+      { enqueue: mock(() => Promise.resolve('ok')) } as any,
+      new EventBus(),
+    )
+
+    await router.handleInbound(createMessage({ id: 'title-1', content: 'Initial title' }))
+    updateChatFields('web:chat-1', { name: 'My custom title' })
+    await router.handleInbound(createMessage({ id: 'title-2', content: 'Later message' }))
+
+    expect(getChats().find((chat) => chat.chat_id === 'web:chat-1')?.name).toBe('My custom title')
   })
 
   test('persists tool use onto the final assistant message during complete events', async () => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import './setup.ts'
 import { getPaths } from '../src/config/index.ts'
 import { ImportManager } from '../src/skills/import-manager.ts'
@@ -24,7 +24,7 @@ function collectFiles(root: string, current = root): Record<string, string> {
   const files: Record<string, string> = {}
   for (const entry of readdirSync(current)) {
     const absolutePath = join(current, entry)
-    const relativePath = absolutePath.slice(root.length + 1)
+    const relativePath = relative(root, absolutePath).replace(/\\/g, '/')
     if (statSync(absolutePath).isDirectory()) {
       Object.assign(files, collectFiles(root, absolutePath))
       continue

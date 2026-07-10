@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -151,6 +152,170 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_document_chunks_document_ordinal ON document_chunks(document_id, ordinal);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_chat_document ON document_chunks(chat_id, document_id);
+
+CREATE TABLE IF NOT EXISTS message_feedback (
+  chat_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  agent_id TEXT,
+  rating TEXT NOT NULL,
+  comment TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (chat_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_feedback_agent_rating ON message_feedback(agent_id, rating);
+
+CREATE TABLE IF NOT EXISTS chat_plans (
+  chat_id TEXT PRIMARY KEY,
+  agent_id TEXT,
+  goal TEXT NOT NULL,
+  steps_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fulfillment_skus (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT,
+  title TEXT NOT NULL,
+  delivery_template TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fulfillment_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku_id TEXT NOT NULL,
+  secret TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'available',
+  order_ref TEXT,
+  delivered_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fulfillment_cards_sku_status ON fulfillment_cards(sku_id, status);
+
+CREATE TABLE IF NOT EXISTS fulfillment_deliveries (
+  order_ref TEXT PRIMARY KEY,
+  sku_id TEXT NOT NULL,
+  card_id INTEGER NOT NULL,
+  delivered_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  agent_id TEXT NOT NULL,
+  steps_json TEXT NOT NULL,
+  inputs_json TEXT NOT NULL DEFAULT '[]',
+  budgets_json TEXT,
+  source TEXT NOT NULL DEFAULT 'user',
+  run_count INTEGER NOT NULL DEFAULT 0,
+  last_run_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id TEXT PRIMARY KEY,
+  workflow_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  current_step INTEGER NOT NULL DEFAULT 0,
+  inputs_json TEXT NOT NULL DEFAULT '{}',
+  outputs_json TEXT NOT NULL DEFAULT '[]',
+  foreach_checkpoint_json TEXT,
+  budgets_json TEXT,
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  trace_id TEXT,
+  chat_id TEXT NOT NULL,
+  error TEXT,
+  error_code TEXT,
+  stop_reason TEXT,
+  active_duration_ms INTEGER NOT NULL DEFAULT 0,
+  active_started_at TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_wf ON workflow_runs(workflow_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS agentops_traces (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  agent_id TEXT,
+  chat_id TEXT,
+  turn_id TEXT,
+  workflow_id TEXT,
+  workflow_run_id TEXT,
+  model_provider TEXT,
+  model_id TEXT,
+  model_calls INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  unknown_cost_calls INTEGER NOT NULL DEFAULT 0,
+  model_latency_ms INTEGER NOT NULL DEFAULT 0,
+  tool_calls INTEGER NOT NULL DEFAULT 0,
+  executed_steps INTEGER NOT NULL DEFAULT 0,
+  skipped_steps INTEGER NOT NULL DEFAULT 0,
+  active_duration_ms INTEGER NOT NULL DEFAULT 0,
+  tool_names_json TEXT NOT NULL DEFAULT '[]',
+  effect_classes_json TEXT NOT NULL DEFAULT '[]',
+  error_code TEXT,
+  stop_reason TEXT,
+  coverage TEXT NOT NULL DEFAULT 'partial',
+  coverage_notes_json TEXT NOT NULL DEFAULT '[]',
+  started_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agentops_traces_started ON agentops_traces(started_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_agentops_traces_chat_turn ON agentops_traces(chat_id, turn_id);
+CREATE INDEX IF NOT EXISTS idx_agentops_traces_workflow ON agentops_traces(workflow_id, workflow_run_id);
+
+CREATE TABLE IF NOT EXISTS agentops_spans (
+  id TEXT PRIMARY KEY,
+  trace_id TEXT NOT NULL,
+  parent_span_id TEXT,
+  kind TEXT NOT NULL,
+  name TEXT,
+  status TEXT NOT NULL,
+  agent_id TEXT,
+  turn_id TEXT,
+  workflow_step_id TEXT,
+  workflow_step_index INTEGER,
+  workflow_item_index INTEGER,
+  model_provider TEXT,
+  model_id TEXT,
+  model_calls INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  unknown_cost_calls INTEGER NOT NULL DEFAULT 0,
+  model_latency_ms INTEGER NOT NULL DEFAULT 0,
+  tool_calls INTEGER NOT NULL DEFAULT 0,
+  executed_steps INTEGER NOT NULL DEFAULT 0,
+  skipped_steps INTEGER NOT NULL DEFAULT 0,
+  active_duration_ms INTEGER NOT NULL DEFAULT 0,
+  tool_names_json TEXT NOT NULL DEFAULT '[]',
+  effect_classes_json TEXT NOT NULL DEFAULT '[]',
+  error_code TEXT,
+  stop_reason TEXT,
+  coverage TEXT NOT NULL DEFAULT 'partial',
+  coverage_notes_json TEXT NOT NULL DEFAULT '[]',
+  started_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agentops_spans_trace ON agentops_spans(trace_id, started_at, id);
 `
 
 // bun:sqlite query result type helpers
@@ -204,6 +369,17 @@ export function initDatabase(): Database {
   _db = tryOpen()
   _db.exec('PRAGMA foreign_keys = ON')
   _db.exec(SCHEMA)
+
+  // Migration: persist item-level progress for resumable workflow forEach steps
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN foreach_checkpoint_json TEXT') } catch {}
+  try { _db.exec('ALTER TABLE workflows ADD COLUMN budgets_json TEXT') } catch {}
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN budgets_json TEXT') } catch {}
+  try { _db.exec("ALTER TABLE workflow_runs ADD COLUMN usage_json TEXT NOT NULL DEFAULT '{}'") } catch {}
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN trace_id TEXT') } catch {}
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN error_code TEXT') } catch {}
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN stop_reason TEXT') } catch {}
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN active_duration_ms INTEGER NOT NULL DEFAULT 0') } catch {}
+  try { _db.exec('ALTER TABLE workflow_runs ADD COLUMN active_started_at TEXT') } catch {}
 
   // Migration: add name and description columns
   try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN name TEXT') } catch {}
@@ -328,12 +504,22 @@ export function getMessages(chatId: string, limit = 50, before?: string): Array<
 export function upsertChat(chatId: string, agentId: string, name?: string, channel = 'web') {
   const db = getDatabase()
   const avatar = `gradient:${Math.floor(Math.random() * 8)}`
+  const explicitName = name ?? null
   db.run(
     `INSERT INTO chats (chat_id, name, agent_id, channel, last_message_time, avatar)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(chat_id) DO UPDATE SET
+       name = CASE WHEN ? IS NULL THEN chats.name ELSE excluded.name END,
        last_message_time = excluded.last_message_time`,
-    [chatId, name ?? chatId, agentId, channel, new Date().toISOString(), avatar]
+    [
+      chatId,
+      name ?? chatId,
+      agentId,
+      channel,
+      new Date().toISOString(),
+      avatar,
+      explicitName,
+    ]
   )
 }
 

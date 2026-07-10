@@ -1,10 +1,9 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
-import { getBackendBaseUrl, getPortableSetting, isTauri, savePortableSetting } from './transport'
+import { getPortableSetting, isTauri, savePortableSetting, sidecarFetch } from './transport'
 import type { Attachment } from '../types/attachment'
 import { ApiError } from '../lib/api-error'
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const base = await getBackendBaseUrl()
   const headers = new Headers(options?.headers)
 
   if (options?.body != null && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -13,7 +12,7 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 
   let res: Response
   try {
-    res = await fetch(`${base}${path}`, {
+    res = await sidecarFetch(path, {
       ...options,
       headers,
     })
@@ -90,7 +89,6 @@ export async function sendMessage(
 }
 
 export async function uploadChatAttachment(file: File, filename?: string, mediaType?: string) {
-  const base = await getBackendBaseUrl()
   const formData = new FormData()
   formData.append('file', file, filename || file.name || 'attachment')
   if (filename) {
@@ -100,7 +98,7 @@ export async function uploadChatAttachment(file: File, filename?: string, mediaT
     formData.append('mediaType', mediaType)
   }
 
-  const res = await fetch(`${base}/api/attachments/upload`, {
+  const res = await sidecarFetch('/api/attachments/upload', {
     method: 'POST',
     body: formData,
   })
@@ -136,9 +134,10 @@ export async function getMessages(chatId: string) {
 }
 
 // Abort a running chat query
-export async function abortChat(chatId: string) {
-  return apiFetch<{ ok: boolean; aborted: boolean }>(`/api/chats/${encodeURIComponent(chatId)}/abort`, {
+export async function abortChat(chatId: string, turnId?: string) {
+  return apiFetch<{ ok: boolean; aborted: boolean; queued: number; running: number }>(`/api/chats/${encodeURIComponent(chatId)}/abort`, {
     method: 'POST',
+    body: JSON.stringify(turnId ? { turnId } : {}),
   })
 }
 
@@ -181,10 +180,24 @@ export async function updateAgentDoc(agentId: string, filename: string, content:
 }
 
 // Create new agent
-export async function createAgent(data: { name: string; model?: string }) {
+export async function createAgent(data: { name: string; model?: string; persona?: string; skills?: string[] }) {
   return apiFetch<{ id: string; name: string }>('/api/agents', {
     method: 'POST',
     body: JSON.stringify(data),
+  })
+}
+
+// [XJC] 人设一键优化（需求再优化 + 技能自动匹配）
+export interface OptimizePersonaDTO {
+  persona: string
+  suggestedName: string
+  suggestedSkills: string[]
+}
+
+export async function optimizeAgentPersona(draft: string) {
+  return apiFetch<OptimizePersonaDTO>('/api/agents/optimize-persona', {
+    method: 'POST',
+    body: JSON.stringify({ draft }),
   })
 }
 
@@ -1107,8 +1120,7 @@ export async function createBrowserProfileMainBridgePairing(id: string) {
 }
 
 export async function downloadBrowserMainBridgeExtensionBundle() {
-  const base = await getBackendBaseUrl()
-  const res = await fetch(`${base}/api/browser/main-bridge/extension-download`)
+  const res = await sidecarFetch('/api/browser/main-bridge/extension-download')
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(body?.error || `Download failed: ${res.status}`)
@@ -1281,10 +1293,9 @@ export async function saveAuthToken(token: string) {
 }
 
 export async function uploadFile(file: File): Promise<string> {
-  const base = await getBackendBaseUrl()
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${base}/api/auth/upload`, {
+  const res = await sidecarFetch('/api/auth/upload', {
     method: 'POST',
     body: formData,
   })
@@ -1428,6 +1439,12 @@ export const ActiveModelProvider = {
 
 export type ActiveModelProvider = typeof ActiveModelProvider[keyof typeof ActiveModelProvider]
 
+export interface McpServerSettingsDTO {
+  enabled: boolean
+  allowDangerousTools: boolean
+  token: string
+}
+
 export interface SettingsDTO {
   activeModel: {
     provider: ActiveModelProvider
@@ -1448,6 +1465,44 @@ export interface SettingsDTO {
   }
   builtinModelId?: string | null
   voice: VoiceSettingsDTO
+  evolution: { enabled: boolean }
+  media: MediaSettingsDTO
+  mcpServer: McpServerSettingsDTO
+  update: {
+    channel: 'stable' | 'beta'
+  }
+}
+
+export type SettingsUpdateDTO = Omit<Partial<SettingsDTO>, 'mcpServer'> & {
+  /** MCP token is server-owned and can only be changed through regenerateMcpServerToken(). */
+  mcpServer?: Partial<Omit<McpServerSettingsDTO, 'token'>>
+}
+
+/** [XJC] 轮换内置 MCP Server 的鉴权 token（旧 token 立即失效） */
+export async function regenerateMcpServerToken() {
+  return apiFetch<{ token: string }>('/api/settings/mcp-server/regenerate-token', { method: 'POST' })
+}
+
+// [XJC] 媒体生成配置（T-B7）：apiKey 由后端 ****打码返回
+// provider='dashscope' 为阿里百炼原生生图/改图（multimodal-generation），仅图像组支持
+export interface MediaImageConfigDTO {
+  provider: 'off' | 'openai-compatible' | 'dashscope'
+  baseUrl: string
+  apiKey: string
+  model: string
+  editModel: string
+}
+
+export interface MediaVideoConfigDTO {
+  provider: 'off' | 'openai-compatible'
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+export interface MediaSettingsDTO {
+  image: MediaImageConfigDTO
+  video: MediaVideoConfigDTO
 }
 
 // [XJC] 语音配置（通用能力对齐 · T-A2）：apiKey 由后端 ****打码返回
@@ -1467,7 +1522,7 @@ export async function getSettings() {
   return apiFetch<SettingsDTO>('/api/settings')
 }
 
-export async function updateSettings(data: Partial<SettingsDTO>) {
+export async function updateSettings(data: SettingsUpdateDTO) {
   return apiFetch<SettingsDTO>('/api/settings', {
     method: 'PATCH',
     body: JSON.stringify(data),
@@ -1856,10 +1911,9 @@ export async function getVoiceStatus() {
 
 /** 语音转文字：上传录音（webm/opus 等），返回识别文本 */
 export async function transcribeAudio(blob: Blob, filename = 'recording.webm') {
-  const base = await getBackendBaseUrl()
   const formData = new FormData()
   formData.append('file', blob, filename)
-  const res = await fetch(`${base}/api/voice/transcribe`, { method: 'POST', body: formData })
+  const res = await sidecarFetch('/api/voice/transcribe', { method: 'POST', body: formData })
   if (!res.ok) {
     const body = await res.json().catch(() => null) as { error?: string; errorCode?: string } | null
     throw new ApiError({
@@ -1874,8 +1928,7 @@ export async function transcribeAudio(blob: Blob, filename = 'recording.webm') {
 
 /** 文字转语音：返回音频 Blob（调用方用 Audio 播放） */
 export async function speakText(text: string) {
-  const base = await getBackendBaseUrl()
-  const res = await fetch(`${base}/api/voice/speak`, {
+  const res = await sidecarFetch('/api/voice/speak', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -1890,6 +1943,67 @@ export async function speakText(text: string) {
     })
   }
   return res.blob()
+}
+
+// ─── 自主进化引擎（进化引擎桥）────────────────────────────────
+export interface EvolutionStatusDTO {
+  enabled: boolean
+  pythonOk: boolean
+  materialized: boolean
+  stage: string | null
+  records: number
+  successes: number
+  failures: number
+  activeStrategies: number
+  activeRules: number
+  /** 引擎已学会的活跃规则文本（截断），null=尚无规则/未开启 */
+  rulesText: string | null
+}
+
+export async function getEvolutionStatus() {
+  return apiFetch<EvolutionStatusDTO>('/api/evolution/status')
+}
+
+// ─── 用户反馈信号（👍/👎，学习 P0）────────────────────────────────
+export async function submitMessageFeedback(payload: {
+  chatId: string
+  messageId: string
+  agentId?: string
+  rating: 'up' | 'down'
+  comment?: string
+}) {
+  return apiFetch<{ ok: boolean; rating: string }>('/api/feedback', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ─── 媒体生成（T-B7）────────────────────────────────
+export interface MediaStatusDTO {
+  imageConfigured: boolean
+  imageEditConfigured: boolean
+  videoConfigured: boolean
+}
+
+export async function getMediaStatus() {
+  return apiFetch<MediaStatusDTO>('/api/media/status')
+}
+
+/** 服务商一键分发：一次填 baseUrl+key，按勾选能力写入 asr/tts/image/video 配置组 */
+export async function applyMediaProvider(payload: {
+  baseUrl: string
+  apiKey?: string
+  capabilities: Array<'asr' | 'tts' | 'image' | 'video'>
+  models?: Partial<Record<'asr' | 'tts' | 'image' | 'video', string>>
+  ttsVoice?: string
+  imageEditModel?: string
+  /** 图像组服务风格：openai-compatible（默认）/ dashscope（阿里百炼原生） */
+  imageProviderStyle?: 'openai-compatible' | 'dashscope'
+}) {
+  return apiFetch<{ ok: boolean; applied: string[] }>('/api/media/apply-provider', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
 
 // ─── 知识库（通用能力对齐 · T-A1）────────────────────────────────
@@ -1915,10 +2029,9 @@ export async function getKnowledgeDocs() {
 }
 
 export async function uploadKnowledgeDoc(file: File) {
-  const base = await getBackendBaseUrl()
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${base}/api/knowledge/docs`, { method: 'POST', body: formData })
+  const res = await sidecarFetch('/api/knowledge/docs', { method: 'POST', body: formData })
   if (!res.ok) {
     const body = await res.json().catch(() => null) as { error?: string; errorCode?: string } | null
     throw new ApiError({
@@ -1938,6 +2051,158 @@ export async function deleteKnowledgeDoc(id: string) {
 export async function searchKnowledge(query: string, topK = 8) {
   const params = new URLSearchParams({ q: query, topK: String(topK) })
   return apiFetch<{ hits: KnowledgeSearchHitDTO[] }>(`/api/knowledge/search?${params}`)
+}
+
+// ── 卡密库（闲鱼虚拟商品发货）────────────────────────────────────────────
+export interface FulfillmentSkuDTO {
+  id: string
+  agentId: string | null
+  title: string
+  deliveryTemplate: string | null
+  createdAt: string
+  available: number
+  delivered: number
+}
+
+export interface FulfillmentDeliveryDTO {
+  orderRef: string
+  skuId: string
+  skuTitle: string
+  secret: string
+  deliveredAt: string
+}
+
+export async function getFulfillmentSkus() {
+  return apiFetch<{ skus: FulfillmentSkuDTO[] }>('/api/fulfillment/skus')
+}
+
+export async function createFulfillmentSku(input: { title: string; deliveryTemplate?: string }) {
+  return apiFetch<{ sku: FulfillmentSkuDTO }>('/api/fulfillment/skus', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function addFulfillmentCards(skuId: string, text: string) {
+  return apiFetch<{ added: number; skipped: number }>(`/api/fulfillment/skus/${encodeURIComponent(skuId)}/cards`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  })
+}
+
+export async function clearFulfillmentAvailable(skuId: string) {
+  return apiFetch<{ cleared: number }>(`/api/fulfillment/skus/${encodeURIComponent(skuId)}/clear-available`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteFulfillmentSku(skuId: string) {
+  return apiFetch<{ ok: boolean }>(`/api/fulfillment/skus/${encodeURIComponent(skuId)}`, { method: 'DELETE' })
+}
+
+export async function getFulfillmentDeliveries(skuId?: string, limit = 50) {
+  const params = new URLSearchParams()
+  if (skuId) params.set('skuId', skuId)
+  params.set('limit', String(limit))
+  return apiFetch<{ deliveries: FulfillmentDeliveryDTO[] }>(`/api/fulfillment/deliveries?${params}`)
+}
+
+// ── 工作流（通用/垂直编排）────────────────────────────────────────────
+export interface WorkflowStepDTO {
+  id?: string
+  title: string
+  prompt: string
+  kind?: 'agent' | 'llm' | 'tool'
+  tool?: string
+  args?: Record<string, string>
+  when?: { var: string; op: string; value?: string }
+  forEach?: { var: string; maxItems?: number }
+}
+
+export interface WorkflowBudgetsDTO {
+  maxSteps?: number
+  maxTotalTokens?: number
+  maxCostUsd?: number
+  maxActiveDurationMs?: number
+  maxToolCalls?: number
+  deniedToolEffects?: Array<'read' | 'network' | 'write' | 'execute' | 'message' | 'inventory' | 'unknown'>
+  unknownCostPolicy?: 'allow' | 'deny'
+}
+
+export interface WorkflowUsageDTO {
+  modelCalls: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalTokens: number
+  costUsd: number
+  unknownCostCalls: number
+  modelLatencyMs: number
+  toolCalls: number
+  executedSteps: number
+  skippedSteps: number
+  activeDurationMs: number
+}
+
+export interface WorkflowDTO {
+  id: string
+  name: string
+  description: string
+  agentId: string
+  steps: WorkflowStepDTO[]
+  inputs: Array<{ key: string; label: string }>
+  budgets: WorkflowBudgetsDTO | null
+  source: 'builtin' | 'user' | 'agent'
+  runCount: number
+  lastRunAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkflowRunDTO {
+  id: string
+  workflowId: string
+  status: 'running' | 'success' | 'failed'
+  currentStep: number
+  inputs: Record<string, string>
+  outputs: string[]
+  budgets: WorkflowBudgetsDTO | null
+  usage: WorkflowUsageDTO
+  traceId: string | null
+  chatId: string
+  error: string | null
+  errorCode: string | null
+  stopReason: string | null
+  startedAt: string
+  finishedAt: string | null
+}
+
+export async function getWorkflows() {
+  return apiFetch<{ workflows: WorkflowDTO[] }>('/api/workflows')
+}
+
+export async function runWorkflow(id: string, inputs: Record<string, string>, budgets?: WorkflowBudgetsDTO) {
+  return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflows/${encodeURIComponent(id)}/run`, {
+    method: 'POST',
+    body: JSON.stringify({ inputs, budgets }),
+  })
+}
+
+export async function deleteWorkflowById(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function getWorkflowRuns(id: string) {
+  return apiFetch<{ runs: WorkflowRunDTO[] }>(`/api/workflows/${encodeURIComponent(id)}/runs`)
+}
+
+export async function getWorkflowRunDetail(runId: string) {
+  return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflow-runs/${encodeURIComponent(runId)}`)
+}
+
+export async function resumeWorkflowRunById(runId: string) {
+  return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflow-runs/${encodeURIComponent(runId)}/resume`, { method: 'POST' })
 }
 
 export type TelemetryEventType = 'app_start' | 'skill_run' | 'error'

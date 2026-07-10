@@ -5,7 +5,7 @@
 export type WorkbenchLocale = 'zh' | 'en'
 
 /** 工作台任务分类（按类型分 tab；未来新增能力扩展此联合类型 + WORKBENCH_CATEGORIES 即可） */
-export type WorkbenchCategoryId = 'office' | 'ecom' | 'content' | 'finance' | 'hr' | 'support' | 'research'
+export type WorkbenchCategoryId = 'office' | 'ecom' | 'content' | 'finance' | 'hr' | 'support' | 'research' | 'xianyu'
 
 export interface WorkbenchField {
   key: string
@@ -52,6 +52,8 @@ export const HR_AGENT_ID = 'hr-assistant'
 export const SUPPORT_AGENT_ID = 'support-assistant'
 /** 研究能力包卡片绑定的数字员工 */
 export const RESEARCH_AGENT_ID = 'research-assistant'
+/** 闲鱼客服能力包卡片绑定的数字员工（虚拟商品自动发货） */
+export const XIANYU_AGENT_ID = 'xianyu-cs'
 
 /** 工作台分类定义（数组顺序即 tab 展示顺序） */
 export interface WorkbenchCategory {
@@ -68,6 +70,7 @@ export const WORKBENCH_CATEGORIES: WorkbenchCategory[] = [
   { id: 'hr', label: { zh: '人事', en: 'HR' }, icon: '🧑‍💼' },
   { id: 'support', label: { zh: '客服', en: 'Support' }, icon: '🎧' },
   { id: 'research', label: { zh: '研究', en: 'Research' }, icon: '🔬' },
+  { id: 'xianyu', label: { zh: '闲鱼', en: 'Xianyu' }, icon: '🐟' },
 ]
 
 /** 归类一个任务：优先显式 category，其次按绑定的数字员工推断 */
@@ -79,6 +82,7 @@ export function getTaskCategory(task: WorkbenchTask): WorkbenchCategoryId {
   if (task.agentId === HR_AGENT_ID) return 'hr'
   if (task.agentId === SUPPORT_AGENT_ID) return 'support'
   if (task.agentId === RESEARCH_AGENT_ID) return 'research'
+  if (task.agentId === XIANYU_AGENT_ID) return 'xianyu'
   return 'office'
 }
 
@@ -181,6 +185,20 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     fields: [
       { key: 'notes', kind: 'textarea', required: false, label: { zh: '会议记录（可粘贴或传文件）', en: 'Notes (paste or attach)' }, placeholder: { zh: '粘贴速记，或在下面附上文件', en: 'Paste notes or attach a file below' } },
       { key: 'file', kind: 'file', required: false, label: { zh: '记录文件（可选）', en: 'File (optional)' }, accept: '.txt,.docx,.pdf,.md' },
+    ],
+  },
+  {
+    id: 'meeting-audio-notes',
+    icon: '🎙️',
+    title: { zh: '录音转会议纪要', en: 'Recording → minutes' },
+    desc: { zh: '传会议录音，转写并整理成纪要', en: 'Upload a recording, get structured minutes' },
+    promptTemplate: {
+      zh: '请把我上传的会议录音整理成会议纪要。先用 mcp__voice__transcribe_audio 工具转写录音（音频的本地路径见本条消息的附件清单，作为 audioPath 传入），再用 meeting-notes 技能把转写文本整理成结构化纪要（结论/分歧/行动项表）。补充说明：{{note}}。若语音识别未配置，请引导我到 设置 → 语音与媒体 配置。',
+      en: 'Turn my uploaded meeting recording into minutes. First transcribe it with the mcp__voice__transcribe_audio tool (the audio\'s local path is in this message\'s attachment list — pass it as audioPath), then structure the transcript into minutes (conclusions / disagreements / action items) using the meeting-notes skill. Notes: {{note}}. If speech recognition is not configured, guide me to Settings → Voice & Media.',
+    },
+    fields: [
+      { key: 'file', kind: 'file', required: true, label: { zh: '会议录音', en: 'Recording' }, accept: '.mp3,.wav,.m4a,.webm,.ogg,.flac,.aac,.mp4' },
+      { key: 'note', kind: 'text', required: false, label: { zh: '补充说明（可选）', en: 'Notes (optional)' }, placeholder: { zh: '例如：参会人是谁 / 重点关注哪个议题', en: 'e.g. attendees / which topic matters' } },
     ],
   },
   {
@@ -369,6 +387,22 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
       { key: 'focus', kind: 'text', required: false, label: { zh: '关注要点（可选）', en: 'Focus (optional)' }, placeholder: { zh: '例如：价格 / 上新 / 标题变化', en: 'e.g. price / new arrivals / title changes' } },
     ],
   },
+  {
+    id: 'ecom-product-image',
+    icon: '🎨',
+    title: { zh: 'AI 生成商品图', en: 'AI product image' },
+    desc: { zh: '文字描述→电商主图/场景图', en: 'Text → product / scene image' },
+    agentId: ECOMMERCE_AGENT_ID,
+    promptTemplate: {
+      zh: '请用 mcp__media__generate_image 工具生成商品图。商品：{{product}}。画面/场景：{{scene}}。风格/背景：{{style}}。请先把它细化成高质量提示词（主体突出、干净背景、构图与光线适合电商主图/详情页），生成后保存到「媒体产出」目录并告诉我文件路径；若图像服务尚未配置，请引导我到 设置 → 语音与媒体 配置。',
+      en: 'Use the mcp__media__generate_image tool to create a product image. Product: {{product}}. Scene: {{scene}}. Style/background: {{style}}. First refine it into a high-quality prompt (clear subject, clean background, e-commerce-ready composition and lighting), then save the result to the media output folder and tell me the file path. If the image service is not configured yet, guide me to Settings → Voice & Media.',
+    },
+    fields: [
+      { key: 'product', kind: 'text', required: true, label: { zh: '商品', en: 'Product' }, placeholder: { zh: '例如：北欧风陶瓷马克杯', en: 'e.g. Nordic ceramic mug' } },
+      { key: 'scene', kind: 'textarea', required: false, label: { zh: '画面/场景（可选）', en: 'Scene (optional)' }, placeholder: { zh: '例如：原木桌面、晨光、旁边一本书', en: 'e.g. wooden desk, morning light, a book beside it' } },
+      { key: 'style', kind: 'text', required: false, label: { zh: '风格/背景（可选）', en: 'Style/background (optional)' }, placeholder: { zh: '例如：纯白背景 / ins 风 / 高级质感', en: 'e.g. pure white bg / Instagram style' } },
+    ],
+  },
 
   // ─── 内容创作能力包（绑定创作助理，纯 prompt 技能零配置）───────────────
   {
@@ -434,6 +468,37 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
       { key: 'industry', kind: 'text', required: true, label: { zh: '行业/账号定位', en: 'Industry/positioning' }, placeholder: { zh: '例如：家常美食号 / 母婴好物分享', en: 'e.g. home cooking / baby products' } },
       { key: 'platforms', kind: 'text', required: true, label: { zh: '发布平台', en: 'Platforms' }, placeholder: { zh: '例如：小红书+抖音', en: 'e.g. Xiaohongshu + Douyin' } },
       { key: 'period', kind: 'text', required: false, label: { zh: '周期（可选，默认一周）', en: 'Period (optional, 1 week default)' }, placeholder: { zh: '一周 / 一月', en: '1 week / 1 month' } },
+    ],
+  },
+  {
+    id: 'content-poster',
+    icon: '🎨',
+    title: { zh: 'AI 生图/海报', en: 'AI image / poster' },
+    desc: { zh: '文字描述→配图、海报、封面', en: 'Text → illustration, poster, cover' },
+    agentId: CONTENT_AGENT_ID,
+    promptTemplate: {
+      zh: '请用 mcp__media__generate_image 工具帮我生成图片。画面描述：{{description}}。用途：{{usage}}。风格：{{style}}。请先把描述细化成高质量提示词（主体/构图/光线/色彩/风格），再生成，产物保存到「媒体产出」目录并告诉我文件路径；若图像服务尚未配置，请引导我到 设置 → 语音与媒体 配置。',
+      en: 'Use the mcp__media__generate_image tool to generate an image. Description: {{description}}. Usage: {{usage}}. Style: {{style}}. Refine the description into a high-quality prompt (subject/composition/lighting/color/style) first, then generate; save the result to the media output folder and tell me the file path. If the image service is not configured yet, guide me to Settings → Voice & Media.',
+    },
+    fields: [
+      { key: 'description', kind: 'textarea', required: true, label: { zh: '画面描述', en: 'Description' }, placeholder: { zh: '例如：一只戴宇航头盔的橘猫漂浮在星空中', en: 'e.g. an orange cat in an astronaut helmet floating in the stars' } },
+      { key: 'usage', kind: 'text', required: false, label: { zh: '用途（可选）', en: 'Usage (optional)' }, placeholder: { zh: '海报 / 文章配图 / 头像 / 封面', en: 'poster / illustration / avatar / cover' } },
+      { key: 'style', kind: 'text', required: false, label: { zh: '风格（可选）', en: 'Style (optional)' }, placeholder: { zh: '例如：扁平插画 / 水彩 / 写实 / 国潮', en: 'e.g. flat illustration / watercolor / photorealistic' } },
+    ],
+  },
+  {
+    id: 'content-image-edit',
+    icon: '🖌️',
+    title: { zh: '对话式改图', en: 'Edit an image' },
+    desc: { zh: '传图+说要改哪里，AI 精修', en: 'Upload + describe the change' },
+    agentId: CONTENT_AGENT_ID,
+    promptTemplate: {
+      zh: '请用 mcp__media__edit_image 工具，按我的要求修改我上传的图片。修改要求：{{requirement}}。图片的本地路径见本条消息的附件清单，把它作为 imagePath 传入。改完把新图保存到「媒体产出」目录并告诉我路径；若还要继续微调，把上一版产物路径再次传入本工具即可；若图像服务尚未配置，请引导我到 设置 → 语音与媒体。',
+      en: 'Use the mcp__media__edit_image tool to edit the image I attached, following my instruction. Instruction: {{requirement}}. The image\'s local path is in this message\'s attachment list — pass it as imagePath. Save the edited image to the media output folder and tell me the path; for further tweaks, pass the previous output path back into the tool. If the image service is not configured yet, guide me to Settings → Voice & Media.',
+    },
+    fields: [
+      { key: 'file', kind: 'file', required: true, label: { zh: '要修改的图片', en: 'Image to edit' }, accept: '.png,.jpg,.jpeg,.webp' },
+      { key: 'requirement', kind: 'textarea', required: true, label: { zh: '修改要求', en: 'What to change' }, placeholder: { zh: '例如：把背景换成雪山、去掉左下角文字、整体调亮', en: 'e.g. replace bg with snow mountains, remove the text, brighten' } },
     ],
   },
 
@@ -682,6 +747,66 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     fields: [
       { key: 'input', kind: 'textarea', required: true, label: { zh: '主题或材料', en: 'Topic or material' }, placeholder: { zh: '例如：用户增长的核心杠杆；或粘贴一段材料', en: 'e.g. a topic, or paste material' } },
       { key: 'use', kind: 'text', required: false, label: { zh: '用途（可选）', en: 'Use (optional)' }, placeholder: { zh: '梳理思路 / 学习复习 / 讲解大纲', en: 'thinking / study / outline' } },
+    ],
+  },
+  {
+    id: 'knowledge-qa',
+    icon: '📚',
+    title: { zh: '知识库问答', en: 'Knowledge base Q&A' },
+    desc: { zh: '基于你上传的文档，带来源回答', en: 'Answer from your docs, with citations' },
+    agentId: RESEARCH_AGENT_ID,
+    promptTemplate: {
+      zh: '请基于我上传到知识库的文档回答问题：{{question}}。用 mcp__knowledge__search_knowledge 工具检索相关内容，回答时必须标注来源文档标题（docTitle）；若知识库没有相关内容，请如实说明，可再补充你的通用知识。若我还没上传文档，请提示我到左侧「知识库」页面上传后再问。',
+      en: 'Answer my question based on the documents I uploaded to the knowledge base: {{question}}. Use the mcp__knowledge__search_knowledge tool to retrieve relevant content and cite the source document title (docTitle) for each fact; if nothing relevant is found, say so and you may add general knowledge. If I have not uploaded documents yet, tell me to upload them on the Knowledge page first.',
+    },
+    fields: [
+      { key: 'question', kind: 'textarea', required: true, label: { zh: '你的问题', en: 'Your question' }, placeholder: { zh: '例如：我们的售后政策对退换货是怎么规定的？', en: 'e.g. What does our after-sales policy say about returns?' } },
+    ],
+  },
+  {
+    id: 'xianyu-stock-import',
+    icon: '🎫',
+    title: { zh: '建商品·导卡密', en: 'Add product & stock' },
+    desc: { zh: '虚拟商品建档+批量导入卡密/账号', en: 'Create SKU + import card codes' },
+    agentId: XIANYU_AGENT_ID,
+    promptTemplate: {
+      zh: '我要配置一个闲鱼虚拟商品的自动发货。商品名：{{product}}。发货文案模板（{secret} 处填卡密）：{{template}}。卡密清单（一行一张）：\n{{secrets}}\n请用 mcp__fulfillment__upsert_sku 建商品（id 用商品名的小写拼音/英文短横线形式）、mcp__fulfillment__add_cards 导入卡密，最后用 mcp__fulfillment__list_stock 汇报库存。',
+      en: 'Set up auto-delivery for a Xianyu virtual good. Product: {{product}}. Delivery template (put {secret} where the code goes): {{template}}. Card codes (one per line):\n{{secrets}}\nUse mcp__fulfillment__upsert_sku to create the SKU (lowercase-hyphen id), mcp__fulfillment__add_cards to import stock, then report inventory via mcp__fulfillment__list_stock.',
+    },
+    fields: [
+      { key: 'product', kind: 'text', required: true, label: { zh: '商品名', en: 'Product' }, placeholder: { zh: '例如：QQ音乐VIP年卡', en: 'e.g. QQ Music VIP 1-year' } },
+      { key: 'template', kind: 'textarea', required: false, label: { zh: '发货文案模板（可选）', en: 'Delivery template (optional)' }, placeholder: { zh: '例如：兑换码：{secret}，打开QQ音乐-我的-开通会员输入即可', en: 'e.g. Your code: {secret}. Redeem in the app.' } },
+      { key: 'secrets', kind: 'textarea', required: true, label: { zh: '卡密/账号清单', en: 'Card codes' }, placeholder: { zh: '一行一张卡密，发一张少一张', en: 'One code per line' } },
+    ],
+  },
+  {
+    id: 'xianyu-deliver-order',
+    icon: '📦',
+    title: { zh: '买家付款·发货', en: 'Deliver an order' },
+    desc: { zh: '领一张卡密生成发货消息，同单不重发', en: 'Claim one code; idempotent per order' },
+    agentId: XIANYU_AGENT_ID,
+    promptTemplate: {
+      zh: '买家已付款，请发货。商品：{{product}}。订单号/唯一标识：{{orderRef}}。请先 mcp__fulfillment__list_stock 找到对应 SKU，再用 mcp__fulfillment__deliver（orderRef 原样传入，保证同一订单不重复扣卡）发货，把 deliver_message 用代码块展示给我，方便我复制粘贴发给闲鱼买家。若库存为空请如实告知并提醒我补卡密，不要编造。',
+      en: 'Buyer has paid; deliver now. Product: {{product}}. Order ref: {{orderRef}}. First find the SKU via mcp__fulfillment__list_stock, then call mcp__fulfillment__deliver (pass orderRef as-is; the same order never consumes a second card) and show deliver_message in a code block so I can copy it to the Xianyu buyer. If out of stock, say so honestly and ask me to restock — never invent a code.',
+    },
+    fields: [
+      { key: 'product', kind: 'text', required: true, label: { zh: '商品', en: 'Product' }, placeholder: { zh: '例如：QQ音乐VIP年卡', en: 'e.g. QQ Music VIP' } },
+      { key: 'orderRef', kind: 'text', required: true, label: { zh: '订单号', en: 'Order ref' }, placeholder: { zh: '闲鱼订单号；没有就用"买家昵称+日期"', en: 'Xianyu order no., or buyer+date' } },
+    ],
+  },
+  {
+    id: 'xianyu-buyer-reply',
+    icon: '💬',
+    title: { zh: '买家咨询·回复', en: 'Reply to a buyer' },
+    desc: { zh: '砍价/怎么用/售后，生成得体回复', en: 'Bargaining / how-to / after-sales replies' },
+    agentId: XIANYU_AGENT_ID,
+    promptTemplate: {
+      zh: '闲鱼买家发来消息：\n{{message}}\n商品背景：{{context}}。请用 support-reply 技能生成 1-2 条得体回复（简洁热情、闲鱼语气），砍价给出留有余地的话术；涉及退款/纠纷先安抚并建议走平台流程，不要承诺平台外交易。',
+      en: 'A Xianyu buyer wrote:\n{{message}}\nProduct context: {{context}}. Use the support-reply skill to draft 1-2 polished replies (concise, friendly, marketplace tone). For bargaining leave negotiation room; for refunds/disputes de-escalate and point to the official platform flow; never suggest off-platform deals.',
+    },
+    fields: [
+      { key: 'message', kind: 'textarea', required: true, label: { zh: '买家消息', en: 'Buyer message' }, placeholder: { zh: '粘贴买家原话', en: 'Paste the buyer message' } },
+      { key: 'context', kind: 'text', required: false, label: { zh: '商品背景（可选）', en: 'Context (optional)' }, placeholder: { zh: '例如：QQ音乐VIP年卡，标价88元，可小刀', en: 'e.g. QQ Music VIP, ¥88, slightly negotiable' } },
     ],
   },
 ]

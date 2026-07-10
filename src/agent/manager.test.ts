@@ -94,6 +94,7 @@ describe('office-assistant preset template', () => {
       'office-ppt', 'office-doc', 'office-excel', 'office-pdf',
       'meeting-notes', 'weekly-report', 'email-draft', 'file-organizer',
       'daily-briefing', 'web-monitor', 'data-report', 'web-search', 'agent-browser',
+      'office-automation', 'law-skills',
     ])
   })
 
@@ -155,6 +156,7 @@ describe('ecommerce-assistant preset template', () => {
     expect(parsed.skills).toEqual([
       'ecom-copywriter', 'ecom-compliance', 'ecom-image', 'ecom-analytics',
       'office-excel', 'office-doc', 'web-monitor', 'agent-browser',
+      'ecommerce-product-selector',
     ])
   })
 
@@ -184,7 +186,7 @@ describe('content-creator preset template', () => {
     expect(parsed.memory.enabled).toBe(true)
     expect(parsed.skills).toEqual([
       'content-article', 'content-xiaohongshu', 'content-video-script', 'content-calendar',
-      'web-search',
+      'web-search', 'humanizer', 'promptmaster', 'weixin-article-writer',
     ])
   })
 
@@ -207,7 +209,7 @@ describe('back-office preset templates (finance/hr/support)', () => {
     { name: 'finance-assistant', yaml: FINANCE_ASSISTANT_AGENT_YAML, skills: ['finance-bookkeeping', 'finance-invoice', 'finance-report', 'finance-budget', 'office-excel'] },
     { name: 'hr-assistant', yaml: HR_ASSISTANT_AGENT_YAML, skills: ['hr-jd', 'hr-resume-screen', 'hr-interview', 'hr-docs'] },
     { name: 'support-assistant', yaml: SUPPORT_ASSISTANT_AGENT_YAML, skills: ['support-reply', 'support-faq', 'support-ticket', 'support-review'] },
-    { name: 'research-assistant', yaml: RESEARCH_ASSISTANT_AGENT_YAML, skills: ['doc-summarize', 'research-report', 'translate', 'web-extract', 'mind-map', 'web-search', 'agent-browser'] },
+    { name: 'research-assistant', yaml: RESEARCH_ASSISTANT_AGENT_YAML, skills: ['doc-summarize', 'research-report', 'translate', 'web-extract', 'mind-map', 'web-search', 'agent-browser', 'global-biblio-base'] },
   ]
 
   for (const c of cases) {
