@@ -22,6 +22,7 @@ import {
 } from '../scripts/generate-sbom.mjs'
 import {
   createArtifactManifest,
+  describeFiles,
   verifyArtifactManifest,
 } from '../scripts/release-artifacts.mjs'
 import {
@@ -145,6 +146,21 @@ describe('desktop version tooling', () => {
 })
 
 describe('SBOM and artifact verification', () => {
+  test('hashes large directory trees with bounded concurrency and stable ordering', async () => {
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'xjc-artifact-tree-'))
+    roots.push(artifactRoot)
+    for (let index = 127; index >= 0; index -= 1) {
+      write(resolve(artifactRoot, `nested-${index % 7}`, `${String(index).padStart(3, '0')}.bin`), `payload-${index}`)
+    }
+
+    const files = await describeFiles(artifactRoot, 2)
+    expect(files).toHaveLength(128)
+    expect(files.map((file) => file.path)).toEqual(
+      [...files.map((file) => file.path)].sort((left, right) => left.localeCompare(right, 'en')),
+    )
+    expect(files.every((file) => /^[0-9a-f]{64}$/.test(file.sha256))).toBe(true)
+  })
+
   test('generates deterministic CycloneDX JSON', () => {
     const root = makeRepo('1.1.0')
     const first = serializeSbom(createSbom(root))

@@ -51,12 +51,28 @@ async function sha256File(path) {
   return hash.digest('hex')
 }
 
-async function describeFiles(root) {
-  return Promise.all(listArtifactFiles(root).map(async (path) => ({
-    path: relativePath(root, path),
-    size: statSync(path).size,
-    sha256: await sha256File(path),
-  })))
+export async function describeFiles(root, concurrency = 8) {
+  const paths = listArtifactFiles(root)
+  const descriptions = new Array(paths.length)
+  let nextIndex = 0
+  const workerCount = Math.min(
+    paths.length,
+    Math.max(1, Number.isFinite(concurrency) ? Math.floor(concurrency) : 8),
+  )
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < paths.length) {
+      const index = nextIndex
+      nextIndex += 1
+      const path = paths[index]
+      descriptions[index] = {
+        path: relativePath(root, path),
+        size: statSync(path).size,
+        sha256: await sha256File(path),
+      }
+    }
+  })
+  await Promise.all(workers)
+  return descriptions
 }
 
 function readJson(path, label) {

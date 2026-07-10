@@ -128,7 +128,7 @@ if errorlevel 1 goto :fail
 echo.
 echo [OK] Release artifacts directory: %RELEASE_DIR%
 pushd "%ROOT%" >nul
-call bun scripts\write-build-provenance.mjs "%RELEASE_DIR%\build-provenance.json" "%APP_VERSION%" "%XJC_BUILD_VARIANT%"
+call bun scripts\write-build-provenance.mjs "%RELEASE_DIR%\build-provenance.json" "%APP_VERSION%" "%XJC_BUILD_VARIANT%" --require-clean
 set "PROVENANCE_STATUS=%ERRORLEVEL%"
 if not "%PROVENANCE_STATUS%"=="0" (
   popd >nul

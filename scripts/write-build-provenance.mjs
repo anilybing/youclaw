@@ -51,6 +51,7 @@ export function createProvenance({
   version,
   variant,
   builtAt = new Date().toISOString(),
+  requireClean = false,
 }) {
   const root = resolve(repoRoot)
   assertReleaseVersion(version)
@@ -60,6 +61,12 @@ export function createProvenance({
     throw new Error(`Provenance version ${version} does not match desktop version ${desktopVersion}`)
   }
   const status = git(root, ['status', '--porcelain'])
+  if (requireClean && status === null) {
+    throw new Error('Could not determine source working-tree state')
+  }
+  if (requireClean && status.length > 0) {
+    throw new Error('Release provenance requires a clean working tree')
+  }
   return {
     schemaVersion: 1,
     product: 'XiaoJuClaw',
@@ -90,16 +97,18 @@ export function writeProvenance(outputArg, options) {
 }
 
 if (import.meta.main) {
-  const [outputArg, version, variant] = process.argv.slice(2)
+  const [outputArg, version, variant, ...flags] = process.argv.slice(2)
   if (!outputArg || !version || !variant) {
-    console.error('Usage: bun scripts/write-build-provenance.mjs <output.json> <version> <variant>')
+    console.error('Usage: bun scripts/write-build-provenance.mjs <output.json> <version> <variant> [--require-clean]')
     process.exit(2)
   }
+  const requireClean = flags.includes('--require-clean')
   try {
     const { output, payload } = writeProvenance(outputArg, {
       repoRoot: DEFAULT_REPO_ROOT,
       version,
       variant,
+      requireClean,
     })
     console.log(`[OK] Build provenance: ${output}`)
     if (payload.source.dirty) {
