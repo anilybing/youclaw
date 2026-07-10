@@ -83,6 +83,15 @@ function readJson(path, label) {
   }
 }
 
+function currentGitCommit(repoRoot) {
+  const result = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+    cwd: repoRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  return result.exitCode === 0 ? result.stdout.toString().trim() : null
+}
+
 export function validateArtifactMetadata(artifactRoot, repoRoot = DEFAULT_REPO_ROOT) {
   const root = resolve(artifactRoot)
   const sourceRoot = resolve(repoRoot)
@@ -113,8 +122,12 @@ export function validateArtifactMetadata(artifactRoot, repoRoot = DEFAULT_REPO_R
   if (!provenance.source?.branch || typeof provenance.source.branch !== 'string') {
     throw new Error(`${PROVENANCE_FILE} has no source branch`)
   }
-  if (typeof provenance.source?.dirty !== 'boolean') {
-    throw new Error(`${PROVENANCE_FILE} has no source dirty-state`)
+  if (provenance.source?.dirty !== false) {
+    throw new Error(`${PROVENANCE_FILE} was not built from a clean working tree`)
+  }
+  const expectedCommit = currentGitCommit(sourceRoot)
+  if (expectedCommit && provenance.source.commit !== expectedCommit) {
+    throw new Error(`${PROVENANCE_FILE} source commit does not match this checkout`)
   }
   const expectedInputs = hashProvenanceInputs(sourceRoot)
   if (JSON.stringify(provenance.source?.inputs) !== JSON.stringify(expectedInputs)) {

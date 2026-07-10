@@ -206,4 +206,21 @@ describe('SBOM and artifact verification', () => {
       'source input hashes do not match',
     )
   })
+
+  test('rejects artifacts produced from a dirty working tree', async () => {
+    const repoRoot = makeRepo('1.1.0')
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'xjc-artifact-'))
+    roots.push(artifactRoot)
+    write(resolve(artifactRoot, 'payload.bin'), 'release payload')
+    writeArtifactMetadata(repoRoot, artifactRoot)
+
+    const provenancePath = resolve(artifactRoot, 'build-provenance.json')
+    const provenance = JSON.parse(readFileSync(provenancePath, 'utf8'))
+    provenance.source.dirty = true
+    write(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`)
+
+    await expect(createArtifactManifest(artifactRoot, repoRoot)).rejects.toThrow(
+      'not built from a clean working tree',
+    )
+  })
 })
