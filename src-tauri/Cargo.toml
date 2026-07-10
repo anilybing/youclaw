@@ -1,6 +1,6 @@
 [package]
 name = "XiaoJuClaw"
-version = "1.0.0"
+version = "1.1.0"
 description = "Desktop AI assistant powered by a multi-provider coding agent runtime"
 authors = ["CodePhiliaX"]
 edition = "2021"
@@ -30,9 +30,11 @@ tokio = { version = "1", features = ["time"] }
 log = "0.4"
 tauri-plugin-log = "2"
 sys-locale = "0.3"
-# 便携版双 exe 自更新：拉取 MVP manifest + 下载 exe（rustls 对齐 updater 插件，避免 OpenSSL）。
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 sha2 = "0.10"
+getrandom = "0.4.3"
+ed25519-dalek = "3.0.0"
+base64 = "0.22.1"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
 
 [profile.release]
 strip = true

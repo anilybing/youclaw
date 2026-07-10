@@ -5,19 +5,23 @@
 # (does NOT depend on make-portable.ps1) and bundles the offline toolchain via
 # make-usb-payload.ps1. Kept ASCII-only so it parses on Windows PowerShell 5.1.
 #
-# Produces a single ready-to-copy folder:
+# Produces a three-root ready-to-copy folder:
 #   <portable>\
-#     XiaoJuClaw.exe            main app
-#     XiaoJuClaw-server.exe     backend sidecar
-#     package.json              required by the sidecar at startup
-#     _up_\                     bundled agents/skills/prompts/playwright
-#     resources\               bundled icon etc. (if present)
-#     XiaoJuClawData\           portable data dir (sits NEXT TO the exe)
+#     XiaoJuClaw\                immutable program files (replace on upgrade)
+#       XiaoJuClaw.exe
+#       XiaoJuClaw-server.exe
+#       package.json
+#       _up_\
+#       resources\
+#       portable-layout.json
+#     XiaoJuClawRuntime\         replaceable toolchain
 #       tools\manifest.json
 #       tools\win-x64\{bun,git,uv,python[,node]}
+#     XiaoJuClawData\            NOT shipped; created on first run and never overwritten
 #
-# Why: the app resolves its data dir as <exe_dir>\XiaoJuClawData and loads the
-# toolchain from XiaoJuClawData\tools\<platform>\. Shipping the tools here means
+# Why: the marker resolves data/runtime as siblings of the program directory.
+# Shipping tools outside XiaoJuClawData means a program/runtime upgrade cannot
+# overwrite the database, API keys, login token, chats, or workspace.
 # users never see the "install bun/git..." screen - it works offline, no admin,
 # no CDN, no antivirus-tripping installers.
 #
@@ -63,8 +67,21 @@ if (-not (Test-Path $sidecarExe)) {
 }
 
 # ---- Resolve version + build a timestamped output folder -------------------
-$version = "1.0.0"
-try { $version = ((Get-Content (Join-Path $RepoRoot "package.json") -Raw | ConvertFrom-Json).version) } catch { }
+& bun (Join-Path $here "desktop-version.mjs") check
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "[ERROR] Desktop version consistency check failed." -ForegroundColor Red
+  exit 1
+}
+try {
+  $version = ((Get-Content (Join-Path $RepoRoot "package.json") -Raw | ConvertFrom-Json).version)
+} catch {
+  Write-Host "[ERROR] Cannot read the desktop version from package.json." -ForegroundColor Red
+  exit 1
+}
+if (-not $version) {
+  Write-Host "[ERROR] Desktop package.json has no version." -ForegroundColor Red
+  exit 1
+}
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $portableDir = Join-Path $ReleaseRoot ("XiaoJuClaw-$version-windows-$stamp-portable")
 
@@ -77,37 +94,100 @@ Get-ChildItem $ReleaseRoot -Directory -EA SilentlyContinue |
   ForEach-Object { Write-Host ("      [prune] " + $_.Name); Remove-Item -Recurse -Force $_.FullName }
 if (Test-Path $portableDir) { Remove-Item $portableDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+$appDir = Join-Path $portableDir "XiaoJuClaw"
+New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 Write-Host "      -> $portableDir"
 
 # ---- 2) Copy the app + everything the sidecar needs from target\release ----
 Write-Host "[2/4] Copying app, sidecar, package.json, _up_, resources"
-Copy-Item $mainExe $portableDir -Force
-Copy-Item $sidecarExe $portableDir -Force
+Copy-Item $mainExe $appDir -Force
+Copy-Item $sidecarExe $appDir -Force
 
 $pkg = Join-Path $TargetRelease "package.json"
-if (Test-Path $pkg) { Copy-Item $pkg $portableDir -Force; Write-Host "      + package.json" }
-else { Write-Host "      [WARN] package.json missing in target\release (run build:sidecar)" -ForegroundColor Yellow }
+if (Test-Path $pkg) { Copy-Item $pkg $appDir -Force; Write-Host "      + package.json" }
+else {
+  Write-Host "[ERROR] package.json missing in target\release (run build:sidecar)." -ForegroundColor Red
+  exit 1
+}
 
 $up = Join-Path $TargetRelease "_up_"
-if (Test-Path $up) { Copy-Item $up (Join-Path $portableDir "_up_") -Recurse -Force; Write-Host "      + _up_ (agents/skills/prompts/playwright)" }
+if (Test-Path $up) { Copy-Item $up (Join-Path $appDir "_up_") -Recurse -Force; Write-Host "      + _up_ (agents/skills/prompts/playwright)" }
 else { Write-Host "      [WARN] _up_ missing in target\release (run bun tauri build)" -ForegroundColor Yellow }
 
 $res = Join-Path $TargetRelease "resources"
-if (Test-Path $res) { Copy-Item $res (Join-Path $portableDir "resources") -Recurse -Force; Write-Host "      + resources" }
+if (Test-Path $res) { Copy-Item $res (Join-Path $appDir "resources") -Recurse -Force; Write-Host "      + resources" }
 
 # Runtime DLLs, if the build produced any next to the exe (WebView2 is usually
 # provided by the system runtime / statically linked, so this is best-effort).
 Get-ChildItem $TargetRelease -Filter *.dll -File -ErrorAction SilentlyContinue | ForEach-Object {
-  Copy-Item $_.FullName $portableDir -Force
+  Copy-Item $_.FullName $appDir -Force
   Write-Host ("      + {0}" -f $_.Name)
 }
 
-# Portable data dir lives NEXT TO the exe (matches resolve_portable_data_dir).
-New-Item -ItemType Directory -Force -Path (Join-Path $portableDir "XiaoJuClawData\logs") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $portableDir "XiaoJuClawData\workspace") | Out-Null
+# Explicit marker: never infer portable mode from directory writability.
+$layout = @'
+{
+  "schemaVersion": 1,
+  "dataDir": "../XiaoJuClawData",
+  "runtimeDir": "../XiaoJuClawRuntime"
+}
+'@
+$layout | Set-Content -Path (Join-Path $appDir "portable-layout.json") -Encoding ASCII
 
-# ---- 3) Bundle the offline toolchain into <portable>\XiaoJuClawData --------
-Write-Host "[3/4] Bundling toolchain (make-usb-payload.ps1 -> XiaoJuClawData\tools)"
+# Convenience launcher kept outside the replaceable program directory.
+$launcher = @'
+@echo off
+start "" "%~dp0XiaoJuClaw\XiaoJuClaw.exe"
+'@
+$launcher | Set-Content -Path (Join-Path $portableDir "Start-XiaoJuClaw.bat") -Encoding ASCII
+
+$migrator = @'
+@echo off
+setlocal
+if not exist "%~dp0XiaoJuClaw\portable-layout.json" (
+  echo [ERROR] New XiaoJuClaw program directory is incomplete.
+  pause
+  exit /b 1
+)
+if not exist "%~dp0XiaoJuClaw.exe" goto launch
+taskkill /F /IM "XiaoJuClaw.exe" >nul 2>nul
+taskkill /F /IM "XiaoJuClaw-server.exe" >nul 2>nul
+if exist "%~dp0XiaoJuClaw.exe" del /f /q "%~dp0XiaoJuClaw.exe"
+if exist "%~dp0XiaoJuClaw-server.exe" del /f /q "%~dp0XiaoJuClaw-server.exe"
+if exist "%~dp0package.json" del /f /q "%~dp0package.json"
+if exist "%~dp0_up_" rmdir /s /q "%~dp0_up_"
+if exist "%~dp0resources" rmdir /s /q "%~dp0resources"
+echo [OK] Legacy program files removed. XiaoJuClawData was not touched.
+:launch
+start "" "%~dp0XiaoJuClaw\XiaoJuClaw.exe"
+exit /b 0
+'@
+$migrator | Set-Content -Path (Join-Path $portableDir "Migrate-Legacy-Layout.bat") -Encoding ASCII
+
+$readme = @'
+XiaoJuClaw portable edition
+
+Start:
+  Double-click Start-XiaoJuClaw.bat or XiaoJuClaw\XiaoJuClaw.exe.
+
+Directory ownership:
+  XiaoJuClaw\         program files; replace this directory when upgrading
+  XiaoJuClawRuntime\  bundled tools; safe to replace when upgrading
+  XiaoJuClawData\     user data; created on first run; NEVER delete or overwrite
+
+Safe upgrade:
+  Copy XiaoJuClaw\ and XiaoJuClawRuntime\ from the new package over the old
+  deployment. The release package intentionally contains no XiaoJuClawData\
+  directory, so direct merge-copy preserves keys, login state, chats, and files.
+
+Old flat-layout upgrade:
+  After merge-copying this package, run Migrate-Legacy-Layout.bat once. It only
+  removes obsolete root-level program files and never touches XiaoJuClawData\.
+'@
+$readme | Set-Content -Path (Join-Path $portableDir "README-portable.txt") -Encoding ASCII
+
+# ---- 3) Bundle the offline toolchain into <portable>\XiaoJuClawRuntime ------
+Write-Host "[3/4] Bundling toolchain (make-usb-payload.ps1 -> XiaoJuClawRuntime\tools)"
 $payloadArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',
   (Join-Path $here 'make-usb-payload.ps1'),
   '-Target', $portableDir, '-CacheDir', $CacheDir)
@@ -118,18 +198,26 @@ if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] make-usb-payload.ps1 failed" -For
 # ---- 4) Verify the final layout -------------------------------------------
 Write-Host "[4/4] Verifying USB folder layout"
 $must = @(
-  (Join-Path $portableDir 'XiaoJuClaw.exe'),
-  (Join-Path $portableDir 'XiaoJuClaw-server.exe'),
-  (Join-Path $portableDir 'package.json'),
-  (Join-Path $portableDir 'XiaoJuClawData\tools\manifest.json'),
-  (Join-Path $portableDir 'XiaoJuClawData\tools\win-x64\bun\bun.exe'),
-  (Join-Path $portableDir 'XiaoJuClawData\tools\win-x64\git\cmd\git.exe'),
-  (Join-Path $portableDir 'XiaoJuClawData\tools\win-x64\uv\uv.exe')
+  (Join-Path $portableDir 'XiaoJuClaw\XiaoJuClaw.exe'),
+  (Join-Path $portableDir 'XiaoJuClaw\XiaoJuClaw-server.exe'),
+  (Join-Path $portableDir 'XiaoJuClaw\package.json'),
+  (Join-Path $portableDir 'XiaoJuClaw\portable-layout.json'),
+  (Join-Path $portableDir 'Migrate-Legacy-Layout.bat'),
+  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\manifest.json'),
+  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\bun\bun.exe'),
+  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\git\cmd\git.exe'),
+  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\uv\uv.exe')
 )
 $missing = @($must | Where-Object { -not (Test-Path $_) })
 if ($missing.Count -gt 0) {
   Write-Host "[FAIL] Missing required files:" -ForegroundColor Red
   $missing | ForEach-Object { Write-Host "       $_" -ForegroundColor Red }
+  exit 1
+}
+
+& bun (Join-Path $here "verify-portable-layout.mjs") $portableDir
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "[FAIL] Portable layout/data isolation verification failed" -ForegroundColor Red
   exit 1
 }
 
@@ -140,7 +228,9 @@ Write-Host "============================================================"
 Write-Host "  $portableDir"
 Write-Host ""
 Write-Host "  Copy the ENTIRE folder contents to the USB root."
-Write-Host "  Users double-click XiaoJuClaw.exe - bun/git/uv are already on"
+Write-Host "  Users double-click Start-XiaoJuClaw.bat - bun/git/uv are already on"
 Write-Host "  the USB, so the environment-setup screen never appears."
+Write-Host "  Future upgrades replace XiaoJuClaw\ and XiaoJuClawRuntime\ only."
+Write-Host "  XiaoJuClawData\ is user-owned and is never shipped."
 Write-Host ""
 exit 0

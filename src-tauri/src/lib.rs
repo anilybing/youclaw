@@ -1,18 +1,20 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
-use serde::Serialize;
+mod update_canary;
+
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{
+    atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
     Mutex,
-    atomic::{AtomicBool, AtomicU8, Ordering},
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{
-    AppHandle, Emitter, Listener, Manager,
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Listener, Manager,
 };
 use tauri_plugin_log::{Target, TargetKind, TimezoneStrategy};
 use tauri_plugin_shell::ShellExt;
@@ -30,11 +32,46 @@ struct PortableDiskSpace {
 /// Sidecar child process handle
 struct SidecarState(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
+/// Per-application bearer token shared only with the spawned sidecar and the
+/// trusted XiaoJuClaw webviews. It is never persisted or written to logs.
+struct LocalApiToken(String);
+
 /// Sidecar readiness state: 0 = pending, 1 = ready, 2 = error, 3 = port-conflict
 struct SidecarReadyState {
     state: AtomicU8,
+    generation: AtomicU64,
+    transition: Mutex<()>,
     port: Mutex<u16>,
     message: Mutex<String>,
+}
+
+struct SidecarLaunch {
+    port: u16,
+    generation: u64,
+}
+
+const SIDECAR_STATE_PENDING: u8 = 0;
+const SIDECAR_STATE_READY: u8 = 1;
+const SIDECAR_STATE_ERROR: u8 = 2;
+const SIDECAR_STATE_PORT_CONFLICT: u8 = 3;
+const SIDECAR_HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
+const SIDECAR_HEALTH_RETRY_INTERVAL: Duration = Duration::from_millis(500);
+const SIDECAR_HEALTH_IO_TIMEOUT: Duration = Duration::from_millis(750);
+const PORTABLE_LAYOUT_FILE: &str = "portable-layout.json";
+const INSTALLED_LAYOUT_FILE: &str = "installed-layout.json";
+const PORTABLE_DATA_DIR: &str = "XiaoJuClawData";
+const PORTABLE_RUNTIME_DIR: &str = "XiaoJuClawRuntime";
+
+fn generate_local_api_token() -> Result<String, String> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).map_err(|_| "OS random source unavailable".to_string())?;
+    let mut token = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut token, "{byte:02x}")
+            .map_err(|_| "Failed to encode local API token".to_string())?;
+    }
+    Ok(token)
 }
 
 /// Deep-link delivery state shared between startup and the running frontend.
@@ -55,9 +92,81 @@ impl DeepLinkState {
 impl SidecarReadyState {
     fn new() -> Self {
         Self {
-            state: AtomicU8::new(0),
+            state: AtomicU8::new(SIDECAR_STATE_PENDING),
+            generation: AtomicU64::new(0),
+            transition: Mutex::new(()),
             port: Mutex::new(62601),
             message: Mutex::new(String::new()),
+        }
+    }
+
+    fn begin_launch(&self) -> u64 {
+        let _transition = self.transition.lock().unwrap();
+        let generation = self
+            .generation
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+        *self.message.lock().unwrap() = String::new();
+        self.state.store(SIDECAR_STATE_PENDING, Ordering::SeqCst);
+        generation
+    }
+
+    #[cfg_attr(debug_assertions, allow(dead_code))]
+    fn invalidate_and_mark_pending(&self) {
+        let _transition = self.transition.lock().unwrap();
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *self.message.lock().unwrap() = String::new();
+        self.state.store(SIDECAR_STATE_PENDING, Ordering::SeqCst);
+    }
+
+    #[cfg_attr(debug_assertions, allow(dead_code))]
+    fn mark_error(&self, message: String) {
+        let _transition = self.transition.lock().unwrap();
+        *self.message.lock().unwrap() = message;
+        self.state.store(SIDECAR_STATE_ERROR, Ordering::SeqCst);
+    }
+
+    fn update_if_current(
+        &self,
+        generation: u64,
+        state: u8,
+        port: Option<u16>,
+        message: String,
+    ) -> bool {
+        let _transition = self.transition.lock().unwrap();
+        if self.generation.load(Ordering::SeqCst) != generation {
+            return false;
+        }
+        if let Some(port) = port {
+            *self.port.lock().unwrap() = port;
+        }
+        *self.message.lock().unwrap() = message;
+        self.state.store(state, Ordering::SeqCst);
+        true
+    }
+
+    fn snapshot(&self) -> SidecarEvent {
+        let _transition = self.transition.lock().unwrap();
+        let state = self.state.load(Ordering::SeqCst);
+        let port = *self.port.lock().unwrap();
+        let message = self.message.lock().unwrap().clone();
+        match state {
+            SIDECAR_STATE_READY => SidecarEvent {
+                status: "ready".into(),
+                message: format!("Backend ready on port {}", port),
+            },
+            SIDECAR_STATE_ERROR => SidecarEvent {
+                status: "error".into(),
+                message,
+            },
+            SIDECAR_STATE_PORT_CONFLICT => SidecarEvent {
+                status: "port-conflict".into(),
+                message,
+            },
+            _ => SidecarEvent {
+                status: "pending".into(),
+                message: "Backend starting...".into(),
+            },
         }
     }
 }
@@ -74,7 +183,11 @@ fn is_writable_dir(dir: &PathBuf) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
-    let probe = dir.join(format!(".XiaoJuClaw-write-test-{}-{}", std::process::id(), chrono_like_timestamp()));
+    let probe = dir.join(format!(
+        ".XiaoJuClaw-write-test-{}-{}",
+        std::process::id(),
+        chrono_like_timestamp()
+    ));
     if std::fs::write(&probe, b"ok").is_err() {
         return false;
     }
@@ -88,26 +201,146 @@ fn chrono_like_timestamp() -> u128 {
         .unwrap_or(0)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PortableLayout {
+    schema_version: u32,
+    data_dir: String,
+    runtime_dir: String,
+}
+
+fn nonempty_env_path(name: &str) -> Option<PathBuf> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn read_portable_layout(exe_dir: &Path) -> Option<PortableLayout> {
+    let content = std::fs::read_to_string(exe_dir.join(PORTABLE_LAYOUT_FILE)).ok()?;
+    let layout = serde_json::from_str::<PortableLayout>(&content).ok()?;
+    (layout.schema_version == 1).then_some(layout)
+}
+
+fn resolve_layout_dir(exe_dir: &Path, value: &str, expected_name: &str) -> Option<PathBuf> {
+    let normalized = value.replace('\\', "/");
+    if normalized == expected_name {
+        return Some(exe_dir.join(expected_name));
+    }
+    if normalized == format!("../{expected_name}") {
+        return exe_dir.parent().map(|parent| parent.join(expected_name));
+    }
+    None
+}
+
+fn resolve_marked_portable_dir(exe_dir: &Path, runtime: bool) -> Option<PathBuf> {
+    let marker = exe_dir.join(PORTABLE_LAYOUT_FILE);
+    if !marker.is_file() {
+        return None;
+    }
+
+    let expected_name = if runtime {
+        PORTABLE_RUNTIME_DIR
+    } else {
+        PORTABLE_DATA_DIR
+    };
+    if let Some(layout) = read_portable_layout(exe_dir) {
+        let value = if runtime {
+            &layout.runtime_dir
+        } else {
+            &layout.data_dir
+        };
+        if let Some(path) = resolve_layout_dir(exe_dir, value, expected_name) {
+            return Some(path);
+        }
+    }
+
+    // A malformed marker must never make a portable build silently switch to
+    // AppData. Fall back to the v1 sibling layout and log the packaging error.
+    log::error!(
+        "Invalid {}: using safe sibling {} fallback",
+        PORTABLE_LAYOUT_FILE,
+        expected_name
+    );
+    Some(exe_dir.parent().unwrap_or(exe_dir).join(expected_name))
+}
+
+fn has_legacy_portable_layout(exe_dir: &Path) -> bool {
+    // Historical portable packages always pre-created XiaoJuClawData, even
+    // lightweight variants without a bundled tools manifest.
+    exe_dir.join(PORTABLE_DATA_DIR).is_dir()
+}
+
+fn has_installed_layout(exe_dir: &Path) -> bool {
+    exe_dir.join(INSTALLED_LAYOUT_FILE).is_file()
+        // Tauri's NSIS package leaves an uninstaller in $INSTDIR. This detects
+        // old user-level installs that were previously misclassified as
+        // portable merely because their install directory was writable.
+        || exe_dir.join("uninstall.exe").is_file()
+        || exe_dir.join("unins000.exe").is_file()
+}
+
+fn is_portable_install_at(exe_dir: &Path) -> bool {
+    if has_installed_layout(exe_dir) {
+        return false;
+    }
+    exe_dir.join(PORTABLE_LAYOUT_FILE).is_file() || has_legacy_portable_layout(exe_dir)
+}
+
+fn is_portable_install() -> bool {
+    if nonempty_env_path("XiaoJuClaw_PORTABLE_DATA_DIR").is_some() {
+        return true;
+    }
+    current_exe_dir()
+        .as_deref()
+        .map(is_portable_install_at)
+        .unwrap_or(false)
+}
+
 fn resolve_portable_data_dir(app: &AppHandle) -> PathBuf {
-    if let Ok(value) = std::env::var("XiaoJuClaw_PORTABLE_DATA_DIR") {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return PathBuf::from(trimmed);
+    if let Some(path) = nonempty_env_path("XiaoJuClaw_PORTABLE_DATA_DIR") {
+        return path;
+    }
+
+    if let Some(exe_dir) = current_exe_dir() {
+        if let Some(path) = resolve_marked_portable_dir(&exe_dir, false) {
+            return path;
+        }
+        if !has_installed_layout(&exe_dir) && has_legacy_portable_layout(&exe_dir) {
+            return exe_dir.join(PORTABLE_DATA_DIR);
         }
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let candidate = exe_dir.join("XiaoJuClawData");
-            if is_writable_dir(&candidate) {
-                return candidate;
-            }
-        }
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join(PORTABLE_DATA_DIR))
+}
+
+fn resolve_portable_runtime_dir() -> Option<PathBuf> {
+    if let Some(path) = nonempty_env_path("XiaoJuClaw_RUNTIME_DIR") {
+        return Some(path);
     }
 
-    app.path().app_data_dir().unwrap_or_else(|_| {
-        std::env::temp_dir().join("XiaoJuClawData")
-    })
+    let exe_dir = current_exe_dir()?;
+    if let Some(path) = resolve_marked_portable_dir(&exe_dir, true) {
+        return Some(path);
+    }
+    if !has_installed_layout(&exe_dir) && has_legacy_portable_layout(&exe_dir) {
+        // New installs write here. The sidecar keeps the old
+        // XiaoJuClawData/tools directory as a read-only fallback.
+        return Some(exe_dir.join(PORTABLE_RUNTIME_DIR));
+    }
+    None
+}
+
+fn legacy_sibling_data_dir_for_installed() -> Option<PathBuf> {
+    let exe_dir = current_exe_dir()?;
+    if is_portable_install_at(&exe_dir) {
+        return None;
+    }
+    let candidate = exe_dir.join(PORTABLE_DATA_DIR);
+    candidate.exists().then_some(candidate)
 }
 
 fn portable_settings_path(app: &AppHandle) -> PathBuf {
@@ -124,7 +357,10 @@ fn portable_secrets_path(app: &AppHandle) -> PathBuf {
 
 fn read_json_object(path: &PathBuf) -> Option<Map<String, Value>> {
     let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str::<Value>(&content).ok()?.as_object().cloned()
+    serde_json::from_str::<Value>(&content)
+        .ok()?
+        .as_object()
+        .cloned()
 }
 
 fn read_portable_settings(app: &AppHandle) -> Map<String, Value> {
@@ -171,7 +407,9 @@ fn write_portable_secrets(app: &AppHandle, secrets: &Map<String, Value>) -> Resu
 fn validate_portable_secret_key(key: &str) -> Result<(), String> {
     let is_valid = !key.is_empty()
         && key.len() <= 80
-        && key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
     if is_valid {
         Ok(())
     } else {
@@ -329,10 +567,10 @@ fn find_windows_git_bash() -> Option<String> {
 
     let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
-    let program_files = std::env::var("ProgramFiles")
-        .unwrap_or_else(|_| "C:\\Program Files".into());
-    let program_files_x86 = std::env::var("ProgramFiles(x86)")
-        .unwrap_or_else(|_| "C:\\Program Files (x86)".into());
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
+    let program_files_x86 =
+        std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".into());
 
     candidates.extend([
         format!("{}\\Git\\bin\\bash.exe", program_files),
@@ -387,11 +625,17 @@ fn add_windows_git_paths(extra_paths: &mut Vec<String>, bash_path: &str) {
     }
 
     let bash_path = Path::new(bash_path);
-    let Some(bash_dir) = bash_path.parent() else { return };
+    let Some(bash_dir) = bash_path.parent() else {
+        return;
+    };
 
     // For ...\\usr\\bin\\bash.exe -> git root is parent of usr
     // For ...\\bin\\bash.exe -> git root is parent of bin
-    let git_root = if bash_dir.to_string_lossy().to_ascii_lowercase().ends_with("\\usr\\bin") {
+    let git_root = if bash_dir
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with("\\usr\\bin")
+    {
         bash_dir.parent().and_then(|usr| usr.parent())
     } else {
         bash_dir.parent()
@@ -422,10 +666,7 @@ fn kill_process_on_port(port: u16) {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let addr_patterns = [
-        format!("127.0.0.1:{}", port),
-        format!("0.0.0.0:{}", port),
-    ];
+    let addr_patterns = [format!("127.0.0.1:{}", port), format!("0.0.0.0:{}", port)];
 
     let mut killed_pids = std::collections::HashSet::new();
     for line in stdout.lines() {
@@ -434,7 +675,9 @@ fn kill_process_on_port(port: u16) {
         if !trimmed.contains("LISTENING") {
             continue;
         }
-        let has_match = addr_patterns.iter().any(|pat| trimmed.contains(pat.as_str()));
+        let has_match = addr_patterns
+            .iter()
+            .any(|pat| trimmed.contains(pat.as_str()));
         if !has_match {
             continue;
         }
@@ -461,10 +704,11 @@ fn kill_process_on_port(port: u16) {
 
 /// Spawn the sidecar backend
 #[allow(dead_code)]
-fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
+fn spawn_sidecar(app: &AppHandle) -> Result<SidecarLaunch, String> {
     let state = app.state::<SidecarState>();
 
     // Read preferred port from Tauri Store, default 62601
+    let portable_install = is_portable_install();
     let data_dir = resolve_portable_data_dir(app);
     let data_dir_str = normalize_path(data_dir.clone());
     let settings_path = portable_settings_path(app);
@@ -487,7 +731,35 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
     env_vars.push(("PORT".into(), port.to_string()));
     env_vars.push(("DATA_DIR".into(), data_dir_str.clone()));
     env_vars.push(("XiaoJuClaw_SETTINGS_FILE".into(), settings_path_str));
-    log::info!("Portable data dir: {}", data_dir_str);
+    env_vars.push((
+        "XiaoJuClaw_PORTABLE".into(),
+        if portable_install { "1" } else { "0" }.into(),
+    ));
+    if let Some(runtime_dir) = resolve_portable_runtime_dir() {
+        env_vars.push(("XiaoJuClaw_RUNTIME_DIR".into(), normalize_path(runtime_dir)));
+    }
+    if !portable_install {
+        if let Some(legacy_dir) = legacy_sibling_data_dir_for_installed() {
+            if legacy_dir != data_dir {
+                // Old builds classified any writable install directory as
+                // portable. Let the sidecar copy that complete data tree into
+                // AppData once, while retaining the source as a rollback copy.
+                env_vars.push((
+                    "XiaoJuClaw_LEGACY_DATA_DIR".into(),
+                    normalize_path(legacy_dir),
+                ));
+            }
+        }
+    }
+    env_vars.push((
+        "XiaoJuClaw_LOCAL_API_TOKEN".into(),
+        app.state::<LocalApiToken>().0.clone(),
+    ));
+    log::info!(
+        "Storage layout: portable={}, data={}",
+        portable_install,
+        data_dir_str
+    );
 
     // Ensure PATH includes common bun/node install paths (PATH is minimal when launched from Finder/Explorer)
     {
@@ -495,8 +767,11 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| {
-                if cfg!(target_os = "windows") { "C:\\Users\\Default".into() }
-                else { "/Users/default".into() }
+                if cfg!(target_os = "windows") {
+                    "C:\\Users\\Default".into()
+                } else {
+                    "/Users/default".into()
+                }
             });
 
         let mut extra_paths: Vec<String> = if cfg!(target_os = "windows") {
@@ -523,8 +798,8 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                 extra_paths.push(nvm_symlink);
             } else {
                 // Fallback: standard Node.js install location
-                let program_files = std::env::var("ProgramFiles")
-                    .unwrap_or_else(|_| "C:\\Program Files".into());
+                let program_files =
+                    std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into());
                 let nodejs_dir = format!("{}\\nodejs", program_files);
                 if std::path::Path::new(&nodejs_dir).exists() {
                     extra_paths.push(nodejs_dir);
@@ -562,7 +837,11 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
             }
         }
 
-        let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+        let path_sep = if cfg!(target_os = "windows") {
+            ";"
+        } else {
+            ":"
+        };
         let mut path_parts: Vec<&str> = current_path.split(path_sep).collect();
         for p in &extra_paths {
             if !path_parts.contains(&p.as_str()) {
@@ -614,41 +893,45 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                         exe_dir.parent().unwrap_or(exe_dir).join("Resources")
                     };
                     if resources.exists() {
-                        env_vars.push(("RESOURCES_DIR".into(), resources.to_string_lossy().to_string()));
+                        env_vars.push((
+                            "RESOURCES_DIR".into(),
+                            resources.to_string_lossy().to_string(),
+                        ));
                     }
                 }
             }
         }
     }
 
-    // Ensure package.json exists next to the sidecar binary.
-    // pi-coding-agent reads package.json from dirname(process.execPath) at module
-    // load time to extract version and piConfig. Without it the sidecar crashes with ENOENT.
+    // package.json is immutable program payload. Never repair it by writing into
+    // APP_DIR: that would blur the program/data boundary and can fail under
+    // Program Files. A damaged package must be reinstalled.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             let pkg_json = exe_dir.join("package.json");
             if !pkg_json.exists() {
-                let version = app.config().version.clone().unwrap_or_else(|| "1.0.0".into());
-                let content = format!(
-                    r#"{{"name":"XiaoJuClaw","version":"{}","type":"module","private":true}}"#,
-                    version
-                );
-                if let Err(e) = std::fs::write(&pkg_json, content) {
-                    log::warn!("Failed to write package.json to {:?}: {}", pkg_json, e);
-                }
+                return Err(format!(
+                    "Program payload is incomplete: missing {}. Reinstall XiaoJuClaw.",
+                    normalize_path(pkg_json)
+                ));
             }
         }
     }
 
     let shell = app.shell();
-    let mut cmd = shell.sidecar("XiaoJuClaw-server").map_err(|e| e.to_string())?;
+    let mut cmd = shell
+        .sidecar("XiaoJuClaw-server")
+        .map_err(|e| e.to_string())?;
 
     for (key, val) in env_vars {
         cmd = cmd.env(key, val);
     }
 
     let app_handle = app.clone();
-    let (mut rx, child) = cmd.spawn().map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+    let (mut rx, child) = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+    let generation = app.state::<SidecarReadyState>().begin_launch();
 
     // Store child process handle
     let mut guard = state.0.lock().unwrap();
@@ -666,53 +949,96 @@ fn spawn_sidecar(app: &AppHandle) -> Result<u16, String> {
                     let line_str = String::from_utf8_lossy(&line);
                     log::warn!("[sidecar] {}", line_str);
                     if line_str.contains("[PORT_CONFLICT]") {
-                        let _ = app_for_events.emit("sidecar-event", SidecarEvent {
-                            status: "port-conflict".into(),
-                            message: line_str.to_string(),
-                        });
+                        let message = line_str.to_string();
+                        let ready_state = app_for_events.state::<SidecarReadyState>();
+                        if ready_state.update_if_current(
+                            generation,
+                            SIDECAR_STATE_PORT_CONFLICT,
+                            None,
+                            message.clone(),
+                        ) {
+                            let _ = app_for_events.emit(
+                                "sidecar-event",
+                                SidecarEvent {
+                                    status: "port-conflict".into(),
+                                    message,
+                                },
+                            );
+                        }
                     }
                 }
                 tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
                     log::error!("[sidecar] terminated with code: {:?}", payload.code);
-                    let _ = app_for_events.emit("sidecar-event", SidecarEvent {
-                        status: "terminated".into(),
-                        message: format!("Sidecar exited with code: {:?}", payload.code),
-                    });
+                    let message = format!("Sidecar exited with code: {:?}", payload.code);
+                    let ready_state = app_for_events.state::<SidecarReadyState>();
+                    // Query callers consume "error" for startup-race compatibility, while
+                    // the live event keeps the more specific "terminated" status.
+                    if ready_state.update_if_current(
+                        generation,
+                        SIDECAR_STATE_ERROR,
+                        None,
+                        message.clone(),
+                    ) {
+                        let _ = app_for_events.emit(
+                            "sidecar-event",
+                            SidecarEvent {
+                                status: "terminated".into(),
+                                message,
+                            },
+                        );
+                    }
                 }
                 _ => {}
             }
         }
     });
 
-    Ok(port)
+    Ok(SidecarLaunch { port, generation })
 }
 
 /// Wait for backend health check using stdlib TCP (no reqwest dependency)
-async fn wait_for_health(port: u16, max_retries: u32) -> Result<(), String> {
-    let addr = format!("127.0.0.1:{}", port);
+async fn wait_for_health(port: u16, max_wait: Duration) -> Result<(), String> {
+    let addr = format!("127.0.0.1:{}", port)
+        .parse()
+        .map_err(|e| format!("Invalid backend address: {}", e))?;
+    let started = Instant::now();
+    let mut attempts = 0u32;
 
-    for i in 0..max_retries {
-        if let Ok(mut stream) = std::net::TcpStream::connect_timeout(
-            &addr.parse().unwrap(),
-            Duration::from_millis(500),
-        ) {
-            use std::io::{Write, Read};
-            let req = format!("GET /api/health HTTP/1.0\r\nHost: localhost:{}\r\n\r\n", port);
+    while started.elapsed() < max_wait {
+        attempts += 1;
+        if let Ok(mut stream) =
+            std::net::TcpStream::connect_timeout(&addr, SIDECAR_HEALTH_IO_TIMEOUT)
+        {
+            use std::io::{Read, Write};
+            let _ = stream.set_read_timeout(Some(SIDECAR_HEALTH_IO_TIMEOUT));
+            let _ = stream.set_write_timeout(Some(SIDECAR_HEALTH_IO_TIMEOUT));
+            let req = format!(
+                "GET /api/health HTTP/1.0\r\nHost: localhost:{}\r\n\r\n",
+                port
+            );
             if stream.write_all(req.as_bytes()).is_ok() {
                 let mut buf = [0u8; 256];
                 if let Ok(n) = stream.read(&mut buf) {
                     let resp = String::from_utf8_lossy(&buf[..n]);
-                    if resp.contains("200") {
-                        log::info!("Backend health check passed after {} attempts", i + 1);
+                    if resp.starts_with("HTTP/1.0 200") || resp.starts_with("HTTP/1.1 200") {
+                        log::info!("Backend health check passed after {} attempts", attempts);
                         return Ok(());
                     }
                 }
             }
         }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let remaining = max_wait.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            break;
+        }
+        tokio::time::sleep(SIDECAR_HEALTH_RETRY_INTERVAL.min(remaining)).await;
     }
 
-    Err("Backend health check failed after max retries".into())
+    Err(format!(
+        "Backend health check failed after {} seconds",
+        max_wait.as_secs()
+    ))
 }
 
 /// Kill the sidecar process
@@ -771,52 +1097,14 @@ const OFFLINE_BUILD: bool = match option_env!("XJC_OFFLINE_BUILD") {
     None => false,
 };
 
-/// 更新服务基址：默认线上域名，可用 XJC_UPDATE_BASE 覆盖（联调指向本地 MVP）。
-fn portable_update_base() -> String {
-    match std::env::var("XJC_UPDATE_BASE") {
-        Ok(v) if !v.trim().is_empty() => v.trim().trim_end_matches('/').to_string(),
-        _ => "https://www.xiaojuclaw.top".to_string(),
-    }
-}
-
-/// [XJC-PATCH] 安全：校验 manifest 里的下载地址是否可用。
-/// 只放行 https；仅当更新基址本身是 http（本地/离线联调用 XJC_UPDATE_BASE 指向
-/// 本地 MVP）时才额外放行 http。用于防止「被攻陷的 manifest」把下载指向任意明文
-/// http 源（中间人可投递恶意 exe）。
-fn portable_url_allowed(url: &str) -> bool {
-    if url.starts_with("https://") {
-        return true;
-    }
-    // 联调场景：更新基址为 http 时，允许同为 http 的下载地址；生产默认 https 基址下
-    // 任何 http 地址一律拒绝。
-    url.starts_with("http://") && portable_update_base().starts_with("http://")
-}
-
 fn current_exe_dir() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
 }
 
-#[derive(serde::Deserialize)]
-struct PortableManifestFile {
-    name: String,
-    sha256: String,
-    #[serde(default)]
-    size: u64,
-    url: String,
-}
-
-#[derive(serde::Deserialize)]
-struct PortableManifest {
-    version: String,
-    #[serde(default)]
-    notes: String,
-    #[serde(default, rename = "forceUpdate")]
-    force_update: bool,
-    #[serde(default)]
-    files: Vec<PortableManifestFile>,
-}
+type PortableManifestFile = update_canary::PortableManifestFile;
+type PortableManifest = update_canary::PortableManifest;
 
 #[derive(Serialize, Default)]
 struct PortableUpdateCheck {
@@ -827,6 +1115,10 @@ struct PortableUpdateCheck {
     main_needs_update: bool,
     server_needs_update: bool,
     total_bytes: u64,
+    release_id: String,
+    release_channel: String,
+    cohort: update_canary::UpdateCohort,
+    signature_verification: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -930,32 +1222,21 @@ fn is_valid_portable_version(v: &str) -> bool {
     true
 }
 
-fn portable_fetch_manifest() -> Result<Option<PortableManifest>, String> {
-    let url = format!("{}/api/client/portable/manifest.json", portable_update_base());
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .map_err(|e| format!("检查更新失败：{}", e))?;
-    let status = resp.status();
-    if status.as_u16() == 204 {
-        return Ok(None);
-    }
-    if !status.is_success() {
-        return Err(format!("检查更新失败：HTTP {}", status));
-    }
-    let manifest = resp
-        .json::<PortableManifest>()
-        .map_err(|e| format!("更新清单解析失败：{}", e))?;
-    Ok(Some(manifest))
+fn portable_fetch_manifest(
+    app: &AppHandle,
+    current: &str,
+    channel: Option<&str>,
+) -> Result<Option<PortableManifest>, String> {
+    update_canary::fetch_portable_manifest(app, current, channel)
 }
 
-fn portable_update_check_blocking(current: &str) -> Result<PortableUpdateCheck, String> {
+fn portable_update_check_blocking(
+    app: &AppHandle,
+    current: &str,
+    channel: Option<&str>,
+) -> Result<PortableUpdateCheck, String> {
     let dir = current_exe_dir().ok_or("无法定位程序目录")?;
-    let manifest = match portable_fetch_manifest()? {
+    let manifest = match portable_fetch_manifest(app, current, channel)? {
         Some(m) => m,
         None => return Ok(PortableUpdateCheck::default()),
     };
@@ -967,9 +1248,13 @@ fn portable_update_check_blocking(current: &str) -> Result<PortableUpdateCheck, 
     // 防降级：清单版本低于当前版本则不提示更新。
     if !current.is_empty() && portable_version_cmp(&manifest.version, current) < 0 {
         return Ok(PortableUpdateCheck {
-            version: manifest.version,
-            notes: manifest.notes,
+            version: manifest.version.clone(),
+            notes: manifest.notes.clone(),
             force_update: manifest.force_update,
+            release_id: manifest.release_id.clone(),
+            release_channel: manifest.channel.clone(),
+            cohort: manifest.cohort.clone(),
+            signature_verification: "verified".to_string(),
             ..Default::default()
         });
     }
@@ -982,26 +1267,33 @@ fn portable_update_check_blocking(current: &str) -> Result<PortableUpdateCheck, 
         if f.name == PORTABLE_MAIN_EXE && !f.sha256.is_empty() && f.sha256 != local_main {
             main_needs = true;
             total += f.size;
-        } else if f.name == PORTABLE_SERVER_EXE && !f.sha256.is_empty() && f.sha256 != local_server {
+        } else if f.name == PORTABLE_SERVER_EXE && !f.sha256.is_empty() && f.sha256 != local_server
+        {
             server_needs = true;
             total += f.size;
         }
     }
     Ok(PortableUpdateCheck {
         available: main_needs || server_needs,
-        version: manifest.version,
-        notes: manifest.notes,
+        version: manifest.version.clone(),
+        notes: manifest.notes.clone(),
         force_update: manifest.force_update,
         main_needs_update: main_needs,
         server_needs_update: server_needs,
         total_bytes: total,
+        release_id: manifest.release_id,
+        release_channel: manifest.channel,
+        cohort: manifest.cohort,
+        signature_verification: "verified".to_string(),
     })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn portable_download(
     client: &reqwest::blocking::Client,
-    url: &str,
+    manifest: &PortableManifest,
+    manifest_file: &PortableManifestFile,
+    current: &str,
     dest: &Path,
     app: &AppHandle,
     downloaded_total: &mut u64,
@@ -1009,19 +1301,27 @@ fn portable_download(
     last_percent: &mut u32,
 ) -> Result<(), String> {
     use std::io::{Read, Write};
-    let mut resp = client
-        .get(url)
-        .send()
-        .map_err(|e| format!("下载失败：{}", e))?;
+    let mut resp =
+        update_canary::send_portable_download(client, app, manifest, manifest_file, current)?;
     if !resp.status().is_success() {
         return Err(format!("下载失败：HTTP {}", resp.status()));
     }
+    if let Some(content_length) = resp.content_length() {
+        if content_length != manifest_file.size {
+            return Err("下载文件大小与签名清单不匹配".to_string());
+        }
+    }
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
     let mut buf = [0u8; 65536];
+    let mut file_total = 0u64;
     loop {
         let n = resp.read(&mut buf).map_err(|e| e.to_string())?;
         if n == 0 {
             break;
+        }
+        file_total = file_total.saturating_add(n as u64);
+        if file_total > manifest_file.size {
+            return Err("下载文件大小与签名清单不匹配".to_string());
         }
         file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
         *downloaded_total += n as u64;
@@ -1043,6 +1343,9 @@ fn portable_download(
             );
         }
     }
+    if file_total != manifest_file.size {
+        return Err("下载文件大小与签名清单不匹配".to_string());
+    }
     file.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1053,6 +1356,7 @@ fn portable_spawn_swap_windows(
     app: &AppHandle,
     staging: &Path,
     copies: &[(PathBuf, PathBuf)],
+    applied_version: &str,
 ) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -1066,7 +1370,11 @@ fn portable_spawn_swap_windows(
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let main_exe = normalize_path(current_exe_dir().ok_or("无法定位程序目录")?.join(PORTABLE_MAIN_EXE));
+    let main_exe = normalize_path(
+        current_exe_dir()
+            .ok_or("无法定位程序目录")?
+            .join(PORTABLE_MAIN_EXE),
+    );
 
     // [XJC-PATCH] 失败标记文件：原子替换失败（备份失败或替换回滚）时写入，供下次
     // 启动侧检测并提示用户「上次更新失败，已保留旧版本」（前端读取属后续工作）。
@@ -1076,6 +1384,7 @@ fn portable_spawn_swap_windows(
             .join("updates")
             .join("last-update-failed.txt"),
     );
+    let applied_marker = normalize_path(update_canary::applied_marker_path(app));
 
     let mut script = String::new();
     script.push_str("@echo off\r\n");
@@ -1117,6 +1426,10 @@ fn portable_spawn_swap_windows(
     }
     // --- success: clear marker, drop .bak, restart, clean staging, self-delete ---
     script.push_str(&format!("del /f /q \"{}\" >nul 2>nul\r\n", marker));
+    script.push_str(&format!(
+        "echo {}>\"{}\"\r\n",
+        applied_version, applied_marker
+    ));
     for (_staged, dest) in copies {
         script.push_str(&format!(
             "del /f /q \"{}.bak\" >nul 2>nul\r\n",
@@ -1205,12 +1518,26 @@ fn portable_prune_stale_staging(updates_root: &Path, keep_version: &str) {
     }
 }
 
-fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
-    let dir = current_exe_dir().ok_or("无法定位程序目录")?;
-    if !is_writable_dir(&dir) {
+fn portable_update_apply_blocking(
+    app: &AppHandle,
+    expected_offer: &update_canary::UpdateOfferContext,
+) -> Result<(), String> {
+    if !is_portable_install() {
         return Err("当前为安装版，请通过安装包更新".into());
     }
-    let manifest = portable_fetch_manifest()?.ok_or("暂无可用更新")?;
+    let dir = current_exe_dir().ok_or("无法定位程序目录")?;
+    if !is_writable_dir(&dir) {
+        return Err("便携版程序目录不可写，无法执行就地更新".into());
+    }
+    let current = app.config().version.clone().unwrap_or_default();
+    let manifest = portable_fetch_manifest(app, &current, Some(&expected_offer.channel))?
+        .ok_or("暂无可用更新")?;
+    if manifest.release_id != expected_offer.release_id
+        || manifest.version != expected_offer.release_version
+    {
+        return Err("更新清单已变化，请重新检查更新".to_string());
+    }
+    let offer_context = update_canary::offer_context_from_portable(&manifest);
 
     // [XJC-PATCH] 安全：manifest.version 会被逐字拼进 staging 目录路径，随后被
     // apply-update.bat `rmdir /s /q` 删除；先做严格 semver 校验，防止被攻陷/损坏的
@@ -1220,7 +1547,6 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
     }
 
     // 与 check 同样的防降级门：apply 被直接调用（绕过 check）时也不允许装回旧版本。
-    let current = app.config().version.clone().unwrap_or_default();
     if !current.is_empty() && portable_version_cmp(&manifest.version, &current) < 0 {
         return Err("服务器上的版本低于当前版本，已取消更新".into());
     }
@@ -1239,15 +1565,11 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
         } else {
             continue;
         };
-        if f.sha256.is_empty() || &f.sha256 == local {
+        if f.sha256.is_empty() || f.sha256.eq_ignore_ascii_case(local) {
             continue;
         }
-        // [XJC-PATCH] 安全：强制下载地址为 https（本地/离线联调 XJC_UPDATE_BASE 为
-        // http 时才放行 http），非法地址跳过并告警，避免被攻陷的 manifest 投递恶意 exe。
-        if !portable_url_allowed(&f.url) {
-            log::warn!("跳过非法下载地址（要求 https）：{}", f.url);
-            continue;
-        }
+        // URL origin/path and this hash were already bound to the verified
+        // Ed25519 signed payload by fetch_portable_manifest.
         grand_total += f.size;
         targets.push((f, dest));
     }
@@ -1269,9 +1591,16 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
     let outcome = (|| -> Result<(), String> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(1800))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| e.to_string())?;
 
+        update_canary::queue_lifecycle_event(
+            app,
+            &offer_context,
+            update_canary::LifecycleStage::DownloadStarted,
+        );
+        update_canary::flush_update_telemetry(app.clone());
         let mut downloaded_total = 0u64;
         let mut last_percent = 0u32;
         let mut copies: Vec<(PathBuf, PathBuf)> = vec![];
@@ -1279,7 +1608,9 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
             let staged = staging.join(&f.name);
             portable_download(
                 &client,
-                &f.url,
+                &manifest,
+                f,
+                &current,
                 &staged,
                 app,
                 &mut downloaded_total,
@@ -1287,11 +1618,16 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
                 &mut last_percent,
             )?;
             let got = sha256_file(&staged).ok_or("下载文件校验失败")?;
-            if got != f.sha256 {
+            if !got.eq_ignore_ascii_case(&f.sha256) {
                 return Err(format!("{} 校验失败，已中止更新", f.name));
             }
             copies.push((staged, dest.clone()));
         }
+        update_canary::queue_lifecycle_event(
+            app,
+            &offer_context,
+            update_canary::LifecycleStage::DownloadCompleted,
+        );
 
         let _ = app.emit(
             "portable-update-progress",
@@ -1302,6 +1638,13 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
                 total: grand_total,
             },
         );
+        update_canary::queue_lifecycle_event(
+            app,
+            &offer_context,
+            update_canary::LifecycleStage::ApplyStarted,
+        );
+        update_canary::write_pending_update(app, &offer_context);
+        update_canary::flush_update_telemetry(app.clone());
 
         #[cfg(target_os = "windows")]
         {
@@ -1311,7 +1654,7 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
             // spawn 失败」，sidecar 已死却无 bat 兜底，应用会变成没有后端的空壳。故顺序
             // 必须是：spawn 成功 -> kill_sidecar -> app.exit。spawn 失败则原样返回 Err，
             // sidecar 未被动过，应用继续可用。
-            portable_spawn_swap_windows(app, &staging, &copies)?;
+            portable_spawn_swap_windows(app, &staging, &copies, &manifest.version)?;
             kill_sidecar(app);
             std::thread::sleep(Duration::from_millis(300));
             app.exit(0);
@@ -1324,6 +1667,8 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
             for (staged, dest) in &copies {
                 std::fs::copy(staged, dest).map_err(|e| e.to_string())?;
             }
+            std::fs::write(update_canary::applied_marker_path(app), &manifest.version)
+                .map_err(|e| e.to_string())?;
             let _ = std::fs::remove_dir_all(&staging);
             app.restart();
         }
@@ -1332,6 +1677,25 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
     if outcome.is_err() {
         // [XJC-PATCH] 失败清理暂存（尽力，忽略错误）。
         let _ = std::fs::remove_dir_all(&staging);
+        update_canary::clear_pending_update(app);
+        let message = outcome.as_ref().err().map(String::as_str).unwrap_or("");
+        let (code, reason) = if message.contains("校验") {
+            ("PORTABLE_HASH_MISMATCH", "download verification failed")
+        } else if message.contains("下载") || message.contains("网络") {
+            ("PORTABLE_DOWNLOAD_FAILED", "network unavailable")
+        } else {
+            ("PORTABLE_APPLY_FAILED", "update apply failed")
+        };
+        update_canary::queue_lifecycle_event(
+            app,
+            &offer_context,
+            update_canary::LifecycleStage::Failure {
+                stage: "apply",
+                error_code: code,
+                reason,
+            },
+        );
+        update_canary::flush_update_telemetry(app.clone());
     }
     outcome
 }
@@ -1342,41 +1706,69 @@ fn portable_update_apply_blocking(app: &AppHandle) -> Result<(), String> {
 /// 走 Tauri updater）| "disabled"（离线版，编译期烧死，不提供自动更新）。
 #[tauri::command]
 fn get_update_channel() -> String {
-    if OFFLINE_BUILD {
-        return "disabled".to_string();
-    }
-    // Dev 构建永远按安装版处理，避免误替换开发中的二进制。
-    if cfg!(debug_assertions) {
-        return "installer".to_string();
-    }
-    match current_exe_dir() {
-        Some(dir) if is_writable_dir(&dir) => "portable".to_string(),
-        _ => "installer".to_string(),
-    }
+    update_canary::current_update_type().to_string()
 }
 
 #[tauri::command]
-async fn portable_update_check(app: AppHandle) -> Result<PortableUpdateCheck, String> {
+async fn portable_update_check(
+    app: AppHandle,
+    channel: Option<String>,
+    state: tauri::State<'_, update_canary::PortableOfferState>,
+) -> Result<PortableUpdateCheck, String> {
     // 防御纵深：离线版前端不会调到这里，即使被误调也直接拒绝。
     if OFFLINE_BUILD {
         return Err("离线版不提供自动更新".to_string());
+    }
+    if update_canary::current_update_type() != "portable" {
+        return Err("当前为安装版，请通过安装包更新".to_string());
     }
     let current = app.config().version.clone().unwrap_or_default();
-    tauri::async_runtime::spawn_blocking(move || portable_update_check_blocking(&current))
-        .await
-        .map_err(|e| e.to_string())?
+    let app2 = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        portable_update_check_blocking(&app2, &current, channel.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if let Ok(mut current_offer) = state.0.lock() {
+        *current_offer = if result.available {
+            Some(update_canary::UpdateOfferContext {
+                release_id: result.release_id.clone(),
+                release_kind: "portable".to_string(),
+                release_version: result.version.clone(),
+                channel: result.release_channel.clone(),
+                cohort: result.cohort.name.clone(),
+            })
+        } else {
+            None
+        };
+    }
+    Ok(result)
 }
 
 #[tauri::command]
-async fn portable_update_apply(app: AppHandle) -> Result<(), String> {
+async fn portable_update_apply(
+    app: AppHandle,
+    state: tauri::State<'_, update_canary::PortableOfferState>,
+) -> Result<(), String> {
     // 防御纵深：离线版前端不会调到这里，即使被误调也直接拒绝。
     if OFFLINE_BUILD {
         return Err("离线版不提供自动更新".to_string());
     }
+    if update_canary::current_update_type() != "portable" {
+        return Err("当前版本不使用便携版更新".to_string());
+    }
+    let expected_offer = state
+        .0
+        .lock()
+        .map_err(|_| "便携版更新状态不可用".to_string())?
+        .clone()
+        .ok_or_else(|| "请先检查更新".to_string())?;
     let app2 = app.clone();
-    tauri::async_runtime::spawn_blocking(move || portable_update_apply_blocking(&app2))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        portable_update_apply_blocking(&app2, &expected_offer)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1428,7 +1820,10 @@ fn portable_setting_set(app: AppHandle, key: String, value: String) -> Result<()
                 .and_then(|state| state.get("closeAction"))
                 .and_then(|value| value.as_str())
             {
-                settings.insert("close_action".into(), Value::String(close_action.to_string()));
+                settings.insert(
+                    "close_action".into(),
+                    Value::String(close_action.to_string()),
+                );
             }
         }
     }
@@ -1469,7 +1864,10 @@ fn portable_secret_delete(app: AppHandle, key: String) -> Result<(), String> {
 
 #[tauri::command]
 fn get_version(app: AppHandle) -> String {
-    app.config().version.clone().unwrap_or_else(|| "unknown".into())
+    app.config()
+        .version
+        .clone()
+        .unwrap_or_else(|| "unknown".into())
 }
 
 #[tauri::command]
@@ -1477,19 +1875,33 @@ fn get_platform() -> String {
     std::env::consts::OS.to_string()
 }
 
+/// Return the runtime-only sidecar token only to application-owned webviews.
+/// Debug Tauri uses an independently started Bun server, so it intentionally
+/// falls back to the server's no-token development mode.
+#[tauri::command]
+fn get_local_api_token(
+    window: tauri::WebviewWindow,
+    token: tauri::State<'_, LocalApiToken>,
+) -> Result<Option<String>, String> {
+    if window.label() != "main" && window.label() != "floating" {
+        return Err("Local API token is unavailable to this window".to_string());
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let _ = token;
+        Ok(None)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        Ok(Some(token.0.clone()))
+    }
+}
+
 /// Query current sidecar status (for frontend to check on startup, avoiding race condition)
 #[tauri::command]
 fn get_sidecar_status(app: AppHandle) -> SidecarEvent {
-    let ready_state = app.state::<SidecarReadyState>();
-    let state = ready_state.state.load(Ordering::SeqCst);
-    let port = *ready_state.port.lock().unwrap();
-    let message = ready_state.message.lock().unwrap().clone();
-    match state {
-        1 => SidecarEvent { status: "ready".into(), message: format!("Backend ready on port {}", port) },
-        2 => SidecarEvent { status: "error".into(), message },
-        3 => SidecarEvent { status: "port-conflict".into(), message },
-        _ => SidecarEvent { status: "pending".into(), message: "Backend starting...".into() },
-    }
+    app.state::<SidecarReadyState>().snapshot()
 }
 
 #[tauri::command]
@@ -1505,41 +1917,81 @@ fn set_deep_link_frontend_ready(app: AppHandle, ready: bool) {
     state.frontend_ready.store(ready, Ordering::SeqCst);
 }
 
-
 #[tauri::command]
 async fn restart_sidecar(#[allow(unused)] app: AppHandle) -> Result<(), String> {
     #[cfg(debug_assertions)]
     {
-        return Err("Dev mode: please restart 'bun dev:tauri' manually to apply port changes.".into());
+        return Err(
+            "Dev mode: please restart 'bun dev:tauri' manually to apply port changes.".into(),
+        );
     }
     #[cfg(not(debug_assertions))]
     {
-        // Reset ready state to pending during restart
-        let ready_state = app.state::<SidecarReadyState>();
-        ready_state.state.store(0, Ordering::SeqCst);
+        // Invalidate the old process before killing it, so its delayed Terminated
+        // event cannot overwrite the replacement process's ready state.
+        app.state::<SidecarReadyState>()
+            .invalidate_and_mark_pending();
 
         kill_sidecar(&app);
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        let port = spawn_sidecar(&app)?;
-        wait_for_health(port, 30).await?;
+        let launch = match spawn_sidecar(&app) {
+            Ok(launch) => launch,
+            Err(error) => {
+                app.state::<SidecarReadyState>().mark_error(error.clone());
+                let _ = app.emit(
+                    "sidecar-event",
+                    SidecarEvent {
+                        status: "error".into(),
+                        message: error.clone(),
+                    },
+                );
+                return Err(error);
+            }
+        };
+        if let Err(error) = wait_for_health(launch.port, SIDECAR_HEALTH_TIMEOUT).await {
+            let ready_state = app.state::<SidecarReadyState>();
+            if ready_state.update_if_current(
+                launch.generation,
+                SIDECAR_STATE_ERROR,
+                None,
+                error.clone(),
+            ) {
+                let _ = app.emit(
+                    "sidecar-event",
+                    SidecarEvent {
+                        status: "error".into(),
+                        message: error.clone(),
+                    },
+                );
+            }
+            return Err(error);
+        }
 
+        let message = format!("Backend ready on port {}", launch.port);
         let ready_state = app.state::<SidecarReadyState>();
-        *ready_state.port.lock().unwrap() = port;
-        ready_state.state.store(1, Ordering::SeqCst);
-
-        let _ = app.emit("sidecar-event", SidecarEvent {
-            status: "ready".into(),
-            message: format!("Backend ready on port {}", port),
-        });
+        if ready_state.update_if_current(
+            launch.generation,
+            SIDECAR_STATE_READY,
+            Some(launch.port),
+            message.clone(),
+        ) {
+            let _ = app.emit(
+                "sidecar-event",
+                SidecarEvent {
+                    status: "ready".into(),
+                    message,
+                },
+            );
+        }
         Ok(())
     }
 }
 
-
-
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let local_api_token =
+        generate_local_api_token().expect("failed to generate per-application local API token");
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -1587,8 +2039,12 @@ pub fn run() {
             }
         }))
         .manage(SidecarState(Mutex::new(None)))
+        .manage(LocalApiToken(local_api_token))
         .manage(SidecarReadyState::new())
         .manage(DeepLinkState::new())
+        .manage(update_canary::InstallerUpdateState::default())
+        .manage(update_canary::PortableOfferState::default())
+        .manage(update_canary::UpdateStartupState::default())
         .invoke_handler(tauri::generate_handler![
             get_portable_data_dir,
             get_portable_disk_space,
@@ -1600,6 +2056,7 @@ pub fn run() {
             portable_secret_delete,
             get_version,
             get_platform,
+            get_local_api_token,
             get_sidecar_status,
             take_pending_deep_links,
             set_deep_link_frontend_ready,
@@ -1607,9 +2064,18 @@ pub fn run() {
             get_update_channel,
             portable_update_check,
             portable_update_apply,
+            update_canary::installer_update_check,
+            update_canary::installer_update_apply,
+            update_canary::flush_update_telemetry,
+            update_canary::get_update_startup_status,
+            update_canary::get_update_diagnostics,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            let update_startup = update_canary::process_update_startup(&handle);
+            if let Ok(mut state) = app.state::<update_canary::UpdateStartupState>().0.lock() {
+                *state = update_startup;
+            }
 
             for arg in std::env::args().skip(1) {
                 if let Some(url) = normalize_deep_link(&arg) {
@@ -1660,19 +2126,22 @@ pub fn run() {
                 .icon(tray_icon)
                 .icon_as_template(cfg!(target_os = "macos"))
                 .menu(&menu)
-                .on_menu_event(move |app, event| {
-                    match event.id.as_ref() {
-                        "show" => {
-                            show_main_window(app);
-                        }
-                        "quit" => {
-                            quit_application(app);
-                        }
-                        _ => {}
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "show" => {
+                        show_main_window(app);
                     }
+                    "quit" => {
+                        quit_application(app);
+                    }
+                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
                         let app = tray.app_handle();
                         show_main_window(app);
                     }
@@ -1707,18 +2176,24 @@ pub fn run() {
             // Start backend (dev mode uses beforeDevCommand, release mode uses sidecar)
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
-                let port: u16;
+                let launch: SidecarLaunch;
 
                 #[cfg(not(debug_assertions))]
                 {
                     match spawn_sidecar(&app_handle) {
-                        Ok(p) => port = p,
+                        Ok(sidecar_launch) => launch = sidecar_launch,
                         Err(e) => {
                             log::error!("Failed to spawn sidecar: {}", e);
-                            let _ = app_handle.emit("sidecar-event", SidecarEvent {
-                                status: "error".into(),
-                                message: e,
-                            });
+                            app_handle
+                                .state::<SidecarReadyState>()
+                                .mark_error(e.clone());
+                            let _ = app_handle.emit(
+                                "sidecar-event",
+                                SidecarEvent {
+                                    status: "error".into(),
+                                    message: e,
+                                },
+                            );
                             return;
                         }
                     }
@@ -1727,43 +2202,64 @@ pub fn run() {
                 {
                     // Dev mode: use .env PORT, then default.
                     // Do not reuse the persisted preferred_port from the desktop app.
-                    port = std::fs::read_to_string(
-                        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env")
+                    let port = std::fs::read_to_string(
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env"),
                     )
                     .ok()
                     .and_then(|content| {
-                        content.lines()
+                        content
+                            .lines()
                             .find(|l| l.starts_with("PORT="))
                             .and_then(|l| l.strip_prefix("PORT="))
                             .and_then(|v| v.trim().parse::<u16>().ok())
                     })
                     .unwrap_or(62601);
 
-                    log::info!("Dev mode: skipping sidecar, using bun dev server on port {}", port);
+                    log::info!(
+                        "Dev mode: skipping sidecar, using bun dev server on port {}",
+                        port
+                    );
+                    let generation = app_handle.state::<SidecarReadyState>().begin_launch();
+                    launch = SidecarLaunch { port, generation };
                 }
 
-                match wait_for_health(port, 60).await {
+                match wait_for_health(launch.port, SIDECAR_HEALTH_TIMEOUT).await {
                     Ok(_) => {
                         // Update ready state before emitting event (frontend can query this)
                         let ready_state = app_handle.state::<SidecarReadyState>();
-                        *ready_state.port.lock().unwrap() = port;
-                        ready_state.state.store(1, Ordering::SeqCst);
-
-                        let _ = app_handle.emit("sidecar-event", SidecarEvent {
-                            status: "ready".into(),
-                            message: format!("Backend ready on port {}", port),
-                        });
+                        let message = format!("Backend ready on port {}", launch.port);
+                        if ready_state.update_if_current(
+                            launch.generation,
+                            SIDECAR_STATE_READY,
+                            Some(launch.port),
+                            message.clone(),
+                        ) {
+                            let _ = app_handle.emit(
+                                "sidecar-event",
+                                SidecarEvent {
+                                    status: "ready".into(),
+                                    message,
+                                },
+                            );
+                        }
                     }
                     Err(e) => {
                         log::error!("Health check failed: {}", e);
                         let ready_state = app_handle.state::<SidecarReadyState>();
-                        *ready_state.message.lock().unwrap() = e.clone();
-                        ready_state.state.store(2, Ordering::SeqCst);
-
-                        let _ = app_handle.emit("sidecar-event", SidecarEvent {
-                            status: "error".into(),
-                            message: e,
-                        });
+                        if ready_state.update_if_current(
+                            launch.generation,
+                            SIDECAR_STATE_ERROR,
+                            None,
+                            e.clone(),
+                        ) {
+                            let _ = app_handle.emit(
+                                "sidecar-event",
+                                SidecarEvent {
+                                    status: "error".into(),
+                                    message: e,
+                                },
+                            );
+                        }
                     }
                 }
             });
@@ -1790,21 +2286,112 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            match event {
-                tauri::RunEvent::Exit => {
-                    kill_sidecar(app);
-                }
-                #[cfg(target_os = "macos")]
-                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
-                    if !has_visible_windows {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
-                        }
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => {
+                kill_sidecar(app);
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.show();
+                        let _ = win.set_focus();
                     }
                 }
-                _ => {}
             }
+            _ => {}
         });
+}
+
+#[cfg(test)]
+mod portable_layout_tests {
+    use super::*;
+
+    fn temp_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "xiaojuclaw-{name}-{}-{}",
+            std::process::id(),
+            chrono_like_timestamp()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn explicit_marker_resolves_sibling_data_and_runtime() {
+        let root = temp_root("portable-marker");
+        let app_dir = root.join("XiaoJuClaw");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::write(
+            app_dir.join(PORTABLE_LAYOUT_FILE),
+            r#"{
+  "schemaVersion": 1,
+  "dataDir": "../XiaoJuClawData",
+  "runtimeDir": "../XiaoJuClawRuntime"
+}"#,
+        )
+        .unwrap();
+
+        assert!(is_portable_install_at(&app_dir));
+        assert_eq!(
+            resolve_marked_portable_dir(&app_dir, false),
+            Some(root.join(PORTABLE_DATA_DIR))
+        );
+        assert_eq!(
+            resolve_marked_portable_dir(&app_dir, true),
+            Some(root.join(PORTABLE_RUNTIME_DIR))
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_usb_data_directory_remains_a_portable_signal() {
+        let root = temp_root("portable-legacy");
+        std::fs::create_dir_all(root.join(PORTABLE_DATA_DIR)).unwrap();
+
+        assert!(has_legacy_portable_layout(&root));
+        assert!(is_portable_install_at(&root));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn writable_directory_without_marker_is_not_portable() {
+        let root = temp_root("installed-writable");
+        assert!(is_writable_dir(&root));
+        assert!(!is_portable_install_at(&root));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn installed_marker_overrides_legacy_data_signal() {
+        let root = temp_root("installed-marker");
+        let tools = root.join(PORTABLE_DATA_DIR).join("tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        std::fs::write(tools.join("manifest.json"), "{}").unwrap();
+        std::fs::write(root.join(INSTALLED_LAYOUT_FILE), "{}").unwrap();
+
+        assert!(has_legacy_portable_layout(&root));
+        assert!(!is_portable_install_at(&root));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_nsis_uninstaller_overrides_sibling_data_signal() {
+        let root = temp_root("installed-uninstaller");
+        std::fs::create_dir_all(root.join(PORTABLE_DATA_DIR)).unwrap();
+        std::fs::write(root.join("uninstall.exe"), "stub").unwrap();
+
+        assert!(has_legacy_portable_layout(&root));
+        assert!(has_installed_layout(&root));
+        assert!(!is_portable_install_at(&root));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

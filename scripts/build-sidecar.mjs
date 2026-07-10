@@ -13,6 +13,7 @@ import { execSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertDesktopVersions } from './desktop-version.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
@@ -132,15 +133,12 @@ export const BUILD_CONSTANTS: Record<string, string> = ${JSON.stringify(entries,
 // installed exe — the install dir (e.g. C:\Program Files) is read-only, so the
 // runtime fallback in src-tauri/src/lib.rs cannot create it there.
 function generateSidecarPackageJson() {
-  let name = 'XiaoJuClaw'
-  let version = '1.0.0'
-  try {
-    const rootPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'))
-    if (typeof rootPkg.name === 'string' && rootPkg.name.trim()) name = rootPkg.name.trim()
-    if (typeof rootPkg.version === 'string' && rootPkg.version.trim()) version = rootPkg.version.trim()
-  } catch {
-    // Fall back to defaults if the desktop package.json cannot be read.
+  const rootPkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'))
+  if (typeof rootPkg.name !== 'string' || !rootPkg.name.trim()) {
+    throw new Error('Desktop package.json has no package name')
   }
+  const name = rootPkg.name.trim()
+  const version = assertDesktopVersions(root)
 
   const sidecarPkgPath = resolve(root, 'src-tauri', 'package.json')
   const content = `${JSON.stringify({ name, version, type: 'module', private: true })}\n`

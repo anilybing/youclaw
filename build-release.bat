@@ -8,11 +8,17 @@ set "WEB_DIR=%ROOT%\web"
 set "BUNDLE_DIR=%ROOT%\src-tauri\target\release\bundle"
 set "TAURI_BUILD_CMD=bun run build:tauri"
 set "DRY_RUN=0"
+set "DESKTOP_ONLY=0"
+if not defined XJC_BUILD_VARIANT set "XJC_BUILD_VARIANT=windows-installer"
 
-if /I "%~1"=="--dry-run" (
-  set "DRY_RUN=1"
-  set "NO_PAUSE=1"
-)
+:parse_args
+if "%~1"=="" goto args_done
+if /I "%~1"=="--dry-run" set "DRY_RUN=1"
+if /I "%~1"=="--dry-run" set "NO_PAUSE=1"
+if /I "%~1"=="--desktop-only" set "DESKTOP_ONLY=1"
+shift
+goto parse_args
+:args_done
 
 title XiaoJuClaw Build Release
 
@@ -54,6 +60,10 @@ if errorlevel 1 (
 )
 
 for /f "delims=" %%v in ('powershell -NoProfile -Command "(Get-Content -Raw package.json | ConvertFrom-Json).version"') do set "APP_VERSION=%%v"
+if not defined APP_VERSION (
+  echo [ERROR] Could not read a release version from package.json.
+  goto :fail
+)
 for /f "delims=" %%t in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "BUILD_STAMP=%%t"
 
 set "RELEASE_DIR=%ROOT%\release\XiaoJuClaw-%APP_VERSION%-windows-%BUILD_STAMP%"
@@ -65,10 +75,17 @@ if not defined TAURI_SIGNING_PRIVATE_KEY (
   echo.
 )
 
-rem Release gate covers: root/web typecheck, web lint, brand audit,
-rem backend tests (baseline), skills golden tests, digital staff verify.
-call :run_in "Release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1"
-if errorlevel 1 goto :fail
+if /I "%XJC_RELEASE_GATE_ALREADY_RUN%"=="1" (
+  echo.
+  echo [SKIP] Strict release gate already completed by the orchestrator.
+) else (
+  if "%DESKTOP_ONLY%"=="1" (
+    call :run_in "Desktop release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1"
+  ) else (
+    call :run_in "Strict release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1 -Release"
+  )
+  if errorlevel 1 goto :fail
+)
 
 if /I not "%SKIP_RECOMMENDED_VALIDATION%"=="1" (
   call :run_in "Validate recommended skills" "%ROOT%" "bun run validate:recommended-skills"
@@ -76,6 +93,17 @@ if /I not "%SKIP_RECOMMENDED_VALIDATION%"=="1" (
 ) else (
   echo.
   echo [SKIP] Validate recommended skills
+)
+
+rem Never collect stale MSI/NSIS files from an earlier build. The no-updater
+rem configuration currently targets NSIS only; without this cleanup, an old MSI
+rem left under target\release\bundle is copied into the new release directory.
+if "%DRY_RUN%"=="0" if exist "%BUNDLE_DIR%" (
+  echo.
+  echo [STEP] Clean stale Tauri bundle artifacts
+  powershell -NoProfile -Command "Remove-Item -Path '%BUNDLE_DIR%' -Recurse -Force"
+  if errorlevel 1 goto :fail
+  echo [OK] Stale bundle artifacts removed
 )
 
 call :run_in "Tauri release build" "%ROOT%" "%TAURI_BUILD_CMD%"
@@ -99,6 +127,29 @@ if errorlevel 1 goto :fail
 
 echo.
 echo [OK] Release artifacts directory: %RELEASE_DIR%
+pushd "%ROOT%" >nul
+call bun scripts\write-build-provenance.mjs "%RELEASE_DIR%\build-provenance.json" "%APP_VERSION%" "%XJC_BUILD_VARIANT%"
+set "PROVENANCE_STATUS=%ERRORLEVEL%"
+if not "%PROVENANCE_STATUS%"=="0" (
+  popd >nul
+  goto :fail
+)
+call bun scripts\generate-sbom.mjs write "%RELEASE_DIR%\sbom.cdx.json"
+set "SBOM_STATUS=%ERRORLEVEL%"
+if not "%SBOM_STATUS%"=="0" (
+  popd >nul
+  goto :fail
+)
+call bun scripts\release-artifacts.mjs write "%RELEASE_DIR%"
+set "HASH_STATUS=%ERRORLEVEL%"
+if not "%HASH_STATUS%"=="0" (
+  popd >nul
+  goto :fail
+)
+call bun scripts\release-artifacts.mjs verify "%RELEASE_DIR%"
+set "VERIFY_STATUS=%ERRORLEVEL%"
+popd >nul
+if not "%VERIFY_STATUS%"=="0" goto :fail
 echo.
 powershell -NoProfile -Command "Get-ChildItem -Path '%RELEASE_DIR%' -Recurse | Where-Object { -not $_.PSIsContainer } | Sort-Object FullName | ForEach-Object { '{0}  {1:N2} MB' -f $_.FullName, ($_.Length / 1MB) }"
 

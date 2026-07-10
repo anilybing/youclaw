@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicheTV/tauri-schema/main/capabilities-schema.json",
+  "identifier": "floating",
+  "description": "Capability for the floating notification window (悬浮提醒窗)",
+  "windows": ["floating"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-focus",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-unminimize",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "store:default"
+  ]
+}

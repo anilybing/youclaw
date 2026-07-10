@@ -29,14 +29,16 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
 
       - name: Install root dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Install web dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
         working-directory: web
 
-      - name: Typecheck
-        run: bun typecheck
+      - name: Install skills test dependencies
+        run: bun install --frozen-lockfile
+        working-directory: skills-dev
 
-      - name: Test
-        run: bun test
+      - name: Desktop quality gate
+        shell: pwsh
+        run: ./scripts/release-gate.ps1

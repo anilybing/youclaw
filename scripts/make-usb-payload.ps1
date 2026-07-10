@@ -1,7 +1,7 @@
 # make-usb-payload.ps1 - Build the USB tools payload for XiaoJuClaw portable delivery.
 #
-# Produces:  <Target>\XiaoJuClawData\tools\<platform>\{bun,git,python,uv,node}
-#            <Target>\XiaoJuClawData\tools\manifest.json
+# Produces:  <Target>\XiaoJuClawRuntime\tools\<platform>\{bun,git,python,uv,node}
+#            <Target>\XiaoJuClawRuntime\tools\manifest.json
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts\make-usb-payload.ps1
@@ -67,7 +67,7 @@ if ($Only) {
   if ($tools.Count -eq 0) { Write-Host "[ERROR] Unknown tool: $Only" -ForegroundColor Red; exit 1 }
 }
 
-$toolsRoot = Join-Path (Join-Path $Target "XiaoJuClawData") "tools"
+$toolsRoot = Join-Path (Join-Path $Target "XiaoJuClawRuntime") "tools"
 $platformRoot = Join-Path $toolsRoot $Platform
 
 Write-Host "== XiaoJuClaw USB payload builder =="

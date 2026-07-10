@@ -19,8 +19,62 @@ env:
   IS_BETA: ${{ contains(github.ref_name, 'beta') }}
 
 jobs:
+  quality-gate:
+    runs-on: windows-latest
+    name: Strict release gate
+    steps:
+      - name: Checkout desktop
+        uses: actions/checkout@v4
+        with:
+          path: youclaw
+
+      - name: Checkout MVP
+        uses: actions/checkout@v4
+        with:
+          repository: anilybing/MVPClawToC
+          path: MVPClawToC
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: MVPClawToC/mvp/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop dependencies
+        working-directory: youclaw
+        run: bun install --frozen-lockfile
+
+      - name: Install web dependencies
+        working-directory: youclaw/web
+        run: bun install --frozen-lockfile
+
+      - name: Install skills test dependencies
+        working-directory: youclaw/skills-dev
+        run: bun install --frozen-lockfile
+
+      - name: Install MVP dependencies
+        working-directory: MVPClawToC/mvp
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: youclaw
+        run: node node_modules/playwright/cli.js install chromium
+
+      - name: Run strict release gate
+        shell: pwsh
+        working-directory: youclaw
+        run: ./scripts/release-gate.ps1 -Release -MvpDir "${{ github.workspace }}\MVPClawToC\mvp"
+
   # ── Releases are created first to avoid race condition ──
   create-release:
+    needs: quality-gate
     runs-on: ubuntu-latest
     name: Create Release
     steps:
