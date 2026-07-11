@@ -19,7 +19,7 @@ export function FloatingBridge() {
       return listen<{ chatId?: string; agentId?: string }>('xjc:floating-open-chat', (event) => {
         const chatId = event.payload?.chatId
         if (!chatId) return
-        navigate('/')
+        navigate('/chat')
         // 透传 agentId 绑定会话，续聊才会路由到产出结果的那个员工
         void loadChat(chatId, event.payload?.agentId || undefined)
       })

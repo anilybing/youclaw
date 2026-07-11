@@ -17,6 +17,7 @@ import { Templates } from './pages/commercial/Templates'
 import { Activation } from './pages/commercial/Activation'
 import { Profile } from './pages/commercial/Profile'
 import { Workbench } from './pages/commercial/Workbench'
+import { TodayOperations } from './pages/commercial/TodayOperations'
 import { PortConflictDialog } from './components/PortConflictDialog'
 import { AppToaster } from './components/AppToaster'
 import { CloseConfirmDialog } from './components/CloseConfirmDialog'
@@ -343,12 +344,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* 登录后默认落地数字员工工作台（商业版主入口）。
+        {/* 登录后默认落地“今日经营”（一人公司经营主入口）。
             注意用 isLoggedIn 而非 canPass：离线降级用户未真正登录，仍应能进入登录页，
             以便远程服务器恢复后主动登录使用云功能。 */}
-        <Route path="/login" element={isLoggedIn ? <Navigate to="/workbench" replace /> : <Login />} />
+        <Route path="/login" element={isLoggedIn ? <Navigate to="/today" replace /> : <Login />} />
         <Route element={<AuthGuard />}>
-          <Route path="/" element={<Chat />} />
+          <Route path="/" element={<Navigate to="/today" replace />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/today" element={<TodayOperations />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/cron" element={<Tasks />} />
           <Route path="/skills" element={<Skills />} />
@@ -362,7 +365,7 @@ export default function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/workbench" element={<Workbench />} />
         </Route>
-        <Route path="*" element={<Navigate to={canPass ? "/" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={canPass ? "/today" : "/login"} replace />} />
       </Routes>
       <AppToaster />
       {isTauri && <FloatingBridge />}

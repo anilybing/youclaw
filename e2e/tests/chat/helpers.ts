@@ -93,7 +93,7 @@ export async function cleanupE2EChats(request: APIRequestContext) {
 /** 导航到聊天页并等待加载 */
 export async function navigateToChat(page: Page) {
   await page.getByTestId('nav-chat').click()
-  await page.waitForURL(/\/$/)
+  await page.waitForURL(/\/chat$/)
   await expect(page.getByTestId('chat-input')).toBeVisible()
 }
 

@@ -35,6 +35,8 @@ export interface WorkbenchTask {
    * 电商能力包卡片绑定 ecommerce-assistant（电商助理）。
    */
   agentId?: string
+  /** 绑定工作流后，立即执行会直接创建 workflow_run，并跳转到可视化运行详情。 */
+  workflowId?: string
   /** 任务分类；缺省按 agentId 归类（见 getTaskCategory），未来能力可显式指定 */
   category?: WorkbenchCategoryId
 }
@@ -373,17 +375,17 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
   },
   {
     id: 'ecom-monitor',
-    icon: '🔍',
-    title: { zh: '竞品监控', en: 'Competitor monitor' },
-    desc: { zh: '盯竞品页面价格/上新，输出变化报告', en: 'Watch pages, report changes' },
+    icon: '⚡',
+    title: { zh: '竞品网页批量分析', en: 'Competitor page analysis' },
+    desc: { zh: '自动流水线：逐站抓取→提取信号→行动简报', en: 'Workflow: fetch → extract signals → action brief' },
     agentId: ECOMMERCE_AGENT_ID,
-    schedulable: true,
+    workflowId: 'competitor-page-analysis',
     promptTemplate: {
-      zh: '请使用 web-monitor 技能监控以下网页：\n{{urls}}\n关注要点：{{focus}}。用 agent-browser 访问页面提取关键信息，与工作区 monitor/ 目录的上次快照对比，输出变化报告（新增/变更/无变化）并保存本次快照；首次运行输出基线报告。',
-      en: 'Use the web-monitor skill to monitor these pages:\n{{urls}}\nFocus: {{focus}}. Visit each page via agent-browser, extract key fields, diff against the last snapshot under monitor/ in the workspace, report added/changed/unchanged and save the new snapshot; output a baseline on the first run.',
+      zh: '批量分析以下竞品网页：\n{{urls}}\n重点关注：{{focus}}。逐站提取价格、卖点、规格与活动信号，最后输出对比表和行动建议。',
+      en: 'Analyze these competitor pages:\n{{urls}}\nFocus: {{focus}}. Extract pricing, selling points, specs and campaign signals per page, then produce a comparison and action plan.',
     },
     fields: [
-      { key: 'urls', kind: 'textarea', required: true, label: { zh: '监控网址', en: 'URLs to monitor' }, placeholder: { zh: '一行一个网址', en: 'One URL per line' } },
+      { key: 'urls', kind: 'textarea', required: true, label: { zh: '竞品网页', en: 'Competitor pages' }, placeholder: { zh: '可公开访问的网页，一行一个，最多 5 个', en: 'Publicly accessible pages, one per line, up to 5' } },
       { key: 'focus', kind: 'text', required: false, label: { zh: '关注要点（可选）', en: 'Focus (optional)' }, placeholder: { zh: '例如：价格 / 上新 / 标题变化', en: 'e.g. price / new arrivals / title changes' } },
     ],
   },
@@ -863,6 +865,7 @@ export function sanitizeRemoteCard(raw: unknown): WorkbenchTask | null {
   }
   const card: WorkbenchTask = { id, icon: typeof obj.icon === 'string' && obj.icon ? obj.icon : '🧩', title, desc, promptTemplate, fields }
   if (typeof obj.agentId === 'string' && obj.agentId.trim()) card.agentId = obj.agentId.trim()
+  if (typeof obj.workflowId === 'string' && CARD_ID_RE.test(obj.workflowId.trim())) card.workflowId = obj.workflowId.trim()
   // 分类仅保留已知值；未知分类留空 → getTaskCategory 按 agentId 回落到已有 tab，
   // 保证远程卡永远落进一个存在的分类，不会出现空 tab。
   if (typeof obj.category === 'string' && KNOWN_CATEGORY_IDS.has(obj.category)) card.category = obj.category as WorkbenchCategoryId

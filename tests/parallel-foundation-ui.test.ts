@@ -97,11 +97,65 @@ describe('sidecar readiness foundation', () => {
   })
 })
 
+describe('commercial OTP login and account privacy', () => {
+  test('login is a two-step OTP flow with small-window and offline escape paths', () => {
+    const login = read('web/src/pages/Login.tsx')
+    const client = read('web/src/api/client.ts')
+    const routes = read('src/routes/commercial-auth.ts')
+
+    expect(client).toContain("export async function requestLoginOtp")
+    expect(client).toContain("otpChallengeId: string")
+    expect(client).toContain("otpCode: string")
+    expect(routes).toContain("app.post('/auth/otp/request'")
+    expect(routes).toContain("errorCode: 'CLOUD_UNREACHABLE'")
+    expect(login).toContain('data-testid="login-identity-step"')
+    expect(login).toContain('data-testid="login-otp-step"')
+    expect(login).toContain('autoComplete="one-time-code"')
+    expect(login).toContain('OTP_RESEND_COOLDOWN_MS')
+    expect(login).toContain('overflow-y-auto')
+    expect(login).toContain('onClick={goOffline}')
+  })
+
+  test('missing avatars stay local and account labels reflect server entitlements', () => {
+    const runtime = read('web/src/stores/app-runtime.ts')
+    const sidebar = read('web/src/components/layout/AppSidebar.tsx')
+    const account = read('web/src/components/settings/AccountPanel.tsx')
+
+    expect(runtime).not.toContain('api.dicebear.com')
+    expect(sidebar).toContain('resolveAccountPlanLabel')
+    expect(account).toContain('resolveAccountPlanLabel')
+    expect(sidebar).not.toContain('Pro Plan')
+    expect(account).not.toContain('Pro Member')
+  })
+})
+
 describe('workflow and fulfillment page states', () => {
-  test('workflows distinguish load states, poll running runs, and protect builtins', () => {
+  test('today operations is the default business entry with profile and auditable brief', () => {
+    const app = read('web/src/App.tsx')
+    const sidebar = read('web/src/components/layout/AppSidebar.tsx')
+    const page = read('web/src/pages/commercial/TodayOperations.tsx')
+    expect(app).toContain('<Route path="/" element={<Navigate to="/today" replace />} />')
+    expect(app).toContain('<Route path="/today" element={<TodayOperations />} />')
+    expect(app).toContain('<Route path="/chat" element={<Chat />} />')
+    expect(sidebar).toContain('{ to: "/today", icon: LayoutDashboard')
+    expect(page).toContain('data-testid="today-operations-page"')
+    expect(page).toContain('data-testid="today-operations-loading"')
+    expect(page).toContain('data-testid="today-operations-error"')
+    expect(page).toContain('data-testid="business-profile-form"')
+    expect(page).toContain('runWorkflow(TODAY_BUSINESS_BRIEF_WORKFLOW_ID, {})')
+    expect(page).toContain('data-testid="run-business-brief"')
+    expect(page).toContain('profile.completeness')
+    expect(page).toContain('automation.aiUsageToday.costUsd')
+  })
+
+  test('workflows expose step timelines and live usage while protecting builtins', () => {
     const page = read('web/src/pages/Workflows.tsx')
+    const workbench = read('web/src/pages/commercial/Workbench.tsx')
     expect(page).toContain('data-testid="workflows-loading"')
     expect(page).toContain('data-testid="workflows-error"')
+    expect(page).toContain('data-testid="workflow-step-card"')
+    expect(page).toContain('outputRun.usage.totalTokens')
+    expect(page).toContain('getWorkflowRunDetail(runId)')
     expect(page).toContain("workflowViewState === 'empty'")
     expect(page).toContain('WORKFLOW_RUN_POLL_MS = 4_000')
     expect(page).toContain('expandedHasRunningRun')
@@ -109,6 +163,8 @@ describe('workflow and fulfillment page states', () => {
     expect(page).toContain("workflow.source !== 'builtin'")
     expect(page).toContain('canDeleteWorkflow(wf) &&')
     expect(page).not.toContain('.catch(() => setWorkflows([]))')
+    expect(workbench).toContain('await runWorkflow(task.workflowId, inputs)')
+    expect(workbench).toContain('自动流水线')
   })
 
   test('fulfillment distinguishes both collection states and exposes refresh', () => {

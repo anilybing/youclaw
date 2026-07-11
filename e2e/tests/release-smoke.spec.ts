@@ -7,6 +7,8 @@ test('release shell and local API start without external services', async ({ pag
 
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await expect(page).toHaveTitle(/XiaoJuClaw/)
+  await expect(page).toHaveURL(/\/today$/)
+  await expect(page.getByTestId('today-operations-page')).toBeVisible()
   await expect(page.getByTestId('nav-chat')).toBeVisible()
 
   await page.getByTestId('nav-agents').click()

@@ -21,6 +21,7 @@ import { useDragRegion } from "@/hooks/useDragRegion";
 import { usePlatform } from "@/hooks/usePlatform";
 import { useSidebar } from "@/hooks/useSidebar";
 import { useI18n } from "@/i18n";
+import { resolveAccountPlanLabel } from "@/lib/account-plan";
 import { cn } from "@/lib/utils";
 import { useAppRuntimeStore } from "@/stores/app";
 import { KNOWLEDGE_ENABLED } from "@/config/features";
@@ -41,6 +42,7 @@ import {
   ScrollText,
   Settings2,
   KeyRound,
+  LayoutDashboard,
   PictureInPicture2,
   SquarePen,
   Ticket,
@@ -132,8 +134,9 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
       : FEEDBACK_URL_EN;
 
   const navItems = [
+    { to: "/today", icon: LayoutDashboard, label: t.nav.todayOperations },
     { to: "/workbench", icon: BriefcaseBusiness, label: t.nav.workbench },
-    { to: "/", icon: SquarePen, label: t.nav.chat },
+    { to: "/chat", icon: SquarePen, label: t.nav.chat },
     { to: "/agents", icon: Bot, label: t.nav.agents },
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },
     // [XJC] 工作流（扣子对标）：列表/运行/历史/失败续跑
@@ -158,9 +161,16 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
       : cloudEnabled
         ? t.account.notLoggedIn
         : t.account.offlineMode;
+  const accountPlanLabel = resolveAccountPlanLabel(user, {
+    trial: t.account.planTrial,
+    standard: t.account.planStandard,
+    premium: t.account.planPremium,
+    active: t.account.planActive,
+    unactivated: t.account.planUnactivated,
+  });
   const displaySub =
     isLoggedIn && user
-      ? "Pro Plan"
+      ? accountPlanLabel
       : cloudEnabled
         ? t.account.loginHint
         : t.account.offlineModeHint;
@@ -337,7 +347,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                     </p>
                     {isLoggedIn && user && (
                       <p className="text-[10px] text-muted-foreground truncate">
-                        Pro Plan
+                        {accountPlanLabel}
                       </p>
                     )}
                   </div>

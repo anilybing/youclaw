@@ -1,14 +1,14 @@
-// 数字员工工作台（T-D8，商业化专属）：任务卡片 → 表单 → 派发给预置
-// office-assistant 的对话流。复用 Chat 的发送链路（useChatActions + 附件上传）。
+// 数字员工工作台（T-D8，商业化专属）：普通任务卡 → 独立员工对话；
+// 自动流水线卡 → workflow_run + 可视化运行详情。普通任务复用 Chat 发送/附件链路。
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, Loader2, Send, Sparkles } from 'lucide-react'
+import { ArrowLeft, Clock, Loader2, Send, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TaskDeliveryFields } from '@/components/tasks/TaskDeliveryFields'
 import { isDeliveryTargetComplete, type TaskDeliveryMode } from '@/lib/task-delivery'
 import { useChatActions } from '@/hooks/useChat'
-import { uploadChatAttachment, reportTelemetry, createScheduledTask } from '@/api/client'
+import { uploadChatAttachment, reportTelemetry, createScheduledTask, runWorkflow } from '@/api/client'
 import { useAppPreferencesStore } from '@/stores/app-preferences'
 import { useWorkbenchCardsStore } from '@/stores/workbench-cards'
 import { useI18n } from '@/i18n'
@@ -49,7 +49,15 @@ function TaskCard({ task, locale, onSelect }: { task: WorkbenchTask; locale: Wor
       className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-border bg-background p-5 text-left transition-all hover:border-primary/50 hover:shadow-md"
     >
       <span className="text-2xl" aria-hidden>{task.icon}</span>
-      <span className="text-sm font-semibold">{task.title[locale]}</span>
+      <span className="flex items-center gap-2 text-sm font-semibold">
+        {task.title[locale]}
+        {task.workflowId && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+            <WorkflowIcon size={10} />
+            {locale === 'zh' ? '自动流水线' : 'Workflow'}
+          </span>
+        )}
+      </span>
       <span className="text-xs text-muted-foreground leading-relaxed">{task.desc[locale]}</span>
     </button>
   )
@@ -87,6 +95,23 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
     setError('')
     try {
       const prompt = fillPrompt(task, locale, values)
+
+      // 工作流任务：直接创建可追踪的 workflow_run，不再伪装成一条普通聊天 prompt。
+      if (task.workflowId) {
+        if (task.fields.some((field) => field.kind === 'file')) {
+          throw new Error(locale === 'zh' ? '此自动流水线暂不支持文件输入' : 'This workflow does not support file inputs yet')
+        }
+        const inputs = Object.fromEntries(
+          task.fields
+            .filter((field) => field.kind !== 'file')
+            .map((field) => [field.key, (values[field.key] ?? '').trim()]),
+        )
+        const { run } = await runWorkflow(task.workflowId, inputs)
+        void reportTelemetry('skill_run', { skill: task.id, workflowId: task.workflowId, ok: true })
+        setSubmitting(false)
+        navigate(`/workflows?workflow=${encodeURIComponent(task.workflowId)}&run=${encodeURIComponent(run.id)}`)
+        return
+      }
 
       // 定时执行：落 scheduler 持久任务，不走即时对话
       if (task.schedulable && cronPreset) {
@@ -126,7 +151,7 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
       newChat()
       await send(prompt, attachments.length ? attachments : undefined)
       void reportTelemetry('skill_run', { skill: task.id, ok: true })
-      navigate('/')
+      navigate('/chat')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       void reportTelemetry('skill_run', { skill: task.id, ok: false })
@@ -204,7 +229,7 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
       </div>
 
       {/* T-G5：可定时任务提供"定时执行"选项 */}
-      {task.schedulable && (
+      {task.schedulable && !task.workflowId && (
         <div className="rounded-xl border border-border p-3 space-y-2">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <Clock size={14} />
@@ -251,9 +276,17 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button className="w-full gap-2 rounded-xl h-11" disabled={!canSubmit || submitting} onClick={handleSubmit}>
-        {submitting ? <Loader2 size={16} className="animate-spin" /> : (cronPreset ? <Clock size={16} /> : <Sparkles size={16} />)}
+        {submitting
+          ? <Loader2 size={16} className="animate-spin" />
+          : task.workflowId
+            ? <WorkflowIcon size={16} />
+            : cronPreset
+              ? <Clock size={16} />
+              : <Sparkles size={16} />}
         {submitting
           ? (locale === 'zh' ? '处理中…' : 'Working…')
+          : task.workflowId
+            ? (locale === 'zh' ? '启动自动流水线' : 'Start workflow')
           : cronPreset
             ? (locale === 'zh' ? '创建定时任务' : 'Create scheduled task')
             : (locale === 'zh' ? '交给数字员工' : 'Run with digital staff')}
@@ -292,6 +325,8 @@ export function Workbench() {
     () => (cardsLoaded && remoteCards.length > 0 ? mergeWorkbenchTasks(remoteCards) : WORKBENCH_TASKS),
     [cardsLoaded, remoteCards],
   )
+  const workflowTasks = useMemo(() => allTasks.filter((task) => task.workflowId), [allTasks])
+  const regularTasks = useMemo(() => allTasks.filter((task) => !task.workflowId), [allTasks])
 
   const countFor = (id: WorkbenchCategoryId) =>
     allTasks.filter((task) => getTaskCategory(task) === id).length
@@ -306,8 +341,8 @@ export function Workbench() {
             <h2 className="text-xl font-bold">{locale === 'zh' ? '数字员工' : 'Digital Staff'}</h2>
             <p className="text-sm text-muted-foreground mt-1">
               {locale === 'zh'
-                ? '选一个任务，填两三个空，剩下交给数字员工。每次派发会开一个独立对话，产出文件在对应产出目录。'
-                : 'Pick a task, fill a couple of fields, and the digital staff handles the rest in a dedicated conversation.'}
+                ? '普通任务交给数字员工；自动流水线会逐步执行，并实时展示每一步和最终产出。'
+                : 'Send regular tasks to staff, or run an automated workflow with visible step-by-step progress.'}
             </p>
           </div>
 
@@ -330,11 +365,32 @@ export function Workbench() {
             ))}
           </div>
 
+          {activeCategory === 'all' && workflowTasks.length > 0 && (
+            <section className="space-y-3 rounded-2xl border border-primary/20 bg-primary/[0.03] p-4">
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  <WorkflowIcon size={16} className="text-primary" />
+                  {locale === 'zh' ? '自动流水线' : 'Automated workflows'}
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {locale === 'zh'
+                    ? '不是一问一答：系统会按步骤调用工具、分析并交付结果。'
+                    : 'More than a single prompt: tools, analysis and delivery run as visible steps.'}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {workflowTasks.map((task) => (
+                  <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* 全部：按类型分组展示；单类：平铺该类 */}
           {activeCategory === 'all' ? (
             <div className="space-y-8">
               {WORKBENCH_CATEGORIES.map((cat) => {
-                const tasks = allTasks.filter((task) => getTaskCategory(task) === cat.id)
+                const tasks = regularTasks.filter((task) => getTaskCategory(task) === cat.id)
                 if (tasks.length === 0) return null
                 return (
                   <section key={cat.id} className="space-y-3">

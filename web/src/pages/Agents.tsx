@@ -448,7 +448,7 @@ export function Agents() {
             onCancelEdit={() => setEditingDoc(null)}
             onSaveDoc={handleSaveDoc}
             setEditContent={setEditContent}
-            onStartChat={() => navigate('/')}
+            onStartChat={() => navigate('/chat')}
             onDelete={() => setDeleteAgentId(selectedAgent.id)}
             subAgents={subAgents}
             onSaveSubAgents={handleSaveSubAgents}

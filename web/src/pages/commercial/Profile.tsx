@@ -132,7 +132,7 @@ export function Profile() {
             <Sparkles className="h-4 w-4" />
             模板中心
           </Button>
-          <Button variant="outline" className="justify-start gap-2" onClick={() => navigate('/')}>
+          <Button variant="outline" className="justify-start gap-2" onClick={() => navigate('/chat')}>
             <Monitor className="h-4 w-4" />
             返回聊天
           </Button>

@@ -2,6 +2,7 @@ import {
   test, expect, UNIQUE,
   sendMessageViaAPI, getFirstAgentId,
   cleanupE2EChats,
+  navigateToChat,
   API_BASE,
 } from './helpers'
 
@@ -21,12 +22,13 @@ import {
 
 test.describe('会话自动恢复（localStorage 持久化）', () => {
   test.beforeEach(async ({ page }) => {
-    // fixture 已 goto('/') + waitForLoadState('networkidle')
+    // fixture 从根路径进入 /today；清除状态后显式进入聊天页。
     // 清除 localStorage 确保测试隔离
     await page.evaluate(() => {
       const keys = Object.keys(localStorage).filter(k => k.startsWith('XiaoJuClaw-'))
       keys.forEach(k => localStorage.removeItem(k))
     })
+    await navigateToChat(page)
   })
 
   test.afterEach(async ({ request }) => {

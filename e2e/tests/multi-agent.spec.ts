@@ -98,6 +98,9 @@ test.describe('多 Agent 创建与协调', () => {
   })
 
   test('对话历史正确保留', async ({ page }) => {
+    await page.getByTestId('nav-chat').click()
+    await page.waitForLoadState('networkidle')
+
     // 聊天列表应有该对话
     const chatItem = page.getByTestId('chat-item').first()
     await expect(chatItem).toBeVisible({ timeout: 10_000 })
