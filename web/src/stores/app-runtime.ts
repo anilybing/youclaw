@@ -368,9 +368,6 @@ export const useAppRuntimeStore = create<AppRuntimeState>((set, get) => ({
       if (!user.name) {
         user.name = `User_${user.id.slice(0, 6)}`
       }
-      if (!user.avatar) {
-        user.avatar = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(user.name)}`
-      }
       void logAuthClientEvent('info', 'Auth user fetched successfully', {
         userId: user.id,
         hasEmail: !!user.email,

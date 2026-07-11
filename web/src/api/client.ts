@@ -1256,6 +1256,10 @@ export interface AuthUser {
   name: string
   avatar: string
   email?: string
+  mobile?: string
+  activated?: boolean
+  availableCredit?: number
+  planTier?: string | null
 }
 
 export async function getCloudStatus() {
@@ -1751,8 +1755,28 @@ export interface ChatRunResult {
   balanceAfter: number
 }
 
-export async function mvpLogin(params: { mobile?: string; email?: string; displayName?: string }) {
-  return apiFetch<{ token: string; user: AuthUser & { mobile?: string; activated?: boolean; availableCredit?: number } }>('/api/auth/login', {
+export interface LoginOtpChallenge {
+  otpChallengeId: string
+  expiresIn: number
+  identityType: 'mobile' | 'email'
+  maskedIdentity: string
+}
+
+export async function requestLoginOtp(params: { mobile?: string; email?: string }) {
+  return apiFetch<LoginOtpChallenge>('/api/auth/otp/request', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function mvpLogin(params: {
+  mobile?: string
+  email?: string
+  displayName?: string
+  otpChallengeId: string
+  otpCode: string
+}) {
+  return apiFetch<{ token: string; user: AuthUser }>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(params),
   })
@@ -2108,6 +2132,8 @@ export async function getFulfillmentDeliveries(skuId?: string, limit = 50) {
 }
 
 // ── 工作流（通用/垂直编排）────────────────────────────────────────────
+export const TODAY_BUSINESS_BRIEF_WORKFLOW_ID = 'xjc-today-business-brief-v1'
+
 export interface WorkflowStepDTO {
   id?: string
   title: string
@@ -2203,6 +2229,98 @@ export async function getWorkflowRunDetail(runId: string) {
 
 export async function resumeWorkflowRunById(runId: string) {
   return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflow-runs/${encodeURIComponent(runId)}/resume`, { method: 'POST' })
+}
+
+// ── 一人公司经营画像与今日驾驶舱 ───────────────────────────────────────
+export interface BusinessProfileDTO {
+  version: 1
+  businessName: string
+  businessType: string
+  offer: string
+  targetCustomer: string
+  channels: string[]
+  currentGoals: string[]
+  constraints: string
+  timeZone: string
+  updatedAt: string | null
+  completeness: number
+  missingFields: string[]
+}
+
+export interface BusinessCandidateActionDTO {
+  id: string
+  kind: string
+  title: string
+  reason: string
+  route: string
+  evidenceIds: string[]
+}
+
+export interface TodayBusinessSnapshotDTO {
+  schemaVersion: 1
+  generatedAt: string
+  localDate: string
+  timeZone: string
+  profile: BusinessProfileDTO
+  automation: {
+    scheduledTasks: {
+      total: number
+      active: number
+      paused: number
+      running: number
+      failing: number
+      nextRun: string | null
+      nextName: string | null
+    }
+    workflowRunsToday: {
+      total: number
+      running: number
+      runningNow: number
+      success: number
+      failed: number
+    }
+    activePlans: number
+    outOfStockSkus: number
+    aiUsageToday: {
+      modelCalls: number
+      totalTokens: number
+      costUsd: number
+      toolCalls: number
+      unknownCostCalls: number
+    }
+  }
+  candidateActions: BusinessCandidateActionDTO[]
+  dataCoverage: {
+    available: string[]
+    unavailable: string[]
+  }
+}
+
+export type BusinessProfileUpdateDTO = Partial<Pick<
+  BusinessProfileDTO,
+  | 'businessName'
+  | 'businessType'
+  | 'offer'
+  | 'targetCustomer'
+  | 'channels'
+  | 'currentGoals'
+  | 'constraints'
+  | 'timeZone'
+>>
+
+export async function getBusinessProfile() {
+  return apiFetch<BusinessProfileDTO>('/api/business/profile')
+}
+
+export async function updateBusinessProfile(profile: BusinessProfileUpdateDTO) {
+  return apiFetch<BusinessProfileDTO>('/api/business/profile', {
+    method: 'PUT',
+    body: JSON.stringify(profile),
+  })
+}
+
+export async function getTodayBusinessDashboard() {
+  return apiFetch<TodayBusinessSnapshotDTO>('/api/business/dashboard/today')
 }
 
 export type TelemetryEventType = 'app_start' | 'skill_run' | 'error'

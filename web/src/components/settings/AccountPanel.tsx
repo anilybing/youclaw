@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +20,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { useI18n } from "@/i18n"
+import { resolveAccountPlanLabel } from "@/lib/account-plan"
 import { useAppRuntimeStore } from "@/stores/app"
 import { getCreditTransactions, uploadFile, redeemInvitationCode, type CreditTransaction } from "@/api/client"
 import { LogIn, LogOut, Coins, ExternalLink, ChevronRight, Pencil, Camera, Check, X, Loader2, Sparkles, Gift, Copy } from "lucide-react"
@@ -43,6 +45,13 @@ export function AccountPanel() {
   const [invitationCode, setInvitationCode] = useState("")
   const [redeemingCode, setRedeemingCode] = useState(false)
   const [redeemResult, setRedeemResult] = useState<{ success: boolean; message: string } | null>(null)
+  const accountPlanLabel = resolveAccountPlanLabel(user, {
+    trial: t.account.planTrial,
+    standard: t.account.planStandard,
+    premium: t.account.planPremium,
+    active: t.account.planActive,
+    unactivated: t.account.planUnactivated,
+  })
 
   useEffect(() => {
     if (!isLoggedIn) return
@@ -238,7 +247,7 @@ export function AccountPanel() {
           )}
           <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary rounded-full text-[10px] font-bold uppercase tracking-wider">
             <Sparkles size={10} />
-            Pro Member
+            {accountPlanLabel}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => setLogoutOpen(true)} className="gap-1.5 rounded-xl shrink-0">
