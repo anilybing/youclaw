@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
@@ -157,6 +158,7 @@ export class WeComChannel implements Channel {
   private tokenRefreshTimer: ReturnType<typeof setTimeout> | null = null
   private _connected = false
   private fetchFn: typeof fetch
+  private remoteMediaFetchFn?: typeof fetch
 
   constructor(
     corpId: string,
@@ -173,6 +175,9 @@ export class WeComChannel implements Channel {
     this.encodingAESKey = encodingAESKey
     this.opts = opts
     this.fetchFn = opts._fetchFn ?? globalThis.fetch.bind(globalThis)
+    // Test-only injection. Production remote media goes through DNS validation
+    // and a verified-IP-pinned socket in media-fetch.ts.
+    this.remoteMediaFetchFn = opts._fetchFn
   }
 
   async connect(): Promise<void> {
@@ -336,7 +341,10 @@ export class WeComChannel implements Channel {
       let buffer: Buffer
       if (isRemote) {
         // SSRF 校验 + 下载时即按渠道上限限流（不再整包读入后再判大小）
-        buffer = (await fetchRemoteMediaToBuffer(mediaUrl, { maxBytes, fetchFn: this.fetchFn })).buffer
+        buffer = (await fetchRemoteMediaToBuffer(mediaUrl, {
+          maxBytes,
+          fetchFn: this.remoteMediaFetchFn,
+        })).buffer
       } else {
         if (!existsSync(mediaUrl)) {
           throw new Error(`媒体文件不存在：${mediaUrl}`)

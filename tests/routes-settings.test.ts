@@ -169,12 +169,13 @@ describe('settings routes', () => {
 
     const app = createSettingsRoutes()
     const res = await app.request('/settings/active-model')
-    const body = await res.json() as { provider: string; modelId: string; baseUrl: string }
+    const body = await res.json() as { provider: string; modelId: string; baseUrl: string; apiKey: string }
 
     expect(res.status).toBe(200)
     expect(body.provider).toBe('minimax')
     expect(body.modelId).toBe('MiniMax-M2.5-highspeed')
     expect(body.baseUrl).toBe('https://proxy.example.com')
+    expect(body.apiKey).toBe('****-key')
   })
 
   test('GET /settings normalizes GLM custom models away from custom/openai provider', async () => {

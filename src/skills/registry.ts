@@ -13,6 +13,7 @@ import { getEnv, getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { getAuthToken } from '../routes/auth.ts'
 import { getSettings } from '../settings/manager.ts'
+import { fetchRemoteMediaToBuffer } from '../channel/media-fetch.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import type { SkillsLoader } from './loader.ts'
 import recommendedSkillsData, {
@@ -452,7 +453,7 @@ const XIAOJUCLAW_PLAN_REQUIRED_MESSAGE = '当前套餐不包含该技能，请�
 
 class RegistryHttpClient {
   constructor(
-    private readonly fetchImpl: typeof fetch,
+    private readonly fetchImpl: typeof fetch | undefined,
     private readonly sleepImpl: (ms: number) => Promise<void>,
   ) {}
 
@@ -480,6 +481,22 @@ class RegistryHttpClient {
   }
 
   async fetchBuffer(url: string, init?: RequestInit, prefix = 'Download failed'): Promise<ArrayBuffer> {
+    if (!this.fetchImpl) {
+      try {
+        const remote = await fetchRemoteMediaToBuffer(url, {
+          maxBytes: MAX_ARCHIVE_BYTES,
+          timeoutMs: 120_000,
+          headers: init?.headers,
+        })
+        const copy = new Uint8Array(remote.buffer.byteLength)
+        copy.set(remote.buffer)
+        return copy.buffer
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(`${prefix}: ${detail}`)
+      }
+    }
+
     const response = await this.fetchWithRetry(url, init)
     if (!response.ok) {
       throw new Error(await this.buildHttpErrorMessage(prefix, response))
@@ -500,13 +517,14 @@ class RegistryHttpClient {
 
   private async fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
     let attempt = 0
-    let response = await this.fetchImpl(url, init)
+    const fetchImpl = this.fetchImpl ?? fetch
+    let response = await fetchImpl(url, init)
 
     while (response.status === 429 && attempt < 2) {
       attempt += 1
       const delayMs = this.resolveRetryDelay(response, attempt)
       await this.sleepImpl(delayMs)
-      response = await this.fetchImpl(url, init)
+      response = await fetchImpl(url, init)
     }
 
     return response
@@ -1313,7 +1331,7 @@ export class RegistryManager {
     private readonly options: RegistryManagerOptions = {},
   ) {
     this.loadRecommendedList()
-    this.http = new RegistryHttpClient(this.fetchImpl(), this.sleep.bind(this))
+    this.http = new RegistryHttpClient(this.options.fetchImpl, this.sleep.bind(this))
     this.sources = new Map<RegistrySelectableSource, RegistrySource>([
       ['xiaojuclaw', new XiaoJuClawSource(this.http, () => this.resolveXiaojuclawConfig())],
       ['recommended', new RecommendedSource(() => this.recommended)],
@@ -1684,10 +1702,6 @@ export class RegistryManager {
       }]
     })
     getLogger().debug({ count: this.recommended.length }, 'Recommendation list loaded')
-  }
-
-  private fetchImpl(): typeof fetch {
-    return this.options.fetchImpl ?? fetch
   }
 
   private async sleep(ms: number): Promise<void> {

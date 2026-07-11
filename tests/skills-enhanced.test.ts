@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, mock } from 'bun:test'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -143,6 +143,37 @@ describe('SkillsInstaller local metadata', () => {
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { managed: boolean; origin: string }
       expect(meta.managed).toBe(false)
       expect(meta.origin).toBe('imported')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SkillsInstaller remote URL boundary', () => {
+  test('rejects private URLs before the injected downloader runs', async () => {
+    const fetchFn = mock(async () => new Response('unexpected'))
+    const installer = new SkillsInstaller(fetchFn as typeof fetch)
+    await expect(installer.installFromUrl(
+      'http://169.254.169.254/latest/meta-data/',
+      resolve(tmpdir(), 'unused-skills'),
+    )).rejects.toThrow('内网/保留地址')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  test('rejects a remote frontmatter name that could escape the target directory', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-installer-url-'))
+    const targetDir = resolve(root, 'skills')
+    const fetchFn = mock(async () => new Response(
+      '---\nname: ../../escaped\ndescription: unsafe\n---\nbody\n',
+      { status: 200 },
+    ))
+    const installer = new SkillsInstaller(fetchFn as typeof fetch)
+    try {
+      await expect(installer.installFromUrl(
+        'https://skills.example/SKILL.md',
+        targetDir,
+      )).rejects.toThrow('safe 1-80 character slug')
+      expect(existsSync(resolve(root, 'escaped'))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

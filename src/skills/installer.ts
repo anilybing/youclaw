@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { execSync } from 'node:child_process'
 import { getLogger } from '../logger/index.ts'
 import { getShellEnv } from '../utils/shell-env.ts'
+import { fetchRemoteMediaToBuffer } from '../channel/media-fetch.ts'
 import { SkillInstallSource } from './types.ts'
 import type {
   FolderImportSkillRegistryMeta,
@@ -19,6 +20,7 @@ import type {
 
 const PROJECT_META_FILENAME = '.XiaoJuClaw-skill.json'
 const SCHEMA_VERSION = 1
+const MAX_RAW_SKILL_BYTES = 1024 * 1024
 
 export interface InstallMetadata {
   source: typeof SkillInstallSource[keyof typeof SkillInstallSource]
@@ -46,6 +48,8 @@ export interface InstallMetadata {
  * - Dependency and conflict checks
  */
 export class SkillsInstaller {
+  constructor(private readonly remoteFetchFn?: typeof fetch) {}
+
   /**
    * Install a skill from a local path to the target directory.
    */
@@ -92,15 +96,17 @@ export class SkillsInstaller {
     const tmpRoot = mkdtempSync(resolve(tmpdir(), 'XiaoJuClaw-skill-url-'))
 
     try {
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(`Failed to download skill: HTTP ${response.status} ${response.statusText}`)
-      }
-      const content = await response.text()
+      const remote = await fetchRemoteMediaToBuffer(url, {
+        maxBytes: MAX_RAW_SKILL_BYTES,
+        timeoutMs: 20_000,
+        headers: { Accept: 'text/markdown,text/plain;q=0.9,*/*;q=0.1' },
+        fetchFn: this.remoteFetchFn,
+      })
+      const content = remote.buffer.toString('utf8')
 
       const { parseFrontmatter } = await import('./frontmatter.ts')
       const { frontmatter } = parseFrontmatter(content)
-      const skillName = frontmatter.name
+      const skillName = normalizeRemoteSkillName(frontmatter.name)
 
       const destPath = resolve(targetDir, skillName)
       if (existsSync(destPath)) {
@@ -119,7 +125,7 @@ export class SkillsInstaller {
         })
       }
 
-      logger.info({ skillName, url, destPath }, 'Skill installed from remote URL')
+      logger.info({ skillName, destPath }, 'Skill installed from validated remote URL')
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true })
     }
@@ -258,4 +264,12 @@ export class SkillsInstaller {
 
     writeFileSync(resolve(skillDir, '.registry.json'), JSON.stringify(registryMeta, null, 2), 'utf-8')
   }
+}
+
+function normalizeRemoteSkillName(value: string): string {
+  const name = String(value || '').trim()
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(name) || name === '.' || name === '..') {
+    throw new Error('Remote skill name must be a safe 1-80 character slug')
+  }
+  return name
 }

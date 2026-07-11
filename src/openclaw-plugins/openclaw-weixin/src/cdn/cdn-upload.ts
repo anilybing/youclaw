@@ -1,8 +1,10 @@
 // @ts-nocheck
+// [XJC-PATCH] Weixin CDN uploads use DNS-pinned safe transport.
 import { encryptAesEcb } from "./aes-ecb.js";
 import { buildCdnUploadUrl } from "./cdn-url.js";
 import { logger } from "../util/logger.js";
 import { redactUrl } from "../util/redact.js";
+import { safeWeixinRemoteRequest } from "../security/remote-fetch.js";
 
 /** Maximum retry attempts for CDN upload. */
 const UPLOAD_MAX_RETRIES = 3;
@@ -30,10 +32,12 @@ export async function uploadBufferToCdn(params: {
 
   for (let attempt = 1; attempt <= UPLOAD_MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(cdnUrl, {
+      const res = await safeWeixinRemoteRequest(cdnUrl, {
+        signal: AbortSignal.timeout(60_000),
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: new Uint8Array(ciphertext),
+        maxRedirects: 0,
       });
       if (res.status >= 400 && res.status < 500) {
         const errMsg = res.headers.get("x-error-message") ?? (await res.text());

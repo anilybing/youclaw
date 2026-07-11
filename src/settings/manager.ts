@@ -1,7 +1,7 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { getDatabase } from '../db/index.ts'
 import { getEnv } from '../config/index.ts'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { getPaths } from '../config/paths.ts'
 import {
@@ -171,7 +171,18 @@ function readSecrets(): Record<string, string> {
 function writeSecrets(secrets: Record<string, string>): void {
   const path = getSecretsPath()
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify(secrets, null, 2))
+  // Portable FAT/exFAT media cannot enforce ACLs, but on filesystems that do
+  // support POSIX modes this prevents group/other reads. Values intentionally
+  // remain plaintext so the portable build can move between Windows machines.
+  writeFileSync(path, JSON.stringify(secrets, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  })
+  try {
+    chmodSync(path, 0o600)
+  } catch {
+    // Windows and removable filesystems may not expose POSIX permissions.
+  }
 }
 
 function customModelSecretKey(modelId: string): string {

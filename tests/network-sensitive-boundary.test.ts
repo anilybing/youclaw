@@ -1,0 +1,70 @@
+import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+function read(relativePath: string): string {
+  return readFileSync(resolve(process.cwd(), relativePath), 'utf8')
+}
+
+describe('network and sensitive-data commercialization boundary', () => {
+  test('all untrusted download surfaces use the centralized pinned transport', () => {
+    const mediaFetch = read('src/channel/media-fetch.ts')
+    const mediaService = read('src/media/service.ts')
+    const workflowNodes = read('src/workflow/nodes.ts')
+    const browser = read('src/browser/mcp.ts')
+    const health = read('src/routes/health.ts')
+    const skillInstaller = read('src/skills/installer.ts')
+    const skillImporter = read('src/skills/import-manager.ts')
+    const skillRegistry = read('src/skills/registry.ts')
+    const dingTalk = read('src/channel/dingtalk.ts')
+    const weCom = read('src/channel/wecom.ts')
+    const feishu = read('src/channel/feishu.ts')
+    const weixinUpload = read('src/openclaw-plugins/openclaw-weixin/src/cdn/upload.ts')
+    const weixinCdnUpload = read('src/openclaw-plugins/openclaw-weixin/src/cdn/cdn-upload.ts')
+    const weixinDownload = read('src/openclaw-plugins/openclaw-weixin/src/cdn/pic-decrypt.ts')
+    const weixinLogUpload = read('src/openclaw-plugins/openclaw-weixin/src/log-upload.ts')
+
+    expect(mediaFetch).toContain('pinnedHttpGet')
+    expect(mediaService).toContain('fetchRemoteMediaToFile')
+    expect(workflowNodes).toContain('fetchRemoteMediaToBuffer')
+    expect(browser).toContain('resolveValidatedRemoteAddresses')
+    expect(health).toContain('fetchRemoteMediaToBuffer')
+    expect(skillInstaller).toContain('fetchRemoteMediaToBuffer')
+    expect(skillImporter).toContain('fetchRemoteMediaToBuffer')
+    expect(skillRegistry).toContain('fetchRemoteMediaToBuffer')
+    expect(dingTalk).toContain('this.remoteMediaFetchFn = opts._fetchFn')
+    expect(weCom).toContain('this.remoteMediaFetchFn = opts._fetchFn')
+    expect(feishu).toContain('this.remoteMediaFetchFn = opts._fetchFn')
+    expect(weixinUpload).toContain('safeWeixinRemoteRequest')
+    expect(weixinCdnUpload).toContain('safeWeixinRemoteRequest')
+    expect(weixinCdnUpload).toContain('maxRedirects: 0')
+    expect(weixinDownload).toContain('safeWeixinRemoteRequest')
+    expect(weixinLogUpload).toContain('safeWeixinRemoteRequest')
+  })
+
+  test('local plaintext secret storage is hardened where possible and disclosed truthfully', () => {
+    const settingsManager = read('src/settings/manager.ts')
+    const settingsRoutes = read('src/routes/settings.ts')
+    const tauri = read('src-tauri/src/lib.rs')
+    const modelPanel = read('web/src/components/settings/ModelsPanel.tsx')
+    const voicePanel = read('web/src/components/settings/VoicePanel.tsx')
+    const userKeyCard = read('web/src/components/commercial/UserAiKeyCard.tsx')
+    const transport = read('web/src/api/transport.ts')
+    const en = read('web/src/i18n/en.ts')
+    const zh = read('web/src/i18n/zh.ts')
+
+    expect(settingsManager).toContain('mode: 0o600')
+    expect(settingsManager).toContain('chmodSync(path, 0o600)')
+    expect(settingsRoutes).toContain("apiKey: config.apiKey ? `****${config.apiKey.slice(-4)}` : ''")
+    expect(tauri).toContain('options.mode(0o600)')
+    expect(tauri).toContain('portable_secret_exists')
+    expect(tauri).not.toContain('fn portable_secret_get')
+    expect(transport).toContain('hasPortableSecret')
+    expect(transport).not.toContain('portable_secret_get')
+    expect(modelPanel).toContain('localSecretPlaintextNotice')
+    expect(voicePanel).toContain('localSecretPlaintextNotice')
+    expect(en).toContain('Stored as plaintext')
+    expect(zh).toContain('密钥以明文保存在本机用户数据目录')
+    expect(userKeyCard).toContain('Key 以明文保存在本机用户数据目录')
+  })
+})

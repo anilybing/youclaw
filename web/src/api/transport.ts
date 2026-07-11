@@ -119,10 +119,9 @@ export async function deletePortableSetting(key: string): Promise<void> {
   await getTauriInvoke()('portable_setting_delete', { key })
 }
 
-export async function getPortableSecret(key: string): Promise<string | null> {
-  if (!isTauri) return null
-  const value = await getTauriInvoke()('portable_secret_get', { key })
-  return typeof value === 'string' ? value : null
+export async function hasPortableSecret(key: string): Promise<boolean> {
+  if (!isTauri) return false
+  return Boolean(await getTauriInvoke()('portable_secret_exists', { key }))
 }
 
 export async function savePortableSecret(key: string, value: string): Promise<void> {

@@ -12,6 +12,7 @@ import {
   assertSafeBrowserNavigationUrl,
   createBrowserMcpServer,
   createBrowserScreenshotPath,
+  resolveSafeBrowserNavigationUrl,
 } from '../src/browser/mcp.ts'
 
 function browserTools() {
@@ -59,6 +60,21 @@ describe('browser navigation security', () => {
     ]) {
       expect(() => assertSafeBrowserNavigationUrl(url)).toThrow(/blocked/i)
     }
+  })
+
+  test('DNS preflight rejects mixed public/private answers before navigation', async () => {
+    await expect(resolveSafeBrowserNavigationUrl(
+      'https://browser.example/page',
+      async () => [
+        { address: '93.184.216.34', family: 4 },
+        { address: '10.0.0.7', family: 4 },
+      ],
+    )).rejects.toThrow('内网/保留')
+
+    await expect(resolveSafeBrowserNavigationUrl(
+      'https://browser.example/page',
+      async () => [{ address: '93.184.216.34', family: 4 }],
+    )).resolves.toBe('https://browser.example/page')
   })
 
   test('MCP rejects file URLs before invoking the browser router', async () => {

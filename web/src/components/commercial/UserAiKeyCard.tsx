@@ -8,8 +8,8 @@ import { KeyRound, Loader2, ShieldCheck, ShieldAlert, Sparkles, RotateCcw } from
 import {
   deletePortableSecret,
   deletePortableSetting,
-  getPortableSecret,
   getPortableSetting,
+  hasPortableSecret,
   isTauri,
   savePortableSecret,
   savePortableSetting,
@@ -32,7 +32,7 @@ const PLACEHOLDER_API_KEY = '••••••••••'
  * 用户自带 Key 配置卡片（P1-1）
  *
  * - BaseURL / Model 写入便携 settings.json
- * - API Key 写入便携 secrets.json，前端不回显明文
+ * - API Key 明文写入用户数据目录的 secrets.json，前端不回显明文
  * - 切换「平台积分 / 自带 Key」模式调用 MVP `/ai/preferences`
  *
  * Web 浏览器模式（非 Tauri）下卡片只读展示提示，配置入口仅在桌面端可用。
@@ -60,11 +60,11 @@ export function UserAiKeyCard() {
         const [savedBase, savedModel, savedKey] = await Promise.all([
           getPortableSetting(KEY_BASE_URL),
           getPortableSetting(KEY_MODEL),
-          getPortableSecret(SECRET_API_KEY).catch(() => null),
+          hasPortableSecret(SECRET_API_KEY).catch(() => false),
         ])
         setBaseUrl(savedBase || '')
         setModel(savedModel || '')
-        setHasSavedKey(Boolean(savedKey))
+        setHasSavedKey(savedKey)
       }
     } catch (err) {
       const formatted = formatApiError(err, '加载 AI 偏好失败')
@@ -92,7 +92,9 @@ export function UserAiKeyCard() {
         setHasSavedKey(true)
         setApiKey('')
       } else if (!hasSavedKey) {
-        notify.warning('请首次填写 API Key', { description: '我们会保存到 U 盘的 secrets.json，云端不留存。' })
+        notify.warning('请首次填写 API Key', {
+          description: '密钥会以明文保存到本机用户数据目录的 secrets.json，云端不留存。',
+        })
         setSaving(false)
         return
       }
@@ -258,8 +260,9 @@ export function UserAiKeyCard() {
                   onChange={(e) => setApiKey(e.target.value)}
                   disabled={!isTauri || saving}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Key 仅保存在本机便携目录的 <code>secrets.json</code>，云端不会保存。
+                <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                  Key 以明文保存在本机用户数据目录的 <code>secrets.json</code>，云端不会保存。
+                  请保护设备或 U 盘，切勿向他人发送数据目录。
                 </p>
               </div>
 

@@ -354,7 +354,7 @@ describe('DingTalkChannel', () => {
       expect(uploadCalls.length).toBe(0)
     })
 
-    test('remote image is downloaded via the injected fetch (redirect:error) then uploaded', async () => {
+    test('remote image is downloaded via the injected test fetch then uploaded', async () => {
       const { fetch: mockFetch, calls } = createMockFetch()
       const channel = new DingTalkChannel('appkey1', 'secret1', {
         onMessage: mock(() => {}),
@@ -367,7 +367,7 @@ describe('DingTalkChannel', () => {
 
       const dl = calls.find(c => c.url.includes('files.example.com'))
       expect(dl).toBeDefined()
-      expect((dl!.init as any)?.redirect).toBe('error')
+      expect((dl!.init as any)?.redirect).toBe('manual')
 
       const uploadCall = calls.find(c => c.url.includes('media/upload'))
       expect(uploadCall!.url).toContain('type=image')

@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { createReadStream, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -69,6 +70,7 @@ export interface FeishuChannelOpts {
   onMessage: OnInboundMessage
   eventBus?: EventBus
   _client?: Lark.Client  // for test injection
+  _fetchFn?: typeof fetch // test-only; production media uses pinned safe transport
 }
 
 /**
@@ -201,12 +203,14 @@ export class FeishuChannel implements Channel {
   private eventBus: EventBus | null = null
   private unsubscribeEvents: (() => void) | null = null
   private pendingReactions: Map<string, { messageId: string; reactionId: string }> = new Map()
+  private remoteMediaFetchFn?: typeof fetch
 
   constructor(appId: string, appSecret: string, opts: FeishuChannelOpts) {
     this.appId = appId
     this.appSecret = appSecret
     this.opts = opts
     this.eventBus = opts.eventBus ?? null
+    this.remoteMediaFetchFn = opts._fetchFn
 
     this.client = opts._client ?? new Lark.Client({
       appId,
@@ -368,7 +372,10 @@ export class FeishuChannel implements Channel {
         const remoteMax = FEISHU_IMAGE_EXTENSIONS.has(feishuExtensionOf(fileName))
           ? FEISHU_IMAGE_MAX_BYTES
           : FEISHU_FILE_MAX_BYTES
-        const remote = await fetchRemoteMediaToBuffer(mediaUrl, { maxBytes: remoteMax })
+        const remote = await fetchRemoteMediaToBuffer(mediaUrl, {
+          maxBytes: remoteMax,
+          fetchFn: this.remoteMediaFetchFn,
+        })
         tempDir = mkdtempSync(join(tmpdir(), 'xiaojuclaw-feishu-media-'))
         localPath = join(tempDir, fileName)
         writeFileSync(localPath, remote.buffer)

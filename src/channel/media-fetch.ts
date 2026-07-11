@@ -1,27 +1,26 @@
-// [XJC] 出站远程媒体安全下载工具（SSRF 防护 + 大小上限 + 超时）
+// [XJC] 出站远程媒体安全下载工具（DNS pinning + SSRF 防护 + 大小上限 + 超时）
 /**
  * 集中式远程媒体下载安全层。所有渠道出站媒体的 remote 分支都应经此模块：
  *
  * 1. {@link assertSafeRemoteUrl} —— 协议白名单（仅 http/https）+ 内网/环回/链路本地/
- *    保留网段/云元数据地址拦截。URL 主机为 IP 字面量时精确判网段；为域名时拦掉
- *    localhost、单标签和常见局域网/内部域名。
- * 2. {@link fetchRemoteMediaToBuffer} / {@link fetchRemoteMediaToFile} —— 先做 URL 校验，再带超时下载，并在
+ *    保留网段/云元数据地址拦截。
+ * 2. 域名先一次性解析全部 A/AAAA；任一答案为私网/保留地址即整体拒绝。连接使用已验证
+ *    IP，同时保留原 Host、TLS SNI 与证书主机校验，关闭 DNS 校验与建连之间的 TOCTOU。
+ * 3. {@link fetchRemoteMediaToBuffer} / {@link fetchRemoteMediaToFile} —— 带超时下载，并在
  *    「响应头声明」与「流式累计字节」两处双重限制大小，任一超限立即中止，避免整包
  *    读入内存/磁盘造成 DoS。
- *
- * ## 残余风险（有意不做的过度工程）
- * - **DNS rebinding**：域名首次解析为公网、下载时重解析为内网的攻击无法仅靠 URL 字面量
- *   拦截（需在建立连接后对已解析 IP 复核，成本高且依赖底层 socket）。此处只保证拦掉
- *   「URL 里直接写内网/元数据 IP 或内部主机名」这一最常见、最省事的攻击面。
- * - **重定向绕过**：下载使用 `redirect: 'error'`，任何 3xx 一律失败，从而杜绝
- *   「先跳公网、再 302 到内网」的绕过；代价是依赖跳转的媒体直链会下载失败。
- * - **已废弃的 IPv4-compatible IPv6（`::a.b.c.d`，无 `ffff`/NAT64 前缀）**：已覆盖
- *   IPv4-mapped(`::ffff:`)、IPv4-translated(`::ffff:0:`)、NAT64(`64:ff9b::`) 三种会真实
- *   路由的内嵌形态；纯 `::a.b.c.d` 早已废弃且现代栈通常不路由，未单独拦截。
+ * 4. 最多跟随 3 次重定向，每一跳都重新执行完整 URL、DNS 与 IP pin 校验。
  */
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
+import { isIP } from 'node:net'
 import { basename, dirname } from 'node:path'
+import {
+  pinnedHttpGet,
+  type PinnedRequestFn,
+  type RemoteHeaderInput,
+  type RemoteLookupFn,
+} from '../security/pinned-http.ts'
 
 /** 无 content-length 时的默认下载超时（毫秒）。 */
 export const DEFAULT_MEDIA_TIMEOUT_MS = 30_000
@@ -31,8 +30,16 @@ export interface FetchRemoteMediaOptions {
   maxBytes: number
   /** 整体下载超时（毫秒），含建连与流式读取。默认 {@link DEFAULT_MEDIA_TIMEOUT_MS}。 */
   timeoutMs?: number
-  /** 注入的 fetch 实现（渠道可传各自的 this.fetchFn；默认全局 fetch）。 */
+  /** 仅供确定性测试注入；生产下载不得传入，否则无法保证 socket 使用已验证 IP。 */
   fetchFn?: typeof fetch
+  /** 仅供安全传输测试注入 DNS。 */
+  lookupFn?: RemoteLookupFn
+  /** 仅供安全传输测试注入已固定 IP 的请求实现。 */
+  pinnedRequestFn?: PinnedRequestFn
+  /** 每一跳重新校验的最大重定向次数，默认 3。 */
+  maxRedirects?: number
+  /** Optional GET headers. Sensitive headers are stripped on cross-origin redirects. */
+  headers?: RemoteHeaderInput
 }
 
 export interface RemoteMedia {
@@ -62,42 +69,56 @@ export function assertSafeRemoteUrl(rawUrl: string): URL {
   try {
     url = new URL(rawUrl)
   } catch {
-    throw new Error(`无效的媒体 URL：${rawUrl}`)
+    throw new Error('无效的远程媒体 URL')
   }
 
   const protocol = url.protocol.toLowerCase()
   if (protocol !== 'http:' && protocol !== 'https:') {
-    throw new Error(`不支持的媒体 URL 协议：${url.protocol}（仅允许 http/https）：${rawUrl}`)
+    throw new Error(`不支持的媒体 URL 协议：${url.protocol}（仅允许 http/https）`)
   }
 
   // WHATWG URL 会把 IPv6 主机保留方括号，这里剥掉再判断；同时统一小写并去掉 DNS 尾点。
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '')
   if (!host) {
-    throw new Error(`媒体 URL 缺少主机名：${rawUrl}`)
+    throw new Error('远程媒体 URL 缺少主机名')
   }
 
   const ipv4 = parseIpv4(host)
   if (ipv4) {
-    if (isBlockedIpv4(ipv4)) {
-      throw new Error(`拒绝下载指向内网/保留地址的媒体 URL：${rawUrl}`)
-    }
+    assertSafeRemoteAddress(host)
     return url
   }
 
   if (host.includes(':')) {
     // 含冒号即视为 IPv6 字面量（域名不含冒号）。
-    if (isBlockedIpv6(host)) {
-      throw new Error(`拒绝下载指向内网/保留地址的媒体 URL：${rawUrl}`)
-    }
+    assertSafeRemoteAddress(host)
     return url
   }
 
   if (isBlockedHostname(host)) {
-    throw new Error(`拒绝下载指向本机/内网主机的媒体 URL：${rawUrl}`)
+    throw new Error('拒绝下载指向本机/内网主机（如 localhost）的媒体 URL')
   }
 
-  // 其余按域名处理：DNS rebinding 属已知残余风险（见文件头说明）。
   return url
+}
+
+/** Validate one already-resolved address. Any non-IP or private/reserved result fails closed. */
+export function assertSafeRemoteAddress(rawAddress: string): void {
+  const address = String(rawAddress || '').toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '')
+  const ipv4 = parseIpv4(address)
+  if (ipv4) {
+    if (isBlockedIpv4(ipv4)) {
+      throw new Error('拒绝连接解析到内网/保留地址的远程主机')
+    }
+    return
+  }
+  if (isIP(address) === 6) {
+    if (isBlockedIpv6(address)) {
+      throw new Error('拒绝连接解析到内网/保留地址的远程主机')
+    }
+    return
+  }
+  throw new Error('远程主机 DNS 返回了无效 IP 地址')
 }
 
 /**
@@ -110,7 +131,7 @@ export async function fetchRemoteMediaToBuffer(
   const buffer = await withSafeRemoteResponse(
     rawUrl,
     options,
-    (res, signal) => readCapped(res, options.maxBytes, rawUrl, signal),
+    (res, signal) => readCapped(res, options.maxBytes, signal),
   )
   return { buffer, fileName: inferMediaFileNameFromUrl(rawUrl) }
 }
@@ -127,7 +148,7 @@ export async function fetchRemoteMediaToFile(
   const bytesWritten = await withSafeRemoteResponse(
     rawUrl,
     options,
-    (res, signal) => writeCappedToFile(res, destPath, options.maxBytes, rawUrl, signal),
+    (res, signal) => writeCappedToFile(res, destPath, options.maxBytes, signal),
   )
   return {
     fileName: inferMediaFileNameFromUrl(rawUrl),
@@ -156,15 +177,20 @@ async function withSafeRemoteResponse<T>(
   consume: (res: Response, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const { maxBytes, timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS } = options
-  const fetchFn = options.fetchFn ?? globalThis.fetch
   if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
     throw new Error('安全远程媒体下载：maxBytes 必须为正数')
   }
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error('安全远程媒体下载：timeoutMs 必须为正数')
   }
+  if (
+    options.maxRedirects !== undefined
+    && (!Number.isSafeInteger(options.maxRedirects) || options.maxRedirects < 0 || options.maxRedirects > 10)
+  ) {
+    throw new Error('安全远程媒体下载：maxRedirects 必须是 0-10 的整数')
+  }
 
-  const url = assertSafeRemoteUrl(rawUrl)
+  assertSafeRemoteUrl(rawUrl)
   const controller = new AbortController()
   const timer = setTimeout(() => {
     controller.abort(new DOMException('The operation timed out.', 'TimeoutError'))
@@ -174,18 +200,33 @@ async function withSafeRemoteResponse<T>(
   try {
     let res: Response
     try {
-      res = await fetchFn(url.href, { signal: controller.signal, redirect: 'error' })
+      res = options.fetchFn
+        ? await fetchWithInjectedTransport(
+            rawUrl,
+            options.fetchFn,
+            controller.signal,
+            options.maxRedirects ?? 3,
+            options.headers,
+          )
+        : await pinnedHttpGet(rawUrl, {
+            signal: controller.signal,
+            validateUrl: assertSafeRemoteUrl,
+            validateAddress: assertSafeRemoteAddress,
+            lookupFn: options.lookupFn,
+            requestFn: options.pinnedRequestFn,
+            maxRedirects: options.maxRedirects,
+            headers: options.headers,
+          })
     } catch (err) {
       if (isAbortError(err) || controller.signal.aborted) {
-        throw new Error(`下载远程媒体超时（超过 ${timeoutMs}ms）：${rawUrl}`)
+        throw new Error(`下载远程媒体超时（超过 ${timeoutMs}ms）`)
       }
-      // redirect: 'error' 命中跳转会在此抛出（TypeError）
-      throw new Error(`下载远程媒体失败：${rawUrl}（${err instanceof Error ? err.message : String(err)}）`)
+      throw new Error(`下载远程媒体失败（${err instanceof Error ? err.message : String(err)}）`)
     }
 
     if (!res.ok) {
       await cancelBody(res)
-      throw new Error(`下载远程媒体失败（HTTP ${res.status}）：${rawUrl}`)
+      throw new Error(`下载远程媒体失败（HTTP ${res.status}）`)
     }
 
     const declaredHeader = res.headers.get('content-length')
@@ -193,7 +234,7 @@ async function withSafeRemoteResponse<T>(
     if (Number.isFinite(declared) && declared > maxBytes) {
       await cancelBody(res)
       throw new Error(
-        `远程媒体大小 ${toMB(declared)}MB 超过上限 ${toMB(maxBytes)}MB，已取消下载：${rawUrl}`,
+        `远程媒体大小 ${toMB(declared)}MB 超过上限 ${toMB(maxBytes)}MB，已取消下载`,
       )
     }
 
@@ -201,7 +242,7 @@ async function withSafeRemoteResponse<T>(
       return await consume(res, controller.signal)
     } catch (err) {
       if (isAbortError(err) || controller.signal.aborted) {
-        throw new Error(`下载远程媒体超时（超过 ${timeoutMs}ms）：${rawUrl}`)
+        throw new Error(`下载远程媒体超时（超过 ${timeoutMs}ms）`)
       }
       throw err
     }
@@ -210,11 +251,48 @@ async function withSafeRemoteResponse<T>(
   }
 }
 
+/**
+ * Deterministic test adapter. Production never supplies fetchFn: real requests
+ * must go through pinnedHttpGet. Redirect URLs are still synchronously checked.
+ */
+async function fetchWithInjectedTransport(
+  rawUrl: string,
+  fetchFn: typeof fetch,
+  signal: AbortSignal,
+  maxRedirects: number,
+  requestHeaders?: RemoteHeaderInput,
+): Promise<Response> {
+  let current = assertSafeRemoteUrl(rawUrl)
+  let headers = new Headers(requestHeaders)
+  for (let redirectCount = 0; ; redirectCount += 1) {
+    const response = await fetchFn(current.href, { signal, redirect: 'manual', headers })
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response
+    const location = response.headers.get('location')
+    if (!location) return response
+    await response.body?.cancel().catch(() => {})
+    if (redirectCount >= maxRedirects) {
+      throw new Error(`远程请求重定向次数超过上限 ${maxRedirects}`)
+    }
+    let next: URL
+    try {
+      next = new URL(location, current)
+    } catch {
+      throw new Error('远程请求返回了无效的重定向地址')
+    }
+    const validatedNext = assertSafeRemoteUrl(next.href)
+    if (validatedNext.origin !== current.origin) {
+      for (const name of ['authorization', 'cookie', 'proxy-authorization', 'rdxtoken', 'x-api-key']) {
+        headers.delete(name)
+      }
+    }
+    current = validatedNext
+  }
+}
+
 /** 流式读取响应体并在累计超过 maxBytes 时立即中止（防无 content-length 绕过）。 */
 async function readCapped(
   res: Response,
   maxBytes: number,
-  rawUrl: string,
   signal: AbortSignal,
 ): Promise<Buffer> {
   const body = res.body
@@ -233,7 +311,7 @@ async function readCapped(
       total += value.byteLength
       if (total > maxBytes) {
         await reader.cancel().catch(() => {})
-        throw new Error(`远程媒体大小超过上限 ${toMB(maxBytes)}MB，已中止下载：${rawUrl}`)
+        throw new Error(`远程媒体大小超过上限 ${toMB(maxBytes)}MB，已中止下载`)
       }
       chunks.push(value)
     }
@@ -255,7 +333,6 @@ async function writeCappedToFile(
   res: Response,
   destPath: string,
   maxBytes: number,
-  rawUrl: string,
   signal: AbortSignal,
 ): Promise<number> {
   await mkdir(dirname(destPath), { recursive: true })
@@ -274,7 +351,7 @@ async function writeCappedToFile(
         total += value.byteLength
         if (total > maxBytes) {
           await reader.cancel().catch(() => {})
-          throw new Error(`远程媒体大小超过上限 ${toMB(maxBytes)}MB，已中止下载：${rawUrl}`)
+          throw new Error(`远程媒体大小超过上限 ${toMB(maxBytes)}MB，已中止下载`)
         }
         await writeAll(handle, value)
       }
@@ -400,24 +477,42 @@ function isBlockedIpv4(octets: [number, number, number, number]): boolean {
   return false
 }
 
-/** 私有/环回/链路本地 IPv6（及 IPv4-mapped）判定。入参为已去方括号、小写的主机名。 */
+/** 非公网 IPv6（含内嵌私网 IPv4）判定。入参为已去方括号、小写的主机名。 */
 function isBlockedIpv6(host: string): boolean {
-  if (host === '::1') return true // 环回
-  if (host === '::') return true // 未指定地址
-
-  // IPv4-mapped（::ffff:a.b.c.d）——WHATWG URL 归一化后多呈十六进制 hextet 形式（如
-  // ::ffff:7f00:1、::ffff:a9fe:a9fe）。抽出内嵌 IPv4 复用 v4 判定，挡住用 mapped 形式
-  // 伪装的内网/元数据地址。
   const mapped = extractMappedIpv4(host)
-  if (mapped && isBlockedIpv4(mapped)) return true
+  if (mapped) return isBlockedIpv4(mapped)
 
-  const firstGroup = host.split(':')[0] ?? ''
-  const first = firstGroup === '' ? 0 : parseInt(firstGroup, 16)
-  if (Number.isNaN(first)) return false
+  const groups = expandIpv6(host)
+  if (groups.length !== 8 || groups.some((value) => !Number.isFinite(value))) return true
+  const first = groups[0]!
+  const second = groups[1]!
+
+  // ::/96：未指定、环回及已废弃的 IPv4-compatible 表达。
+  if (groups.slice(0, 6).every((value) => value === 0)) return true
+
+  // 6to4 直接在第 2-3 组嵌入 IPv4；私网目标必须继续拦截。
+  if (first === 0x2002) {
+    const embedded6to4: [number, number, number, number] = [
+      (second >> 8) & 0xff,
+      second & 0xff,
+      (groups[2]! >> 8) & 0xff,
+      groups[2]! & 0xff,
+    ]
+    return isBlockedIpv4(embedded6to4)
+  }
+
   if ((first & 0xff00) === 0xff00) return true // ff00::/8 组播
-  if (first >= 0xfc00 && first <= 0xfdff) return true // fc00::/7 唯一本地地址（ULA）
-  if (first >= 0xfe80 && first <= 0xfebf) return true // fe80::/10 链路本地
-  if (host.startsWith('2001:db8:') || host === '2001:db8::') return true // 文档保留网段
+  if ((first & 0xfe00) === 0xfc00) return true // fc00::/7 ULA
+  if ((first & 0xfe00) === 0xfe00) return true // fe00::/9 链路/站点本地及保留
+
+  // 公网 IPv6 通常位于 2000::/3；mapped/NAT64 已在上方单独判定。
+  if ((first & 0xe000) !== 0x2000) return true
+
+  if (first === 0x2001 && second === 0x0000) return true // Teredo
+  if (first === 0x2001 && second === 0x0002) return true // 基准测试
+  if (first === 0x2001 && second === 0x0db8) return true // 文档保留
+  if (first === 0x2001 && ((second & 0xfff0) === 0x0010 || (second & 0xfff0) === 0x0020)) return true // ORCHID
+  if (first === 0x3fff && (second & 0xf000) === 0) return true // 文档保留
   return false
 }
 
@@ -448,4 +543,27 @@ function extractMappedIpv4(host: string): [number, number, number, number] | nul
     }
   }
   return null
+}
+
+function expandIpv6(host: string): number[] {
+  const address = host.split('%')[0]!
+  const [leftRaw = '', rightRaw = ''] = address.split('::')
+  const parseSide = (side: string): number[] => {
+    if (!side) return []
+    const output: number[] = []
+    for (const part of side.split(':')) {
+      const dotted = parseIpv4(part)
+      if (dotted) {
+        output.push((dotted[0] << 8) | dotted[1], (dotted[2] << 8) | dotted[3])
+      } else {
+        output.push(parseInt(part, 16))
+      }
+    }
+    return output
+  }
+  const left = parseSide(leftRaw)
+  const right = parseSide(rightRaw)
+  return address.includes('::')
+    ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill(0), ...right]
+    : left
 }

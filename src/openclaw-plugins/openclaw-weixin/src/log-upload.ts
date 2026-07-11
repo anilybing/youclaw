@@ -1,9 +1,12 @@
 // @ts-nocheck
+// [XJC-PATCH] Log uploads use bounded, DNS-pinned public HTTP transport.
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
+import { assertSafeWeixinRemoteUrl, safeWeixinRemoteRequest } from "./security/remote-fetch.js";
 
+const MAX_LOG_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 /** Minimal subset of commander's Command used by registerWeixinCli. */
 type CliCommand = {
@@ -86,15 +89,32 @@ export function registerWeixinCli(params: { program: CliCommand; config: OpenCla
         console.error(`[weixin] Failed to read log file: ${filePath}\n  ${String(err)}`);
         process.exit(1);
       }
+      if (content.length > MAX_LOG_UPLOAD_BYTES) {
+        console.error("[weixin] Log upload rejected: file exceeds 20MB");
+        process.exit(1);
+      }
 
-      console.log(`[weixin] Uploading ${filePath} (${content.length} bytes) to ${uploadUrl} ...`);
+      const safeUploadUrl = assertSafeWeixinRemoteUrl(uploadUrl);
+      console.log(`[weixin] Uploading ${filePath} (${content.length} bytes) to ${safeUploadUrl.origin} ...`);
 
       const formData = new FormData();
       formData.append("file", new Blob([new Uint8Array(content)], { type: "text/plain" }), fileName);
+      const serializedRequest = new Request("https://multipart.invalid/", {
+        method: "POST",
+        body: formData,
+      });
+      const serializedBody = new Uint8Array(await serializedRequest.arrayBuffer());
+      const contentType = serializedRequest.headers.get("content-type") ?? "multipart/form-data";
 
       let res: Response;
       try {
-        res = await fetch(uploadUrl, { method: "POST", body: formData });
+        res = await safeWeixinRemoteRequest(safeUploadUrl.href, {
+          signal: AbortSignal.timeout(60_000),
+          method: "POST",
+          headers: { "Content-Type": contentType },
+          body: serializedBody,
+          maxRedirects: 0,
+        });
       } catch (err) {
         console.error(`[weixin] Upload request failed: ${String(err)}`);
         process.exit(1);

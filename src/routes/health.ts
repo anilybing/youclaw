@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { z } from 'zod/v4'
 import { which, resetShellEnvCache, getShellEnv } from '../utils/shell-env.ts'
 import { getLogger } from '../logger/index.ts'
+import { fetchRemoteMediaToBuffer } from '../channel/media-fetch.ts'
 import {
   BUN_CDN_BASE, BUN_GITHUB_BASE, BUN_VERSION,
   GIT_CDN_URL, GIT_VERSION,
@@ -57,8 +58,9 @@ interface InstallResult {
   installedTo: string | null
 }
 
-function sha256Hex(buffer: ArrayBuffer): string {
-  return createHash('sha256').update(Buffer.from(buffer)).digest('hex')
+function sha256Hex(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer
+  return createHash('sha256').update(bytes).digest('hex')
 }
 
 /** 安装成功后写入 tools/manifest.json；失败仅告警，不影响安装结果 */
@@ -78,35 +80,12 @@ function recordToolInManifest(entry: { name: string; version: string; dir: strin
  * 异常缓慢（同一文件流式读取数秒完成，arrayBuffer 需分钟级），导致下载超时。
  * 非 2xx 或超时均抛错，由调用方按"CDN 优先 GitHub 兜底"逐个 URL 重试。
  */
-async function downloadToBuffer(url: string, timeoutMs: number): Promise<ArrayBuffer> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const resp = await fetch(url, { signal: controller.signal })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    if (!resp.body) return await resp.arrayBuffer()
-
-    const reader = resp.body.getReader()
-    const chunks: Uint8Array[] = []
-    let total = 0
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        chunks.push(value)
-        total += value.byteLength
-      }
-    }
-    const merged = new Uint8Array(total)
-    let offset = 0
-    for (const chunk of chunks) {
-      merged.set(chunk, offset)
-      offset += chunk.byteLength
-    }
-    return merged.buffer
-  } finally {
-    clearTimeout(timer)
-  }
+async function downloadToBuffer(url: string, timeoutMs: number): Promise<Buffer> {
+  return (await fetchRemoteMediaToBuffer(url, {
+    maxBytes: 256 * 1024 * 1024,
+    timeoutMs,
+    headers: { Accept: 'application/zip,application/octet-stream,*/*' },
+  })).buffer
 }
 
 health.get('/health', (c) => {
@@ -358,7 +337,7 @@ async function installBun(): Promise<InstallResult> {
   const githubUrl = `${BUN_GITHUB_BASE}/${zipName}`
 
   // Download zip: try CDN first, fallback to GitHub
-  let zipBuffer: ArrayBuffer | null = null
+  let zipBuffer: Buffer | null = null
   let downloadSource = ''
   for (const url of [cdnUrl, githubUrl]) {
     try {
@@ -464,7 +443,7 @@ async function installGitWindows(): Promise<InstallResult> {
 
   // Download the Git installer zip from CDN
   logger.info({ category: 'install' }, `[install-git] Downloading from ${GIT_CDN_URL}...`)
-  let zipBuffer: ArrayBuffer | null = null
+  let zipBuffer: Buffer | null = null
   try {
     zipBuffer = await downloadToBuffer(GIT_CDN_URL, 180_000)
     logger.info({ category: 'install' }, `[install-git] Downloaded ${(zipBuffer.byteLength / 1024 / 1024).toFixed(1)}MB`)
@@ -593,7 +572,7 @@ async function installUv(): Promise<InstallResult> {
   const githubUrl = `${UV_GITHUB_BASE}/${target.name}`
 
   // Download: try CDN first, fallback to GitHub
-  let archiveBuffer: ArrayBuffer | null = null
+  let archiveBuffer: Buffer | null = null
   let downloadSource = ''
   for (const url of [cdnUrl, githubUrl]) {
     try {

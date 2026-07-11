@@ -61,6 +61,15 @@ describe('ImportManager', () => {
     expect(capturedTargetDir).toBe(getPaths().userSkills)
   })
 
+  test('rejects a private raw URL before probing its content', async () => {
+    const fetchFn = mock(async () => textResponse('unexpected')) as typeof fetch
+    const manager = new ImportManager({} as any, { fetchFn })
+    await expect(manager.probe('raw-url', {
+      url: 'http://127.0.0.1/SKILL.md',
+    })).rejects.toThrow('内网/保留地址')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
   test('probes a GitHub blob SKILL.md URL as a single file target', async () => {
     const requests: string[] = []
     globalThis.fetch = mock(async (input: RequestInfo | URL) => {
@@ -81,7 +90,7 @@ describe('ImportManager', () => {
       return new Response('not found', { status: 404 })
     }) as typeof fetch
 
-    const manager = new ImportManager({} as any)
+    const manager = new ImportManager({} as any, { fetchFn: globalThis.fetch })
     const result = await manager.probe('github', {
       repoUrl: 'https://github.com/acme/tools/blob/main/skills/github-ops/SKILL.md',
     })
@@ -178,7 +187,7 @@ describe('ImportManager', () => {
           'scripts/install.sh': 'echo install\n',
         })
       },
-    } as any)
+    } as any, { fetchFn: globalThis.fetch })
 
     await manager.import('github', {
       repoUrl: 'https://github.com/acme/tools/tree/main/skills/github-ops',
@@ -227,7 +236,7 @@ describe('ImportManager', () => {
           files: collectFiles(sourcePath),
         }
       },
-    } as any)
+    } as any, { fetchFn: globalThis.fetch })
 
     await manager.import('github', {
       repoUrl: 'https://raw.githubusercontent.com/acme/tools/main/skills/github-ops/SKILL.md',
@@ -280,7 +289,7 @@ describe('ImportManager', () => {
           files: collectFiles(sourcePath),
         }
       },
-    } as any)
+    } as any, { fetchFn: globalThis.fetch })
 
     await manager.import('github', {
       repoUrl: 'https://raw.githubusercontent.com/acme/tools/refs/heads/main/skills/github-ops/SKILL.md',
@@ -322,7 +331,7 @@ describe('ImportManager', () => {
       return new Response('not found', { status: 404 })
     }) as typeof fetch
 
-    const manager = new ImportManager({} as any)
+    const manager = new ImportManager({} as any, { fetchFn: globalThis.fetch })
 
     await expect(manager.probe('github', {
       repoUrl: 'https://github.com/acme/tools',

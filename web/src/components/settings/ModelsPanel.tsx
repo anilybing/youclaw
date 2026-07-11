@@ -678,6 +678,9 @@ export function ModelsPanel() {
               {touched.apiKey && formErrors.apiKey && (
                 <p className="text-xs text-destructive">{formErrors.apiKey}</p>
               )}
+              <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+                {t.settings.localSecretPlaintextNotice}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Base URL</Label>

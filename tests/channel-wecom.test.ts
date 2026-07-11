@@ -320,7 +320,7 @@ describe('WeComChannel', () => {
       expect(uploadCalls.length).toBe(0)
     })
 
-    test('remote image is downloaded via the injected fetch (redirect:error) then uploaded', async () => {
+    test('remote image is downloaded via the injected test fetch then uploaded', async () => {
       const { fetch: mockFetch, calls } = createMockFetch()
       const channel = new WeComChannel('corp1', 'secret1', '1000001', 'token', encodingAESKey, {
         onMessage: mock(() => {}),
@@ -332,7 +332,7 @@ describe('WeComChannel', () => {
 
       const dl = calls.find(c => c.url.includes('files.example.com'))
       expect(dl).toBeDefined()
-      expect((dl!.init as any)?.redirect).toBe('error')
+      expect((dl!.init as any)?.redirect).toBe('manual')
 
       const uploadCall = calls.find(c => c.url.includes('media/upload'))
       expect(uploadCall!.url).toContain('type=image')

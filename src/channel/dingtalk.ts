@@ -1,3 +1,4 @@
+// [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { getLogger } from '../logger/index.ts'
@@ -93,6 +94,7 @@ export class DingTalkChannel implements Channel {
   private eventBus: EventBus | null = null
   private unsubscribeEvents: (() => void) | null = null
   private fetchFn: typeof fetch
+  private remoteMediaFetchFn?: typeof fetch
 
   constructor(appKey: string, appSecret: string, opts: DingTalkChannelOpts) {
     this.appKey = appKey
@@ -100,6 +102,9 @@ export class DingTalkChannel implements Channel {
     this.opts = opts
     this.eventBus = opts.eventBus ?? null
     this.fetchFn = opts._fetchFn ?? globalThis.fetch.bind(globalThis)
+    // Only tests inject a media fetch. Production remote media must use the
+    // DNS-resolving, IP-pinned transport in media-fetch.ts.
+    this.remoteMediaFetchFn = opts._fetchFn
   }
 
   async connect(): Promise<void> {
@@ -244,7 +249,7 @@ export class DingTalkChannel implements Channel {
         // SSRF 校验 + 下载时即按 20MB 上限限流（不再整包读入后再判大小）
         const remote = await fetchRemoteMediaToBuffer(mediaUrl, {
           maxBytes: DINGTALK_MEDIA_MAX_BYTES,
-          fetchFn: this.fetchFn,
+          fetchFn: this.remoteMediaFetchFn,
         })
         buffer = remote.buffer
         fileName = remote.fileName

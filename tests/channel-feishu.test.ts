@@ -1,5 +1,5 @@
 import '../tests/setup-light.ts'
-import { describe, test, expect, mock, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test'
+import { describe, test, expect, mock, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -394,30 +394,21 @@ describe('FeishuChannel', () => {
     })
   })
 
-  // Feishu uses global fetch for remote downloads (no injected fetchFn), so we stub it.
   describe('sendMedia (remote, SSRF-guarded)', () => {
-    let originalFetch: typeof fetch
-    beforeEach(() => {
-      originalFetch = globalThis.fetch
-    })
-    afterEach(() => {
-      globalThis.fetch = originalFetch
-    })
-
     test('remote image is downloaded then uploaded via im.image.create', async () => {
       const { client, imageUploads, sentMessages } = createMockClient()
       const fetchSpy = mock(async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }))
-      globalThis.fetch = fetchSpy as any
       const channel = new FeishuChannel('app1', 'secret1', {
         onMessage: mock(() => {}),
         _client: client,
+        _fetchFn: fetchSpy as any,
       })
 
       await channel.sendMedia('feishu:chat1', '', 'https://files.example.com/chart.png')
 
       expect(fetchSpy).toHaveBeenCalledTimes(1)
       const init = (fetchSpy.mock.calls[0] as any[])[1]
-      expect(init?.redirect).toBe('error')
+      expect(init?.redirect).toBe('manual')
       expect(imageUploads.length).toBe(1)
       expect(sentMessages.some((m) => m.data.msg_type === 'image')).toBe(true)
     })
@@ -425,10 +416,10 @@ describe('FeishuChannel', () => {
     test('remote URL pointing at an internal/metadata address is rejected before download/upload', async () => {
       const { client, imageUploads, fileUploads, sentMessages } = createMockClient()
       const fetchSpy = mock(async () => new Response(new Uint8Array([1]), { status: 200 }))
-      globalThis.fetch = fetchSpy as any
       const channel = new FeishuChannel('app1', 'secret1', {
         onMessage: mock(() => {}),
         _client: client,
+        _fetchFn: fetchSpy as any,
       })
 
       await expect(

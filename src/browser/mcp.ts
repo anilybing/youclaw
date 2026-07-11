@@ -4,9 +4,16 @@ import { mkdirSync, realpathSync } from 'node:fs'
 import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { Type } from '@mariozechner/pi-ai'
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
-import { assertSafeRemoteUrl } from '../channel/media-fetch.ts'
+import {
+  assertSafeRemoteAddress,
+  assertSafeRemoteUrl,
+} from '../channel/media-fetch.ts'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
+import {
+  resolveValidatedRemoteAddresses,
+  type RemoteLookupFn,
+} from '../security/pinned-http.ts'
 import type { BrowserManager } from './manager.ts'
 import { createBrowserActionRouter } from './router.ts'
 import type { BrowserTarget } from './types.ts'
@@ -54,6 +61,29 @@ export function createBrowserScreenshotPath(chatId: string, requestedPath?: unkn
 export function assertSafeBrowserNavigationUrl(rawUrl: string): string {
   try {
     return assertSafeRemoteUrl(rawUrl).href
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(`Browser navigation blocked: ${detail}`)
+  }
+}
+
+/**
+ * Resolve every A/AAAA answer immediately before browser navigation. Chromium
+ * remains the connection owner, so this is a fail-closed DNS preflight rather
+ * than socket pinning; untrusted downloads use the stronger pinned transport.
+ */
+export async function resolveSafeBrowserNavigationUrl(
+  rawUrl: string,
+  lookupFn?: RemoteLookupFn,
+): Promise<string> {
+  const safeUrl = new URL(assertSafeBrowserNavigationUrl(rawUrl))
+  try {
+    await resolveValidatedRemoteAddresses(safeUrl, {
+      signal: AbortSignal.timeout(5_000),
+      validateAddress: assertSafeRemoteAddress,
+      lookupFn,
+    })
+    return safeUrl.href
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     throw new Error(`Browser navigation blocked: ${detail}`)
@@ -128,7 +158,7 @@ export function createBrowserMcpServer(params: {
         url: Type.Optional(Type.String({ description: 'Optional absolute URL to open in the new tab' })),
       }),
       async (args: { url?: string }) =>
-        router.openTab(args.url === undefined ? undefined : assertSafeBrowserNavigationUrl(args.url)),
+        router.openTab(args.url === undefined ? undefined : await resolveSafeBrowserNavigationUrl(args.url)),
       (_args, message) => `Failed to open tab: ${message}`,
     ),
     createJsonTool(
@@ -137,7 +167,7 @@ export function createBrowserMcpServer(params: {
       Type.Object({
         url: Type.String({ description: 'Absolute URL to navigate to' }),
       }),
-      async (args: { url: string }) => router.navigate(assertSafeBrowserNavigationUrl(args.url)),
+      async (args: { url: string }) => router.navigate(await resolveSafeBrowserNavigationUrl(args.url)),
       (_args, message) => `Failed to navigate: ${message}`,
     ),
     createJsonTool(

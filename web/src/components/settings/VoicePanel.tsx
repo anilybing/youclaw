@@ -346,6 +346,9 @@ export function VoicePanel() {
         </div>
         {textField(t.voice.baseUrl, quickBaseUrl, setQuickBaseUrl, 'https://api.siliconflow.cn/v1', false)}
         {textField(t.voice.apiKey, quickApiKey, setQuickApiKey, hasReusableKey ? t.media.reuseKeyPlaceholder : 'sk-...', false, true)}
+        <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+          {t.settings.localSecretPlaintextNotice}
+        </p>
         <div className="flex flex-wrap gap-3">
           {(Object.keys(capLabels) as Capability[]).map((cap) => {
             // 阿里百炼预设仅原生支持图像组，其余能力禁用勾选避免误配

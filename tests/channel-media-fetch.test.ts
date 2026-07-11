@@ -3,11 +3,16 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import {
+  assertSafeRemoteAddress,
   assertSafeRemoteUrl,
   fetchRemoteMediaToBuffer,
   fetchRemoteMediaToFile,
   inferMediaFileNameFromUrl,
 } from '../src/channel/media-fetch.ts'
+import {
+  pinnedHttpGet,
+  resolveValidatedRemoteAddresses,
+} from '../src/security/pinned-http.ts'
 
 // ---------------------------------------------------------------------------
 // assertSafeRemoteUrl — SSRF guard
@@ -25,6 +30,7 @@ describe('assertSafeRemoteUrl', () => {
     'http://[2001:4860:4860::8888]/x', // public IPv6
     'http://[::ffff:8.8.8.8]/x', // public IPv4-mapped
     'http://[64:ff9b::8.8.8.8]/x', // NAT64 wrapping a public IPv4
+    'http://[2002:0808:0808::]/x', // 6to4 wrapping a public IPv4
   ]
 
   const BLOCKED = [
@@ -50,6 +56,9 @@ describe('assertSafeRemoteUrl', () => {
     ['http://[::ffff:0:169.254.169.254]/', 'IPv4-translated metadata'],
     ['http://[64:ff9b::169.254.169.254]/', 'NAT64-embedded metadata'],
     ['http://[64:ff9b::10.0.0.1]/', 'NAT64-embedded private'],
+    ['http://[::10.0.0.1]/', 'deprecated IPv4-compatible private'],
+    ['http://[2002:0a00:0001::]/', '6to4-embedded private'],
+    ['http://[2001:0000::1]/', 'Teredo'],
     ['http://2852039166/', 'decimal-encoded metadata (169.254.169.254)'],
     ['http://0x7f000001/', 'hex-encoded loopback (127.0.0.1)'],
   ] as const
@@ -81,11 +90,107 @@ describe('assertSafeRemoteUrl', () => {
   }
 
   test('rejects a malformed URL', () => {
-    expect(() => assertSafeRemoteUrl('not a url')).toThrow('无效的媒体 URL')
+    expect(() => assertSafeRemoteUrl('not a url')).toThrow('无效的远程媒体 URL')
   })
 
   test('metadata rejection carries a Chinese, non-leaking message', () => {
     expect(() => assertSafeRemoteUrl('http://169.254.169.254/latest/meta-data/')).toThrow('内网/保留地址')
+  })
+})
+
+describe('DNS validation and verified-IP pinning', () => {
+  test('rejects the whole hostname when A/AAAA answers mix public and private addresses', async () => {
+    const signal = new AbortController().signal
+    await expect(resolveValidatedRemoteAddresses(new URL('https://mixed.example/file'), {
+      signal,
+      validateAddress: assertSafeRemoteAddress,
+      lookupFn: async () => [
+        { address: '93.184.216.34', family: 4 },
+        { address: 'fd00::1234', family: 6 },
+      ],
+    })).rejects.toThrow('内网/保留地址')
+  })
+
+  test('connects to the exact validated address while retaining the original URL host', async () => {
+    const seen: Array<{ host: string; address: string }> = []
+    const response = await pinnedHttpGet('https://assets.example/file.png?token=secret', {
+      signal: new AbortController().signal,
+      validateUrl: assertSafeRemoteUrl,
+      validateAddress: assertSafeRemoteAddress,
+      lookupFn: async (hostname) => {
+        expect(hostname).toBe('assets.example')
+        return [{ address: '93.184.216.34', family: 4 }]
+      },
+      requestFn: async (url, target) => {
+        seen.push({ host: url.hostname, address: target.address })
+        return new Response(new Uint8Array([1]), { status: 200 })
+      },
+    })
+
+    expect(response.status).toBe(200)
+    expect(seen).toEqual([{ host: 'assets.example', address: '93.184.216.34' }])
+  })
+
+  test('re-resolves every redirect and blocks a redirect target with private DNS', async () => {
+    const requested: string[] = []
+    await expect(pinnedHttpGet('https://public.example/start', {
+      signal: new AbortController().signal,
+      validateUrl: assertSafeRemoteUrl,
+      validateAddress: assertSafeRemoteAddress,
+      lookupFn: async (hostname) => hostname === 'public.example'
+        ? [{ address: '93.184.216.34', family: 4 }]
+        : [{ address: '169.254.169.254', family: 4 }],
+      requestFn: async (url) => {
+        requested.push(url.hostname)
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://redirect.example/latest/meta-data' },
+        })
+      },
+    })).rejects.toThrow('内网/保留地址')
+    expect(requested).toEqual(['public.example'])
+  })
+
+  test('strips credentials before following a cross-origin redirect', async () => {
+    const seenAuthorization: Array<string | null> = []
+    const response = await pinnedHttpGet('https://api.example/archive', {
+      signal: new AbortController().signal,
+      validateUrl: assertSafeRemoteUrl,
+      validateAddress: assertSafeRemoteAddress,
+      headers: {
+        Authorization: 'Bearer must-not-leak',
+        Accept: 'application/zip',
+      },
+      lookupFn: async () => [{ address: '93.184.216.34', family: 4 }],
+      requestFn: async (url, _target, _signal, headers) => {
+        seenAuthorization.push(new Headers(headers).get('authorization'))
+        if (url.hostname === 'api.example') {
+          return new Response(null, {
+            status: 302,
+            headers: { location: 'https://cdn.example/archive' },
+          })
+        }
+        return new Response(new Uint8Array([1]), { status: 200 })
+      },
+    })
+
+    expect(response.status).toBe(200)
+    expect(seenAuthorization).toEqual(['Bearer must-not-leak', null])
+  })
+
+  test('does not leak signed query values in DNS/download errors', async () => {
+    const error = await fetchRemoteMediaToBuffer(
+      'https://unresolvable.example/file?signature=top-secret-value',
+      {
+        maxBytes: 1024,
+        lookupFn: async () => {
+          throw new Error('DNS lookup failed')
+        },
+      },
+    ).catch((reason) => reason as Error)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).not.toContain('top-secret-value')
   })
 })
 
@@ -164,14 +269,14 @@ describe('fetchRemoteMediaToBuffer', () => {
     expect(res.fileName).toBe('pic.png')
   })
 
-  test('calls fetch with the safe URL, an abort signal and redirect:error', async () => {
+  test('calls an injected test fetch with the safe URL, abort signal and manual redirects', async () => {
     const fetchFn = mock(async (_url: string, _init?: RequestInit) => makeResponse({ chunks: [new Uint8Array([9])] })) as any
     await fetchRemoteMediaToBuffer('https://example.com/a.bin', { maxBytes: 1024, fetchFn })
 
     expect(fetchFn).toHaveBeenCalledTimes(1)
     const [url, init] = fetchFn.mock.calls[0] as [string, any]
     expect(url).toBe('https://example.com/a.bin')
-    expect(init.redirect).toBe('error')
+    expect(init.redirect).toBe('manual')
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
@@ -208,7 +313,7 @@ describe('fetchRemoteMediaToBuffer', () => {
 
   test('does not follow a 302 redirect to a private metadata address', async () => {
     const fetchFn = mock(async (_url: string, init?: RequestInit) => {
-      expect(init?.redirect).toBe('error')
+      expect(init?.redirect).toBe('manual')
       return makeResponse({
         ok: false,
         status: 302,
@@ -219,7 +324,7 @@ describe('fetchRemoteMediaToBuffer', () => {
 
     await expect(
       fetchRemoteMediaToBuffer('https://public.example/redirect.png', { maxBytes: 1024, fetchFn }),
-    ).rejects.toThrow('HTTP 302')
+    ).rejects.toThrow('内网/保留地址')
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 

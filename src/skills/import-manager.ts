@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, posix as posixPath, resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
+import { fetchRemoteMediaToBuffer } from '../channel/media-fetch.ts'
 import { parseFrontmatter } from './frontmatter.ts'
 import { SkillsInstaller } from './installer.ts'
 import {
@@ -101,8 +102,12 @@ interface GitHubFileEntry {
 const GITHUB_SKILL_FILE_NAME = 'SKILL.md'
 const GITHUB_WEB_HOSTS = new Set(['github.com', 'www.github.com'])
 const GITHUB_RAW_HOSTS = new Set(['raw.githubusercontent.com'])
+const MAX_RAW_SKILL_BYTES = 1024 * 1024
+const MAX_GITHUB_API_BYTES = 2 * 1024 * 1024
 
 class RawUrlImportProvider implements ImportProvider<RawUrlImportInput> {
+  constructor(private readonly fetchFn?: typeof fetch) {}
+
   readonly info: ImportProviderInfo = {
     id: 'raw-url',
     label: 'Raw URL',
@@ -116,12 +121,13 @@ class RawUrlImportProvider implements ImportProvider<RawUrlImportInput> {
   }
 
   async probe(input: RawUrlImportInput): Promise<ImportProbeResult> {
-    const response = await fetch(input.url)
-    if (!response.ok) {
-      throw new Error(`Remote import probe failed: HTTP ${response.status} ${response.statusText}`)
-    }
-
-    const content = await response.text()
+    const response = await fetchRemoteMediaToBuffer(input.url, {
+      maxBytes: MAX_RAW_SKILL_BYTES,
+      timeoutMs: 20_000,
+      headers: { Accept: 'text/markdown,text/plain;q=0.9,*/*;q=0.1' },
+      fetchFn: this.fetchFn,
+    })
+    const content = response.buffer.toString('utf8')
     const { frontmatter } = parseFrontmatter(content)
     return {
       provider: 'raw-url',
@@ -143,6 +149,8 @@ class RawUrlImportProvider implements ImportProvider<RawUrlImportInput> {
 }
 
 class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
+  constructor(private readonly fetchFn?: typeof fetch) {}
+
   readonly info: ImportProviderInfo = {
     id: 'github',
     label: 'GitHub',
@@ -495,15 +503,21 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
       url.searchParams.set('ref', ref)
     }
 
-    const response = await fetch(url, { headers: this.githubApiHeaders() })
-    if (response.status === 404) {
-      throw new Error('GitHub repository, ref, or path was not found')
+    try {
+      const response = await fetchRemoteMediaToBuffer(url.href, {
+        maxBytes: MAX_GITHUB_API_BYTES,
+        timeoutMs: 20_000,
+        headers: this.githubApiHeaders(),
+        fetchFn: this.fetchFn,
+      })
+      return JSON.parse(response.buffer.toString('utf8')) as unknown
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('HTTP 404')) {
+        throw new Error('GitHub repository, ref, or path was not found')
+      }
+      throw new Error(`GitHub request failed: ${message}`)
     }
-    if (!response.ok) {
-      throw new Error(`GitHub request failed: HTTP ${response.status} ${response.statusText}`)
-    }
-
-    return response.json() as Promise<unknown>
   }
 
   private async readFileText(entry: GitHubFileEntry): Promise<string> {
@@ -514,11 +528,13 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
       throw new Error(`GitHub file cannot be downloaded: ${entry.path}`)
     }
 
-    const response = await fetch(entry.downloadUrl, { headers: this.githubDownloadHeaders() })
-    if (!response.ok) {
-      throw new Error(`GitHub file download failed: HTTP ${response.status} ${response.statusText}`)
-    }
-    return response.text()
+    const response = await fetchRemoteMediaToBuffer(entry.downloadUrl, {
+      maxBytes: MAX_ARCHIVE_ENTRY_BYTES,
+      timeoutMs: 20_000,
+      headers: this.githubDownloadHeaders(),
+      fetchFn: this.fetchFn,
+    })
+    return response.buffer.toString('utf8')
   }
 
   private async readFileBytes(entry: GitHubDirectoryEntry | GitHubFileEntry): Promise<Uint8Array> {
@@ -529,11 +545,13 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
       throw new Error(`GitHub file cannot be downloaded: ${entry.path}`)
     }
 
-    const response = await fetch(entry.downloadUrl, { headers: this.githubDownloadHeaders() })
-    if (!response.ok) {
-      throw new Error(`GitHub file download failed: HTTP ${response.status} ${response.statusText}`)
-    }
-    return new Uint8Array(await response.arrayBuffer())
+    const response = await fetchRemoteMediaToBuffer(entry.downloadUrl, {
+      maxBytes: MAX_ARCHIVE_ENTRY_BYTES,
+      timeoutMs: 20_000,
+      headers: this.githubDownloadHeaders(),
+      fetchFn: this.fetchFn,
+    })
+    return new Uint8Array(response.buffer)
   }
 
   private githubApiHeaders() {
@@ -552,10 +570,16 @@ class GitHubImportProvider implements ImportProvider<GitHubImportInput> {
 }
 
 export class ImportManager {
-  private readonly rawUrlProvider = new RawUrlImportProvider()
-  private readonly gitHubProvider = new GitHubImportProvider()
+  private readonly rawUrlProvider: RawUrlImportProvider
+  private readonly gitHubProvider: GitHubImportProvider
 
-  constructor(private readonly installer: SkillsInstaller = new SkillsInstaller()) {}
+  constructor(
+    private readonly installer: SkillsInstaller = new SkillsInstaller(),
+    options: { fetchFn?: typeof fetch } = {},
+  ) {
+    this.rawUrlProvider = new RawUrlImportProvider(options.fetchFn)
+    this.gitHubProvider = new GitHubImportProvider(options.fetchFn)
+  }
 
   listProviders(): ImportProviderInfo[] {
     return [this.rawUrlProvider.info, this.gitHubProvider.info]

@@ -220,13 +220,17 @@ app.post('/settings/mcp-server/regenerate-token', (c) => {
   return c.json({ token: updated.mcpServer.token })
 })
 
-// GET /settings/active-model — return full config of active model (internal use, unmasked)
+// GET /settings/active-model — diagnostics only; never expose the stored API key.
 app.get('/settings/active-model', (c) => {
   const config = getActiveModelConfig()
   if (!config) {
     return c.json({ source: 'env' })
   }
-  return c.json({ source: 'settings', ...config })
+  return c.json({
+    source: 'settings',
+    ...config,
+    apiKey: config.apiKey ? `****${config.apiKey.slice(-4)}` : '',
+  })
 })
 
 // GET /settings/port — get configured port (Web mode)

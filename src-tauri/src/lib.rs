@@ -396,12 +396,30 @@ fn read_portable_secrets(app: &AppHandle) -> Map<String, Value> {
 }
 
 fn write_portable_secrets(app: &AppHandle, secrets: &Map<String, Value>) -> Result<(), String> {
+    use std::io::Write;
+
     let secrets_path = portable_secrets_path(app);
     if let Some(parent) = secrets_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let content = serde_json::to_string_pretty(secrets).map_err(|e| e.to_string())?;
-    std::fs::write(secrets_path, content).map_err(|e| e.to_string())
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&secrets_path).map_err(|e| e.to_string())?;
+    file.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&secrets_path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn validate_portable_secret_key(key: &str) -> Result<(), String> {
@@ -1839,16 +1857,20 @@ fn portable_setting_delete(app: AppHandle, key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn portable_secret_get(app: AppHandle, key: String) -> Result<Option<String>, String> {
+fn portable_secret_exists(app: AppHandle, key: String) -> Result<bool, String> {
     validate_portable_secret_key(&key)?;
     Ok(read_portable_secrets(&app)
         .get(&key)
-        .and_then(|value| value.as_str().map(str::to_owned)))
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty()))
 }
 
 #[tauri::command]
 fn portable_secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
     validate_portable_secret_key(&key)?;
+    if value.len() > 16 * 1024 {
+        return Err("Secret value is too large".into());
+    }
     let mut secrets = read_portable_secrets(&app);
     secrets.insert(key, Value::String(value));
     write_portable_secrets(&app, &secrets)
@@ -2051,7 +2073,7 @@ pub fn run() {
             portable_setting_get,
             portable_setting_set,
             portable_setting_delete,
-            portable_secret_get,
+            portable_secret_exists,
             portable_secret_set,
             portable_secret_delete,
             get_version,

@@ -174,7 +174,7 @@ describe('MediaService.generateImage', () => {
     expect(new Uint8Array(readFileSync(result.filePath))).toEqual(FAKE_PNG)
     expect(artifactRequests).toEqual([{
       url: `${PUBLIC_MEDIA_ORIGIN}/files/out.png`,
-      redirect: 'error',
+      redirect: 'manual',
     }])
   })
 
@@ -196,7 +196,7 @@ describe('MediaService.generateImage', () => {
     const err = await service.generateImage('x', AGENT).catch((e) => e as MediaError)
     expect(err).toBeInstanceOf(MediaError)
     expect(err.code).toBe(MEDIA_PROVIDER_ERROR)
-    expect(err.message).toContain('HTTP 302')
+    expect(err.message).toContain('内网/保留地址')
     expect(artifactRequests).toHaveLength(1)
   })
 
