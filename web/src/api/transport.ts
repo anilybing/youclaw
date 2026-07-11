@@ -310,6 +310,15 @@ async function probeBackendReadiness(): Promise<ReadinessProbeResult> {
     return 'failed'
   }
 
+  // The sidecar may have fallen back from the preferred port to a free one when
+  // the preferred was held by a zombie socket. Adopt the port it reports as ready
+  // so this probe (which runs before the app mounts its own listener) targets the
+  // port that actually bound instead of the stale default.
+  if (status?.status === 'ready') {
+    const match = status.message.match(/port\s+(\d+)/)
+    if (match) updateCachedBaseUrl(sidecarOrigin(match[1]))
+  }
+
   try {
     const res = await fetch(`${_cachedBaseUrl}/api/health`, {
       signal: AbortSignal.timeout(SIDECAR_HEALTH_REQUEST_TIMEOUT_MS),

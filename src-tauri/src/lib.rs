@@ -720,6 +720,60 @@ fn kill_process_on_port(port: u16) {
     }
 }
 
+/// Return a 127.0.0.1 TCP port that can actually be bound right now.
+///
+/// Prefers `preferred`. Killing the process that listens on a port does NOT
+/// always free it: on Windows a surviving child that inherited the listening
+/// socket handle keeps the port busy under the (now dead) parent PID. When that
+/// happens, fall back to the next free port so a stuck port never dead-ends
+/// startup with "后端服务无法启动". The sidecar is launched on the returned port
+/// and reports it back, so the frontend adopts whatever port actually bound.
+fn resolve_free_port(preferred: u16) -> u16 {
+    fn bindable(port: u16) -> bool {
+        // A cleanly opened+closed listener frees immediately (no TIME_WAIT), so
+        // the sidecar can bind the same port right after this probe.
+        std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+    }
+
+    // The preferred port may need a moment to free right after a kill.
+    for _ in 0..3 {
+        if bindable(preferred) {
+            return preferred;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    }
+
+    // Scan a small window above the preferred port for a free one.
+    let start = preferred.saturating_add(1);
+    let end = start.saturating_add(64);
+    for candidate in start..=end {
+        if bindable(candidate) {
+            log::warn!(
+                "Preferred port {} is still occupied (likely a zombie socket); falling back to free port {}",
+                preferred,
+                candidate
+            );
+            return candidate;
+        }
+    }
+
+    // Last resort: let the OS assign any free ephemeral port.
+    if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", 0)) {
+        if let Ok(addr) = listener.local_addr() {
+            log::warn!(
+                "Preferred port {} is occupied; using OS-assigned free port {}",
+                preferred,
+                addr.port()
+            );
+            return addr.port();
+        }
+    }
+
+    // Give up and keep the preferred port; the sidecar will surface PORT_CONFLICT.
+    log::error!("Could not find a free port near {}; keeping it", preferred);
+    preferred
+}
+
 /// Spawn the sidecar backend
 #[allow(dead_code)]
 fn spawn_sidecar(app: &AppHandle) -> Result<SidecarLaunch, String> {
@@ -742,6 +796,13 @@ fn spawn_sidecar(app: &AppHandle) -> Result<SidecarLaunch, String> {
     // or is force-killed, taskkill cleanup may not run, leaving the old sidecar holding the port.
     #[cfg(target_os = "windows")]
     kill_process_on_port(port);
+
+    // Killing the listener does not always free the port: a surviving child that
+    // inherited the socket handle can keep it busy. Resolve to a port we can
+    // actually bind so a stuck port never dead-ends startup; the sidecar reports
+    // the port it bound and the frontend adopts it.
+    let port = resolve_free_port(port);
+    log::info!("Sidecar will use port {}", port);
 
     // Model config (API Key, Base URL, Model ID) is now managed by the backend
     // via Settings API (SQLite kv_state), no longer injected from Tauri Store.
