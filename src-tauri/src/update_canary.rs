@@ -456,6 +456,28 @@ fn configured_portable_key() -> Result<(String, String), ManifestSignatureError>
         }
     }
     if key_id.is_empty() || public_key.is_empty() {
+        if let Ok(bundled) =
+            serde_json::from_str::<Value>(include_str!("../portable-update-key.json"))
+        {
+            if key_id.is_empty() {
+                key_id = bundled
+                    .get("keyId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+            }
+            if public_key.is_empty() {
+                public_key = bundled
+                    .get("publicKey")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+            }
+        }
+    }
+    if key_id.is_empty() || public_key.is_empty() {
         return Err(ManifestSignatureError::MissingKey);
     }
     Ok((key_id, public_key))
@@ -1525,6 +1547,13 @@ mod tests {
         assert!(valid_device_id(&first));
         assert!(!first.contains(std::env::consts::ARCH));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn production_portable_key_is_bundled_and_well_formed() {
+        let (key_id, public_key) = configured_portable_key().unwrap();
+        assert_eq!(key_id, "xjc-portable-d73296018053");
+        assert_eq!(BASE64.decode(public_key).unwrap().len(), 32);
     }
 
     #[test]

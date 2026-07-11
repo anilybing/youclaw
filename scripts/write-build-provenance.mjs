@@ -21,7 +21,9 @@ export const PROVENANCE_INPUTS = Object.freeze([
   'src-tauri/package.json',
   'src-tauri/tauri.conf.json',
   'src-tauri/tauri.no-updater.conf.json',
+  'src-tauri/tauri.windows-updater.conf.json',
   'src-tauri/tauri.windows.conf.json',
+  'src-tauri/portable-update-key.json',
 ])
 
 function git(repoRoot, args) {

@@ -70,20 +70,22 @@ function makeRepo(version = '1.0.0') {
   write(resolve(root, 'src', 'config', 'build-constants.ts'), 'export const BUILD_CONSTANTS = {}\n')
   write(resolve(root, 'src-tauri', 'tauri.conf.json'), `${JSON.stringify({ productName: 'XiaoJuClaw', version }, null, 2)}\n`)
   write(resolve(root, 'src-tauri', 'tauri.no-updater.conf.json'), '{"bundle":{"createUpdaterArtifacts":false}}\n')
+  write(resolve(root, 'src-tauri', 'tauri.windows-updater.conf.json'), '{"bundle":{"createUpdaterArtifacts":true}}\n')
   write(resolve(root, 'src-tauri', 'tauri.windows.conf.json'), '{"app":{"windows":[]}}\n')
+  write(resolve(root, 'src-tauri', 'portable-update-key.json'), '{"keyId":"test","publicKey":"test"}\n')
   write(resolve(root, 'src-tauri', 'package.json'), `{"name":"XiaoJuClaw","version":"${version}","private":true}\n`)
   write(resolve(root, 'src-tauri', 'Cargo.toml'), `[package]\nname = "XiaoJuClaw"\nversion = "${version}"\n\n[lib]\nname = "XiaoJuClaw_lib"\n`)
   write(resolve(root, 'src-tauri', 'Cargo.lock'), cargoLock.replace('version = "1.0.0"', `version = "${version}"`))
   return root
 }
 
-function writeArtifactMetadata(repoRoot: string, artifactRoot: string) {
+function writeArtifactMetadata(repoRoot: string, artifactRoot: string, variant = 'test-portable') {
   const version = assertDesktopVersions(repoRoot)
   const provenance = {
     schemaVersion: 1,
     product: 'XiaoJuClaw',
     version,
-    variant: 'test-portable',
+    variant,
     builtAt: '2026-07-10T00:00:00.000Z',
     source: {
       commit: 'a'.repeat(40),
@@ -151,6 +153,26 @@ describe('desktop version tooling', () => {
     expect(gate).toContain('if ($manifestVersion -ne $currentVersion)')
     expect(gate).toContain('[skip] Historical artifact')
   })
+
+  test('Windows updater builds require signed NSIS artifacts and a bundled portable key', () => {
+    const buildRelease = readFileSync(resolve(import.meta.dir, '..', 'build-release.bat'), 'utf8')
+    const updaterConfig = JSON.parse(readFileSync(
+      resolve(import.meta.dir, '..', 'src-tauri', 'tauri.windows-updater.conf.json'),
+      'utf8',
+    ))
+    const portableKey = JSON.parse(readFileSync(
+      resolve(import.meta.dir, '..', 'src-tauri', 'portable-update-key.json'),
+      'utf8',
+    ))
+    expect(buildRelease).toContain('TAURI_SIGNING_PRIVATE_KEY_PATH')
+    expect(buildRelease).toContain('bun run build:tauri:updater')
+    expect(updaterConfig.bundle).toMatchObject({
+      createUpdaterArtifacts: true,
+      targets: ['nsis'],
+    })
+    expect(portableKey.keyId).toMatch(/^xjc-portable-[a-f0-9]{12}$/)
+    expect(Buffer.from(portableKey.publicKey, 'base64')).toHaveLength(32)
+  })
 })
 
 describe('SBOM and artifact verification', () => {
@@ -196,6 +218,17 @@ describe('SBOM and artifact verification', () => {
 
     write(resolve(artifactRoot, 'payload.bin'), 'tampered payload')
     await expect(verifyArtifactManifest(artifactRoot, repoRoot)).rejects.toThrow('changed: payload.bin')
+  })
+
+  test('signed Windows installer artifacts require the updater signature sidecar', async () => {
+    const repoRoot = makeRepo('1.2.1')
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'xjc-installer-artifact-'))
+    roots.push(artifactRoot)
+    write(resolve(artifactRoot, 'XiaoJuClaw_1.2.1_x64-setup.exe'), 'installer')
+    writeArtifactMetadata(repoRoot, artifactRoot, 'windows-installer')
+    await expect(createArtifactManifest(artifactRoot, repoRoot)).rejects.toThrow('missing its Tauri updater .sig')
+    write(resolve(artifactRoot, 'XiaoJuClaw_1.2.1_x64-setup.exe.sig'), 'signature')
+    await expect(createArtifactManifest(artifactRoot, repoRoot)).resolves.toBeDefined()
   })
 
   test('rejects provenance that is not bound to the current source inputs', async () => {

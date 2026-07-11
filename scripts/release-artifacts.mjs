@@ -141,15 +141,29 @@ export function validateArtifactMetadata(artifactRoot, repoRoot = DEFAULT_REPO_R
   return { root, provenance, sbom }
 }
 
+function validateVariantFiles(provenance, files) {
+  const paths = files.map((file) => file.path)
+  if (provenance.variant === 'windows-installer') {
+    if (!paths.some((path) => path.toLowerCase().endsWith('.sig'))) {
+      throw new Error('Signed Windows installer release is missing its Tauri updater .sig file')
+    }
+    if (!paths.some((path) => /setup\.(?:exe|nsis\.zip)$/i.test(path))) {
+      throw new Error('Signed Windows installer release is missing its NSIS updater artifact')
+    }
+  }
+}
+
 export async function createArtifactManifest(artifactRoot, repoRoot = DEFAULT_REPO_ROOT) {
   const { root, provenance } = validateArtifactMetadata(artifactRoot, repoRoot)
+  const files = await describeFiles(root)
+  validateVariantFiles(provenance, files)
   const manifest = {
     schemaVersion: 1,
     product: 'XiaoJuClaw',
     version: provenance.version,
     variant: provenance.variant,
     algorithm: 'sha256',
-    files: await describeFiles(root),
+    files,
   }
   const output = resolve(root, ARTIFACT_MANIFEST)
   writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
@@ -173,6 +187,7 @@ export async function verifyArtifactManifest(artifactRoot, repoRoot = DEFAULT_RE
   }
 
   const actual = await describeFiles(root)
+  validateVariantFiles(provenance, actual)
   if (JSON.stringify(actual) !== JSON.stringify(manifest.files)) {
     const expectedPaths = new Set(manifest.files.map((file) => file.path))
     const actualPaths = new Set(actual.map((file) => file.path))

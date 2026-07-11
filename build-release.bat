@@ -68,8 +68,10 @@ for /f "delims=" %%t in ('powershell -NoProfile -Command "Get-Date -Format yyyyM
 
 set "RELEASE_DIR=%ROOT%\release\XiaoJuClaw-%APP_VERSION%-windows-%BUILD_STAMP%"
 
-if not defined TAURI_SIGNING_PRIVATE_KEY (
-  echo [WARN] TAURI_SIGNING_PRIVATE_KEY is not set. Configure it first if updater artifacts must be signed.
+if defined TAURI_SIGNING_PRIVATE_KEY set "TAURI_BUILD_CMD=bun run build:tauri:updater"
+if defined TAURI_SIGNING_PRIVATE_KEY_PATH set "TAURI_BUILD_CMD=bun run build:tauri:updater"
+if /I "%TAURI_BUILD_CMD%"=="bun run build:tauri" (
+  echo [WARN] TAURI_SIGNING_PRIVATE_KEY / _PATH is not set. Configure one if updater artifacts must be signed.
   echo [WARN] Building without updater artifacts.
   set "TAURI_BUILD_CMD=bun run build:tauri:no-updater"
   echo.
