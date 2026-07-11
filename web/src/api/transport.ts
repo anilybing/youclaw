@@ -72,6 +72,19 @@ export function getTauriInvoke(): (cmd: string, args?: Record<string, unknown>) 
   return getTauriInternals()!.invoke
 }
 
+// The sidecar binds IPv4 loopback only (`127.0.0.1`, see src/index.ts) to avoid
+// Windows firewall prompts. The frontend MUST target that exact address rather
+// than `localhost`: on machines where `localhost` resolves to IPv6 `::1` first
+// (the Windows default), a `localhost` fetch never reaches the IPv4-only sidecar,
+// so health probing and every API/WS call fail and the app shows "启动失败" even
+// though the backend is running. Always build sidecar URLs via sidecarOrigin().
+export const SIDECAR_LOOPBACK_HOST = '127.0.0.1'
+const DEFAULT_SIDECAR_PORT = '62601'
+
+export function sidecarOrigin(port: number | string = DEFAULT_SIDECAR_PORT): string {
+  return `http://${SIDECAR_LOOPBACK_HOST}:${port}`
+}
+
 // Cache backend baseUrl and the runtime-only local token in memory. The token
 // is deliberately never persisted to localStorage/Tauri Store or logged.
 let _cachedBaseUrl: string | null = null
@@ -160,10 +173,10 @@ export async function getBackendBaseUrl(): Promise<string> {
   if (_cachedBaseUrl !== null) return _cachedBaseUrl
 
   try {
-    const port = await getPortableSetting('preferred_port') || '62601'
-    _cachedBaseUrl = `http://localhost:${port}`
+    const port = await getPortableSetting('preferred_port') || DEFAULT_SIDECAR_PORT
+    _cachedBaseUrl = sidecarOrigin(port)
   } catch {
-    _cachedBaseUrl = 'http://localhost:62601'
+    _cachedBaseUrl = sidecarOrigin()
   }
   return _cachedBaseUrl
 }
@@ -190,11 +203,11 @@ export async function sidecarFetch(path: string, options: RequestInit = {}): Pro
 
 function buildSidecarUrl(path: string): URL {
   if (typeof window === 'undefined') {
-    return new URL(path, 'http://localhost')
+    return new URL(path, sidecarOrigin())
   }
 
   const base = isTauri
-    ? (_cachedBaseUrl || 'http://localhost:62601')
+    ? (_cachedBaseUrl || sidecarOrigin())
     : window.location.origin
   return new URL(path, base)
 }

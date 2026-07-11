@@ -28,7 +28,7 @@ import { SidecarErrorOverlay } from './components/SidecarErrorOverlay'
 import { FloatingBridge } from './components/FloatingBridge'
 import { useTheme } from './hooks/useTheme'
 import { useAppRuntimeStore } from './stores/app'
-import { getTauriInvoke, isTauri, updateCachedBaseUrl } from './api/transport'
+import { getTauriInvoke, isTauri, sidecarOrigin, updateCachedBaseUrl } from './api/transport'
 import { saveAuthToken } from './api/client'
 import { getErrorMessage, logAuthClientEvent, maskToken, sanitizeDeepLink } from './lib/auth-debug'
 
@@ -67,7 +67,7 @@ export default function App() {
     const applyReady = (message: string) => {
       const match = message.match(/port\s+(\d+)/)
       if (match) {
-        updateCachedBaseUrl(`http://localhost:${match[1]}`)
+        updateCachedBaseUrl(sidecarOrigin(match[1]))
       }
       // Re-hydrate if initial hydrate failed (e.g. backend wasn't ready yet)
       const { modelReady, hydrate } = useAppRuntimeStore.getState()

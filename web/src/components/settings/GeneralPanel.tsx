@@ -7,7 +7,7 @@ import { Sun, Moon, Monitor, FolderOpen, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getPortableSetting, getTauriInvoke, isTauri, updateCachedBaseUrl, savePreferredPort } from '@/api/transport'
+import { getPortableSetting, getTauriInvoke, isTauri, sidecarOrigin, updateCachedBaseUrl, savePreferredPort } from '@/api/transport'
 import {
   apiFetch,
   getEvolutionStatus,
@@ -237,11 +237,11 @@ export function GeneralPanel() {
       await savePortToStore(port)
       const invoke = getTauriInvoke()
       await invoke('restart_sidecar')
-      updateCachedBaseUrl(`http://localhost:${port}`)
+      updateCachedBaseUrl(sidecarOrigin(port))
       window.location.reload()
     } catch (err) {
       const errMsg = String(err)
-      updateCachedBaseUrl(`http://localhost:${port}`)
+      updateCachedBaseUrl(sidecarOrigin(port))
       setPortSaved(true)
       setPortRestarting(false)
       setPortMessage(errMsg.includes('Dev mode') ? t.settings.portWebHint : `Restart failed: ${errMsg}`)
