@@ -72,7 +72,12 @@ function Invoke-Step {
   try {
     Push-Location $WorkDir
     try {
-      & $FilePath @ArgumentList 2>&1 | Out-Host
+      # Native tools (e.g. bun via the npm PowerShell shim) print their "$ <script>"
+      # command echo to stderr. With "2>&1" PowerShell 5.1 wraps each stderr line as a
+      # red NativeCommandError that looks like a failure even when the tool exits 0.
+      # Stringify the merged stream so the log stays readable; pass/fail is decided
+      # solely by the exit code captured below.
+      & $FilePath @ArgumentList 2>&1 | ForEach-Object { Write-Host ([string]$_) }
       $code = $LASTEXITCODE
       if ($null -eq $code) { $code = 1 }
     } finally {
