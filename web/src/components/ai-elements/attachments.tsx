@@ -540,10 +540,13 @@ export const AttachmentPreview = ({
     return fallbackIcon ?? renderIcon(Icon)
   }
 
-  const isImagePreviewable =
-    mediaCategory === "image" && data.type === "file" && Boolean(data.url)
+  // [XJC] 图片与视频都支持点击放大预览：图片放大查看，视频放大后带控件播放。
+  const isMediaPreviewable =
+    (mediaCategory === "image" || mediaCategory === "video") &&
+    data.type === "file" &&
+    Boolean(data.url)
 
-  if (isImagePreviewable && data.type === "file") {
+  if (isMediaPreviewable && data.type === "file") {
     return (
       <>
         <button
@@ -568,11 +571,20 @@ export const AttachmentPreview = ({
           <DialogContent className="w-auto max-w-[92vw] border-0 bg-transparent p-0 shadow-none">
             <DialogTitle className="sr-only">{label}</DialogTitle>
             <div className="overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl">
-              <img
-                alt={data.filename || "Image"}
-                className="max-h-[80vh] w-auto max-w-[92vw] object-contain"
-                src={data.url}
-              />
+              {mediaCategory === "video" ? (
+                <video
+                  className="max-h-[80vh] w-auto max-w-[92vw] object-contain"
+                  src={data.url}
+                  controls
+                  autoPlay
+                />
+              ) : (
+                <img
+                  alt={data.filename || "Image"}
+                  className="max-h-[80vh] w-auto max-w-[92vw] object-contain"
+                  src={data.url}
+                />
+              )}
               <div className="border-t border-border/60 px-4 py-3">
                 <p className="truncate font-medium text-sm">{label}</p>
                 {attachmentPath && (

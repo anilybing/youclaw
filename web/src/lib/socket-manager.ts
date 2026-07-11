@@ -10,6 +10,7 @@ type AgentEvent = {
   agentId: string
   chatId?: string
   turnId?: string
+  attachments?: Attachment[]
   toolUse?: Array<{ id: string; name: string; input?: string; status: 'done' }>
   documentId?: string
   filename?: string
@@ -260,7 +261,7 @@ class SocketManager {
             ...tool,
             status: 'done' as const,
           }))
-          store.completeMessage(event.chatId, event.fullText ?? '', finalToolUse, event.sessionId, event.turnId)
+          store.completeMessage(event.chatId, event.fullText ?? '', finalToolUse, event.sessionId, event.turnId, event.attachments)
         }
         this.emitChatListInvalidation()
         break

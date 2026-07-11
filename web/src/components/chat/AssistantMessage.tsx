@@ -11,6 +11,13 @@ import {
 } from '@/components/ai-elements/message'
 import { ToolUseBlock } from './ToolUseBlock'
 import { TtsPlayButton } from './TtsPlayButton'
+import {
+  Attachments,
+  Attachment,
+  AttachmentPreview,
+  AttachmentInfo,
+} from '@/components/ai-elements/attachments'
+import { localAssetUrl } from '@/api/transport'
 import { useI18n } from '@/i18n'
 import { useAppRuntimeStore } from '@/stores/app'
 import { notify } from '@/stores/app'
@@ -112,6 +119,7 @@ export function AssistantMessage({ message, isLast = false }: { message: Message
     }
   }
 
+  const attachments = message.attachments ?? []
   const isInsufficientCredits = message.errorCode === 'INSUFFICIENT_CREDITS'
 
   return (
@@ -141,6 +149,26 @@ export function AssistantMessage({ message, isLast = false }: { message: Message
                   <MessageContent>
                     <MessageResponse className="chat-prose">{message.content}</MessageResponse>
                   </MessageContent>
+                  {attachments.length > 0 && (
+                    <Attachments variant="grid" className="mt-2 ml-0">
+                      {attachments.map((a, i) => (
+                        <Attachment
+                          key={i}
+                          data={{
+                            id: String(i),
+                            type: 'file' as const,
+                            filename: a.filename,
+                            mediaType: a.mediaType,
+                            url: a.filePath ? localAssetUrl(a.filePath) : '',
+                            filePath: a.filePath,
+                          }}
+                        >
+                          <AttachmentPreview />
+                          <AttachmentInfo />
+                        </Attachment>
+                      ))}
+                    </Attachments>
+                  )}
                   <MessageActions className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <MessageAction
                       tooltip={copied ? t.chat.copied : t.chat.copyCode}

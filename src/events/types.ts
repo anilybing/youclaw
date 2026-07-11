@@ -1,4 +1,6 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
+import type { Attachment } from '../types/attachment.ts'
+
 // Error codes for frontend to identify specific errors and show corresponding UI
 export enum ErrorCode {
   INSUFFICIENT_CREDITS = 'INSUFFICIENT_CREDITS',
@@ -22,7 +24,7 @@ export type AgentToolUse = {
 export type AgentEvent =
   | { type: 'stream'; agentId: string; chatId: string; text: string; turnId?: string }
   | { type: 'tool_use'; agentId: string; chatId: string; tool: string; input?: string; turnId?: string }
-  | { type: 'complete'; agentId: string; chatId: string; fullText: string; sessionId: string; turnId?: string; toolUse?: AgentToolUse[]; suppressOutbound?: boolean; cancelled?: boolean }
+  | { type: 'complete'; agentId: string; chatId: string; fullText: string; sessionId: string; turnId?: string; toolUse?: AgentToolUse[]; attachments?: Attachment[]; suppressOutbound?: boolean; cancelled?: boolean }
   | { type: 'error'; agentId: string; chatId: string; error: string; errorCode?: ErrorCode; stopReason?: string; turnId?: string; toolUse?: AgentToolUse[] }
   | { type: 'processing'; agentId: string; chatId: string; isProcessing: boolean; turnId?: string }
   | { type: 'document_status'; agentId: string; chatId: string; documentId: string; filename: string; status: 'parsing' | 'parsed' | 'failed'; error?: string; turnId?: string }

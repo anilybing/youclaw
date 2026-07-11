@@ -14,6 +14,7 @@ import { inferChannelType } from './config-schema.ts'
 import { deriveChannelChatTitle } from './naming.ts'
 import type { InboundMessage, Channel } from './types.ts'
 import type { AgentToolUse } from '../events/types.ts'
+import type { Attachment } from '../types/attachment.ts'
 import { ErrorCode } from '../events/types.ts'
 import { isQueueCancellationError } from '../agent/queue.ts'
 
@@ -46,6 +47,7 @@ export class MessageRouter {
             event.turnId,
             event.toolUse,
             event.cancelled ? ErrorCode.CANCELLED : undefined,
+            event.attachments,
           )
         } else if (event.cancelled) {
           this.persistErroredReply(
@@ -303,6 +305,7 @@ export class MessageRouter {
     turnId?: string,
     toolUse?: AgentToolUse[],
     errorCode?: string,
+    attachments?: Attachment[],
   ): void {
     if (!turnId || this.hasAssistantMessageForTurn(chatId, turnId)) return
     const senderName = this.getAgentDisplayName(agentId, chatId)
@@ -316,6 +319,7 @@ export class MessageRouter {
       timestamp: new Date().toISOString(),
       isFromMe: true,
       isBotMessage: true,
+      attachments: attachments && attachments.length > 0 ? JSON.stringify(attachments) : undefined,
       toolUse: toolUse && toolUse.length > 0 ? JSON.stringify(toolUse) : undefined,
       sessionId: sessionId || undefined,
       turnId,

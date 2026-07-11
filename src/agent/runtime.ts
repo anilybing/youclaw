@@ -35,6 +35,8 @@ import { buildLessonsBlock } from '../feedback/lessons.ts'
 import { buildPlanBlock } from '../plans/store.ts'
 import { getMediaService } from '../media/service.ts'
 import type { MediaStatus } from '../media/types.ts'
+import { isMediaTool, mediaAttachmentFromToolResult } from './media-attachments.ts'
+import type { Attachment } from '../types/attachment.ts'
 import { resolveRuntimeModelConfig } from './runtime-model.ts'
 import {
   classifyToolEffect,
@@ -262,6 +264,7 @@ export class AgentRuntime {
 
     const startTime = Date.now()
     let toolUse: AgentToolUse[] = []
+    let mediaAttachments: Attachment[] = []
     try {
       let finalPrompt = prompt
       if (this.hooksManager) {
@@ -303,7 +306,7 @@ export class AgentRuntime {
         baseUrl: modelConfig.baseUrl || '(default)',
       }, 'Model config loaded')
 
-      const { fullText, sessionId, sessionFile, aborted, toolUse: collectedToolUse } = await this.executeQuery(
+      const { fullText, sessionId, sessionFile, aborted, toolUse: collectedToolUse, mediaAttachments: collectedMediaAttachments } = await this.executeQuery(
         finalPrompt,
         agentId,
         chatId,
@@ -317,6 +320,7 @@ export class AgentRuntime {
         params.agentOps,
       )
       toolUse = collectedToolUse
+      mediaAttachments = collectedMediaAttachments
 
       if (aborted) {
         if (params.executionState) params.executionState.status = 'cancelled'
@@ -364,6 +368,7 @@ export class AgentRuntime {
           sessionId,
           turnId,
           toolUse,
+          attachments: mediaAttachments.length > 0 ? mediaAttachments : undefined,
           suppressOutbound,
         })
       }
@@ -440,13 +445,15 @@ export class AgentRuntime {
     turnId?: string,
     externalAbortController?: AbortController,
     agentOps?: AgentOpsTraceContext,
-  ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null; aborted: boolean; toolUse: AgentToolUse[] }> {
+  ): Promise<{ fullText: string; sessionId: string; sessionFile: string | null; aborted: boolean; toolUse: AgentToolUse[]; mediaAttachments: Attachment[] }> {
     const logger = getLogger()
     const abortController = externalAbortController ?? new AbortController()
     if (turnId) abortRegistry.register(chatId, turnId, abortController)
     else abortRegistry.register(chatId, abortController)
     const invocationId = randomUUID()
     const toolUse: AgentToolUse[] = []
+    // [XJC] 本回合内置媒体工具产出的图片/视频，随 complete 事件下发并落库为消息附件（对话内联展示）
+    const mediaAttachments: Attachment[] = []
     const browserDisabled = browserProfileId === null
     const browserTarget = this.config.browser?.target ?? 'host'
     const resolvedBrowserProfile = this.browserManager
@@ -758,7 +765,7 @@ export class AgentRuntime {
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
         this.handleSessionEvent(event, agentId, chatId, (text) => {
           fullText += text
-        }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice, agentOps)
+        }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice, agentOps, mediaAttachments)
 
         if (event.type === 'turn_end') {
           const current = pendingModelCalls.shift()
@@ -876,6 +883,7 @@ export class AgentRuntime {
               ),
               sessionFile: session.sessionManager.getSessionFile() ?? null,
               toolUse,
+              mediaAttachments,
             }
           }
           if (agentOps?.workflowRunId) {
@@ -931,6 +939,7 @@ export class AgentRuntime {
               ...buildAbortedSessionResult(fullText, finalSessionId),
               sessionFile: finalSessionFile,
               toolUse,
+              mediaAttachments,
             }
           }
           if (pendingModelCalls.length > 0) markProviderUsageUnavailable()
@@ -995,6 +1004,7 @@ export class AgentRuntime {
         sessionFile: finalSessionFile,
         aborted: false,
         toolUse,
+        mediaAttachments,
       }
     } finally {
       await customToolRuntime.dispose()
@@ -1016,6 +1026,7 @@ export class AgentRuntime {
     browserDisabled = false,
     browserDisabledNotice: { sent: boolean } = { sent: false },
     agentOps?: AgentOpsTraceContext,
+    mediaAttachments?: Attachment[],
   ): void {
     switch (event.type) {
       case 'message_update': {
@@ -1089,6 +1100,17 @@ export class AgentRuntime {
         }
 
         this.emitToolUse(agentId, chatId, event.toolName, event.args, turnId)
+        break
+      }
+
+      case 'tool_execution_end': {
+        // [XJC] 内置媒体工具产出的图片/视频 → 收集为消息附件，随 complete 事件下发内联展示
+        if (mediaAttachments && isMediaTool(event.toolName)) {
+          const attachment = mediaAttachmentFromToolResult(event.toolName, event.result, event.isError)
+          if (attachment && !mediaAttachments.some((existing) => existing.filePath === attachment.filePath)) {
+            mediaAttachments.push(attachment)
+          }
+        }
         break
       }
 

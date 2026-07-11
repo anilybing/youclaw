@@ -256,7 +256,7 @@ interface ChatStore {
   addToolUse(chatId: string, tool: ToolUseItem): void
   setDocumentStatus(chatId: string, documentId: string, filename: string, status: 'parsing' | 'parsed' | 'failed', error?: string): void
   applyRealtimeSnapshot(chatId: string, snapshot: RealtimeChatSnapshot): void
-  completeMessage(chatId: string, fullText: string, toolUse: ToolUseItem[], sessionId?: string, turnId?: string): void
+  completeMessage(chatId: string, fullText: string, toolUse: ToolUseItem[], sessionId?: string, turnId?: string, attachments?: Attachment[]): void
   addUserMessage(chatId: string, message: Message): void
   setMessages(chatId: string, messages: Message[]): void
   handleError(chatId: string, error: string, errorCode?: string): void
@@ -456,7 +456,7 @@ export const useChatStore = create<ChatStore>((set) => ({
       }),
     })),
 
-  completeMessage: (chatId, fullText, toolUse, sessionId, turnId) => {
+  completeMessage: (chatId, fullText, toolUse, sessionId, turnId, attachments) => {
     set((state) => ({
       chats: updateChat(state.chats, chatId, (chat) => {
         // Prefer turnId for per-turn deduplication; sessionId is a fallback.
@@ -473,6 +473,7 @@ export const useChatStore = create<ChatStore>((set) => ({
           content: fullText,
           timestamp,
           toolUse: toolUse.length > 0 ? toolUse : undefined,
+          attachments: attachments && attachments.length > 0 ? attachments : undefined,
           sessionId,
           turnId,
         }
