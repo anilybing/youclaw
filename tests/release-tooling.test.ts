@@ -28,6 +28,10 @@ import {
 import {
   hashProvenanceInputs,
 } from '../scripts/write-build-provenance.mjs'
+import {
+  assertSourceSnapshot,
+  captureCleanSourceSnapshot,
+} from '../scripts/assert-source-snapshot.mjs'
 
 const roots: string[] = []
 
@@ -59,6 +63,12 @@ function write(path: string, content: string) {
   writeFileSync(path, content, 'utf8')
 }
 
+function runGit(root: string, args: string[]) {
+  const result = Bun.spawnSync(['git', ...args], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
+}
+
 function makeRepo(version = '1.0.0') {
   const root = mkdtempSync(resolve(tmpdir(), 'xjc-release-tools-'))
   roots.push(root)
@@ -66,6 +76,9 @@ function makeRepo(version = '1.0.0') {
   write(resolve(root, 'bun.lock'), bunLock)
   write(resolve(root, 'web', 'bun.lock'), bunLock)
   write(resolve(root, 'web', 'package.json'), '{"name":"web","version":"0.0.0"}\n')
+  write(resolve(root, 'web', 'public', 'user-guide', 'index.html'), `<div>图文操作手册 · ${version}</div><footer>适用版本 ${version}</footer>\n`)
+  write(resolve(root, 'docs', 'user-guide.zh.md'), `> 适用版本：XiaoJuClaw ${version}\n`)
+  write(resolve(root, 'docs', 'user-guide.en.md'), `> Applies to XiaoJuClaw ${version}\n`)
   write(resolve(root, 'mvp', 'package.json'), '{"name":"mvp","version":"0.1.0"}\n')
   write(resolve(root, 'src', 'config', 'build-constants.ts'), 'export const BUILD_CONSTANTS = {}\n')
   write(resolve(root, 'src-tauri', 'tauri.conf.json'), `${JSON.stringify({ productName: 'XiaoJuClaw', version }, null, 2)}\n`)
@@ -144,6 +157,7 @@ describe('desktop version tooling', () => {
     expect(new Set(Object.values(readDesktopVersions(root)))).toEqual(new Set(['1.1.0']))
     expect(JSON.parse(readFileSync(resolve(root, 'web', 'package.json'), 'utf8')).version).toBe('0.0.0')
     expect(JSON.parse(readFileSync(resolve(root, 'mvp', 'package.json'), 'utf8')).version).toBe('0.1.0')
+    expect(readFileSync(resolve(root, 'web', 'public', 'user-guide', 'index.html'), 'utf8')).toContain('图文操作手册 · 1.1.0')
   })
 
   test('release gate skips auto-discovered historical artifacts after a version bump', () => {
@@ -152,6 +166,47 @@ describe('desktop version tooling', () => {
     expect(gate).toContain('if (-not $candidate.Explicit)')
     expect(gate).toContain('if ($manifestVersion -ne $currentVersion)')
     expect(gate).toContain('[skip] Historical artifact')
+  })
+
+  test('pre-build gate defers stale artifacts until the newly staged package is verified', () => {
+    const root = resolve(import.meta.dir, '..')
+    const gate = readFileSync(resolve(root, 'scripts', 'release-gate.ps1'), 'utf8')
+    const buildRelease = readFileSync(resolve(root, 'build-release.bat'), 'utf8')
+    const makeUsb = readFileSync(resolve(root, 'scripts', 'make-usb.ps1'), 'utf8')
+
+    expect(gate).toContain('[switch]$PreBuild')
+    expect(gate).toContain('if ($PreBuild)')
+    expect(gate).toContain('[defer] Pre-build source gate')
+    expect(gate).toContain('Strict post-build release mode requires at least one explicit -ArtifactRoot')
+    expect(buildRelease).toContain('release-gate.ps1 -Release -PreBuild')
+    expect(buildRelease).not.toContain('XJC_RELEASE_GATE_ALREADY_RUN')
+    expect(buildRelease).toContain('assert-source-snapshot.mjs capture')
+    expect(buildRelease).toContain('--expected-commit')
+    expect(buildRelease).toContain('--output-file')
+    expect(buildRelease).toContain('build-lock.ps1')
+    expect(buildRelease).toContain('release-artifacts.mjs verify')
+    expect(makeUsb).toContain('OutputPathFile')
+    expect(makeUsb).toContain('verify-portable-layout.mjs')
+  })
+
+  test('source snapshot rejects dirty trees and commit changes after the gate', () => {
+    const root = makeRepo('1.2.1')
+    runGit(root, ['init'])
+    runGit(root, ['add', '.'])
+    runGit(root, ['-c', 'user.name=XJC Test', '-c', 'user.email=xjc@example.test', 'commit', '-m', 'baseline'])
+    const expected = captureCleanSourceSnapshot(root)
+    expect(expected).toMatch(/^[0-9a-f]{40}$/)
+    expect(assertSourceSnapshot(expected, root)).toBe(expected)
+
+    write(resolve(root, 'dirty.txt'), 'dirty')
+    expect(() => captureCleanSourceSnapshot(root)).toThrow('must be clean')
+    expect(() => assertSourceSnapshot(expected, root)).toThrow('working tree changed')
+
+    rmSync(resolve(root, 'dirty.txt'))
+    write(resolve(root, 'package.json'), `${JSON.stringify({ name: 'XiaoJuClaw', version: '1.2.1', next: true })}\n`)
+    runGit(root, ['add', 'package.json'])
+    runGit(root, ['-c', 'user.name=XJC Test', '-c', 'user.email=xjc@example.test', 'commit', '-m', 'next'])
+    expect(() => assertSourceSnapshot(expected, root)).toThrow('Source commit changed')
   })
 
   test('Windows updater builds require signed NSIS artifacts and a bundled portable key', () => {
@@ -230,6 +285,24 @@ describe('SBOM and artifact verification', () => {
     await expect(createArtifactManifest(artifactRoot, repoRoot)).rejects.toThrow('missing its Tauri updater .sig')
     write(resolve(artifactRoot, 'XiaoJuClaw_1.2.1_x64-setup.exe.sig'), 'signature')
     await expect(createArtifactManifest(artifactRoot, repoRoot)).resolves.toBeDefined()
+  })
+
+  test('offline installer artifacts require NSIS setup and reject updater signatures', async () => {
+    const repoRoot = makeRepo('1.2.1')
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'xjc-offline-installer-artifact-'))
+    roots.push(artifactRoot)
+    writeArtifactMetadata(repoRoot, artifactRoot, 'offline-installer')
+
+    await expect(createArtifactManifest(artifactRoot, repoRoot)).rejects.toThrow(
+      'missing its NSIS setup executable',
+    )
+    write(resolve(artifactRoot, 'XiaoJuClaw_1.2.1_x64-setup.exe'), 'offline installer')
+    await expect(createArtifactManifest(artifactRoot, repoRoot)).resolves.toBeDefined()
+
+    write(resolve(artifactRoot, 'XiaoJuClaw_1.2.1_x64-setup.exe.sig'), 'must not ship')
+    await expect(createArtifactManifest(artifactRoot, repoRoot)).rejects.toThrow(
+      'must not contain updater signature sidecars',
+    )
   })
 
   test('rejects provenance that is not bound to the current source inputs', async () => {

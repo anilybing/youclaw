@@ -12,6 +12,9 @@ param(
   [switch]$WithRust,
   [switch]$WithPlaywright,
   [switch]$WithBuild,
+  # Source gate used before a build. Artifact/layout checks are deferred until
+  # the new package exists; build scripts must verify the newly staged output.
+  [switch]$PreBuild,
   [switch]$SkipBackendTests,
   [switch]$SkipWebChecks,
   [switch]$SkipSkillsTests,
@@ -45,6 +48,9 @@ if ($Release) {
   $WithMvp = $true
   $WithRust = $true
   $WithPlaywright = $true
+  if (-not $PreBuild -and @($ArtifactRoot).Count -eq 0) {
+    Stop-InvalidArguments "Strict post-build release mode requires at least one explicit -ArtifactRoot."
+  }
 }
 
 if ($env:XJC_TEST_FAIL_BASELINE -and $env:XJC_TEST_FAIL_BASELINE -ne "0") {
@@ -112,14 +118,16 @@ function Get-PortableArtifactRoots {
   $found = @()
   $candidates = @($ArtifactRoot)
 
-  $releaseDir = Join-Path $repo "release"
-  if (Test-Path $releaseDir) {
-    $candidates += @(Get-ChildItem -Path $releaseDir -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+  if (-not $Release) {
+    $releaseDir = Join-Path $repo "release"
+    if (Test-Path $releaseDir) {
+      $candidates += @(Get-ChildItem -Path $releaseDir -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    }
+    $candidates += (Join-Path $repo "..\dist-production\usb-portable")
+    $candidates += (Join-Path $repo "..\dist-production\offline-portable")
+    $candidates += (Join-Path $repo "..\MVPClawToC\dist-production\usb-portable")
+    $candidates += (Join-Path $repo "..\MVPClawToC\dist-production\offline-portable")
   }
-  $candidates += (Join-Path $repo "..\dist-production\usb-portable")
-  $candidates += (Join-Path $repo "..\dist-production\offline-portable")
-  $candidates += (Join-Path $repo "..\MVPClawToC\dist-production\usb-portable")
-  $candidates += (Join-Path $repo "..\MVPClawToC\dist-production\offline-portable")
 
   foreach ($candidate in $candidates) {
     if (-not $candidate -or -not (Test-Path $candidate -PathType Container)) { continue }
@@ -148,23 +156,25 @@ function Get-FinalizedArtifactRoots {
       $candidates += [pscustomobject]@{ Path = $candidate; Explicit = $true }
     }
   }
-  $releaseDir = Join-Path $repo "release"
-  if (Test-Path $releaseDir) {
-    $candidates += @(Get-ChildItem -Path $releaseDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-      [pscustomobject]@{ Path = $_.FullName; Explicit = $false }
-    })
-  }
-  foreach ($relative in @(
-    "..\dist-production\usb-portable",
-    "..\dist-production\offline-portable",
-    "..\dist-production\desktop-exe",
-    "..\dist-production\offline-exe",
-    "..\MVPClawToC\dist-production\usb-portable",
-    "..\MVPClawToC\dist-production\offline-portable",
-    "..\MVPClawToC\dist-production\desktop-exe",
-    "..\MVPClawToC\dist-production\offline-exe"
-  )) {
-    $candidates += [pscustomobject]@{ Path = (Join-Path $repo $relative); Explicit = $false }
+  if (-not $Release) {
+    $releaseDir = Join-Path $repo "release"
+    if (Test-Path $releaseDir) {
+      $candidates += @(Get-ChildItem -Path $releaseDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        [pscustomobject]@{ Path = $_.FullName; Explicit = $false }
+      })
+    }
+    foreach ($relative in @(
+      "..\dist-production\usb-portable",
+      "..\dist-production\offline-portable",
+      "..\dist-production\desktop-exe",
+      "..\dist-production\offline-exe",
+      "..\MVPClawToC\dist-production\usb-portable",
+      "..\MVPClawToC\dist-production\offline-portable",
+      "..\MVPClawToC\dist-production\desktop-exe",
+      "..\MVPClawToC\dist-production\offline-exe"
+    )) {
+      $candidates += [pscustomobject]@{ Path = (Join-Path $repo $relative); Explicit = $false }
+    }
   }
   $currentVersion = (Get-Content (Join-Path $repo "package.json") -Raw | ConvertFrom-Json).version
   foreach ($candidate in $candidates) {
@@ -236,9 +246,18 @@ if ($WithPlaywright) {
   Invoke-Step "Playwright release smoke" $repo "bun" @("run", "test:e2e:release")
 }
 
-if (-not $SkipArtifactChecks) {
+if ($PreBuild) {
+  Write-Host ""
+  Write-Host "[defer] Pre-build source gate: artifact/layout verification runs on newly staged outputs." -ForegroundColor Yellow
+} elseif (-not $SkipArtifactChecks) {
   $portableRoots = @(Get-PortableArtifactRoots)
-  if ($portableRoots.Count -eq 0) {
+  $finalizedRoots = @(Get-FinalizedArtifactRoots)
+  if ($Release -and $portableRoots.Count -eq 0 -and $finalizedRoots.Count -eq 0) {
+    Write-Host ""
+    Write-Host "[ERROR] No valid explicit release artifacts were found." -ForegroundColor Red
+    $ok = $false
+    $results += [pscustomobject]@{ Step = "Explicit release artifacts"; Result = "FAIL(not found)"; Seconds = 0 }
+  } elseif ($portableRoots.Count -eq 0) {
     Write-Host ""
     Write-Host "[skip] No portable artifacts exist; layout verification is not applicable." -ForegroundColor Yellow
   }
@@ -246,7 +265,7 @@ if (-not $SkipArtifactChecks) {
     $leaf = Split-Path -Leaf $portableRoot
     Invoke-Step ("Portable layout: " + $leaf) $repo "bun" @("scripts/verify-portable-layout.mjs", $portableRoot)
   }
-  foreach ($finalizedRoot in @(Get-FinalizedArtifactRoots)) {
+  foreach ($finalizedRoot in $finalizedRoots) {
     $leaf = Split-Path -Leaf $finalizedRoot
     Invoke-Step ("Artifact hashes: " + $leaf) $repo "bun" @("scripts/release-artifacts.mjs", "verify", $finalizedRoot)
   }

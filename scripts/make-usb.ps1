@@ -38,6 +38,7 @@
 param(
   [string]$ReleaseRoot,
   [string]$CacheDir,
+  [string]$OutputPathFile,
   [switch]$IncludeNode
 )
 
@@ -164,21 +165,34 @@ exit /b 0
 '@
 $migrator | Set-Content -Path (Join-Path $portableDir "Migrate-Legacy-Layout.bat") -Encoding ASCII
 
+$guideSource = Join-Path $RepoRoot "web\public\user-guide"
+$guideEntry = Join-Path $guideSource "index.html"
+$guideTarget = Join-Path $portableDir "XiaoJuClaw-User-Guide"
+if (-not (Test-Path $guideEntry)) {
+  Write-Host "[ERROR] Illustrated user guide missing: $guideEntry" -ForegroundColor Red
+  exit 1
+}
+Copy-Item $guideSource $guideTarget -Recurse -Force
+
 $readme = @'
 XiaoJuClaw portable edition
 
 Start:
   Double-click Start-XiaoJuClaw.bat or XiaoJuClaw\XiaoJuClaw.exe.
 
+Help:
+  Double-click XiaoJuClaw-User-Guide\index.html, or select User Guide in the app sidebar.
+
 Directory ownership:
   XiaoJuClaw\         program files; replace this directory when upgrading
   XiaoJuClawRuntime\  bundled tools; safe to replace when upgrading
+  XiaoJuClaw-User-Guide\ illustrated manual; replace when upgrading
   XiaoJuClawData\     user data; created on first run; NEVER delete or overwrite
 
 Safe upgrade:
-  Copy XiaoJuClaw\ and XiaoJuClawRuntime\ from the new package over the old
-  deployment. The release package intentionally contains no XiaoJuClawData\
-  directory, so direct merge-copy preserves keys, login state, chats, and files.
+  Copy XiaoJuClaw\, XiaoJuClawRuntime\, and XiaoJuClaw-User-Guide\ from the new
+  package over the old deployment. The release package intentionally contains
+  no XiaoJuClawData\ directory, so direct merge-copy preserves user data.
 
 Old flat-layout upgrade:
   After merge-copying this package, run Migrate-Legacy-Layout.bat once. It only
@@ -206,7 +220,8 @@ $must = @(
   (Join-Path $portableDir 'XiaoJuClawRuntime\tools\manifest.json'),
   (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\bun\bun.exe'),
   (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\git\cmd\git.exe'),
-  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\uv\uv.exe')
+  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\uv\uv.exe'),
+  (Join-Path $portableDir 'XiaoJuClawRuntime\tools\win-x64\python\python.exe')
 )
 $missing = @($must | Where-Object { -not (Test-Path $_) })
 if ($missing.Count -gt 0) {
@@ -220,6 +235,13 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "[FAIL] Portable layout/data isolation verification failed" -ForegroundColor Red
   exit 1
 }
+if ($OutputPathFile) {
+  $outputParent = Split-Path -Parent $OutputPathFile
+  if ($outputParent -and -not (Test-Path $outputParent)) {
+    New-Item -ItemType Directory -Force -Path $outputParent | Out-Null
+  }
+  Set-Content -LiteralPath $OutputPathFile -Value $portableDir -Encoding ASCII
+}
 
 Write-Host ""
 Write-Host "============================================================"
@@ -230,7 +252,8 @@ Write-Host ""
 Write-Host "  Copy the ENTIRE folder contents to the USB root."
 Write-Host "  Users double-click Start-XiaoJuClaw.bat - bun/git/uv are already on"
 Write-Host "  the USB, so the environment-setup screen never appears."
-Write-Host "  Future upgrades replace XiaoJuClaw\ and XiaoJuClawRuntime\ only."
+Write-Host "  Future upgrades replace XiaoJuClaw\, XiaoJuClawRuntime\, and"
+Write-Host "  XiaoJuClaw-User-Guide\."
 Write-Host "  XiaoJuClawData\ is user-owned and is never shipped."
 Write-Host ""
 exit 0

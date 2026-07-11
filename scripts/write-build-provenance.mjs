@@ -24,6 +24,9 @@ export const PROVENANCE_INPUTS = Object.freeze([
   'src-tauri/tauri.windows-updater.conf.json',
   'src-tauri/tauri.windows.conf.json',
   'src-tauri/portable-update-key.json',
+  'web/public/user-guide/index.html',
+  'docs/user-guide.zh.md',
+  'docs/user-guide.en.md',
 ])
 
 function git(repoRoot, args) {
@@ -54,6 +57,7 @@ export function createProvenance({
   variant,
   builtAt = new Date().toISOString(),
   requireClean = false,
+  expectedCommit,
 }) {
   const root = resolve(repoRoot)
   assertReleaseVersion(version)
@@ -69,6 +73,10 @@ export function createProvenance({
   if (requireClean && status.length > 0) {
     throw new Error('Release provenance requires a clean working tree')
   }
+  const commit = git(root, ['rev-parse', 'HEAD']) ?? 'unknown'
+  if (expectedCommit && commit !== expectedCommit) {
+    throw new Error(`Release source commit changed: expected ${expectedCommit}, got ${commit}`)
+  }
   return {
     schemaVersion: 1,
     product: 'XiaoJuClaw',
@@ -76,7 +84,7 @@ export function createProvenance({
     variant,
     builtAt,
     source: {
-      commit: git(root, ['rev-parse', 'HEAD']) ?? 'unknown',
+      commit,
       branch: git(root, ['branch', '--show-current']) || 'detached',
       dirty: status === null ? null : status.length > 0,
       inputs: hashProvenanceInputs(root),
@@ -101,16 +109,23 @@ export function writeProvenance(outputArg, options) {
 if (import.meta.main) {
   const [outputArg, version, variant, ...flags] = process.argv.slice(2)
   if (!outputArg || !version || !variant) {
-    console.error('Usage: bun scripts/write-build-provenance.mjs <output.json> <version> <variant> [--require-clean]')
+    console.error('Usage: bun scripts/write-build-provenance.mjs <output.json> <version> <variant> [--require-clean] [--expected-commit <sha>]')
     process.exit(2)
   }
   const requireClean = flags.includes('--require-clean')
+  const expectedCommitIndex = flags.indexOf('--expected-commit')
+  const expectedCommit = expectedCommitIndex >= 0 ? flags[expectedCommitIndex + 1] : undefined
+  if (expectedCommitIndex >= 0 && !expectedCommit) {
+    console.error('[FAIL] --expected-commit requires a value')
+    process.exit(2)
+  }
   try {
     const { output, payload } = writeProvenance(outputArg, {
       repoRoot: DEFAULT_REPO_ROOT,
       version,
       variant,
       requireClean,
+      expectedCommit,
     })
     console.log(`[OK] Build provenance: ${output}`)
     if (payload.source.dirty) {

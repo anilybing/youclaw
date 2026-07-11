@@ -151,6 +151,14 @@ function validateVariantFiles(provenance, files) {
       throw new Error('Signed Windows installer release is missing its NSIS updater artifact')
     }
   }
+  if (provenance.variant === 'offline-installer') {
+    if (!paths.some((path) => /setup\.exe$/i.test(path))) {
+      throw new Error('Offline installer release is missing its NSIS setup executable')
+    }
+    if (paths.some((path) => path.toLowerCase().endsWith('.sig'))) {
+      throw new Error('Offline installer release must not contain updater signature sidecars')
+    }
+  }
 }
 
 export async function createArtifactManifest(artifactRoot, repoRoot = DEFAULT_REPO_ROOT) {

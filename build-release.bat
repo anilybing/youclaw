@@ -9,6 +9,7 @@ set "BUNDLE_DIR=%ROOT%\src-tauri\target\release\bundle"
 set "TAURI_BUILD_CMD=bun run build:tauri"
 set "DRY_RUN=0"
 set "DESKTOP_ONLY=0"
+set "OUTPUT_PATH_FILE="
 if not defined XJC_BUILD_VARIANT set "XJC_BUILD_VARIANT=windows-installer"
 
 :parse_args
@@ -16,9 +17,22 @@ if "%~1"=="" goto args_done
 if /I "%~1"=="--dry-run" set "DRY_RUN=1"
 if /I "%~1"=="--dry-run" set "NO_PAUSE=1"
 if /I "%~1"=="--desktop-only" set "DESKTOP_ONLY=1"
+if /I "%~1"=="--output-file" (
+  set "OUTPUT_PATH_FILE=%~2"
+  shift
+)
 shift
 goto parse_args
 :args_done
+
+set "BUILD_LOCK_ACQUIRED=0"
+if not defined XJC_BUILD_LOCK_TOKEN (
+  set "XJC_BUILD_LOCK_TOKEN=release-%RANDOM%-%RANDOM%-%RANDOM%"
+)
+if not defined XJC_BUILD_LOCK_OWNER set "XJC_BUILD_LOCK_OWNER=release"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\build-lock.ps1" -Action acquire -Token "%XJC_BUILD_LOCK_TOKEN%"
+if errorlevel 1 goto :fail
+if /I "%XJC_BUILD_LOCK_OWNER%"=="release" set "BUILD_LOCK_ACQUIRED=1"
 
 title XiaoJuClaw Build Release
 
@@ -88,15 +102,24 @@ if /I "%TAURI_BUILD_CMD%"=="bun run build:tauri" (
   echo.
 )
 
-if /I "%XJC_RELEASE_GATE_ALREADY_RUN%"=="1" (
-  echo.
-  echo [SKIP] Strict release gate already completed by the orchestrator.
+if "%DRY_RUN%"=="1" (
+  set "SOURCE_COMMIT=0000000000000000000000000000000000000000"
 ) else (
-  if "%DESKTOP_ONLY%"=="1" (
-    call :run_in "Desktop release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1"
-  ) else (
-    call :run_in "Strict release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1 -Release"
+  for /f "delims=" %%c in ('bun scripts\assert-source-snapshot.mjs capture') do set "SOURCE_COMMIT=%%c"
+  if not defined SOURCE_COMMIT (
+    echo [ERROR] Could not capture a clean release source snapshot.
+    goto :fail
   )
+)
+
+if "%DESKTOP_ONLY%"=="1" (
+  call :run_in "Desktop release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1 -PreBuild"
+) else (
+  call :run_in "Strict release gate" "%ROOT%" "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\release-gate.ps1 -Release -PreBuild"
+)
+if errorlevel 1 goto :fail
+if "%DRY_RUN%"=="0" (
+  call :run_in "Verify gated source snapshot" "%ROOT%" "bun scripts\assert-source-snapshot.mjs verify %SOURCE_COMMIT%"
   if errorlevel 1 goto :fail
 )
 
@@ -121,6 +144,10 @@ if "%DRY_RUN%"=="0" if exist "%BUNDLE_DIR%" (
 
 call :run_in "Tauri release build" "%ROOT%" "%TAURI_BUILD_CMD%"
 if errorlevel 1 goto :fail
+if "%DRY_RUN%"=="0" (
+  call :run_in "Verify source snapshot after build" "%ROOT%" "bun scripts\assert-source-snapshot.mjs verify %SOURCE_COMMIT%"
+  if errorlevel 1 goto :fail
+)
 
 if "%DRY_RUN%"=="1" (
   echo.
@@ -141,7 +168,7 @@ if errorlevel 1 goto :fail
 echo.
 echo [OK] Release artifacts directory: %RELEASE_DIR%
 pushd "%ROOT%" >nul
-call bun scripts\write-build-provenance.mjs "%RELEASE_DIR%\build-provenance.json" "%APP_VERSION%" "%XJC_BUILD_VARIANT%" --require-clean
+call bun scripts\write-build-provenance.mjs "%RELEASE_DIR%\build-provenance.json" "%APP_VERSION%" "%XJC_BUILD_VARIANT%" --require-clean --expected-commit "%SOURCE_COMMIT%"
 set "PROVENANCE_STATUS=%ERRORLEVEL%"
 if not "%PROVENANCE_STATUS%"=="0" (
   popd >nul
@@ -163,10 +190,18 @@ call bun scripts\release-artifacts.mjs verify "%RELEASE_DIR%"
 set "VERIFY_STATUS=%ERRORLEVEL%"
 popd >nul
 if not "%VERIFY_STATUS%"=="0" goto :fail
+if defined OUTPUT_PATH_FILE (
+  >"%OUTPUT_PATH_FILE%" echo %RELEASE_DIR%
+  if errorlevel 1 (
+    echo [ERROR] Could not write release output path: %OUTPUT_PATH_FILE%
+    goto :fail
+  )
+)
 echo.
 powershell -NoProfile -Command "Get-ChildItem -Path '%RELEASE_DIR%' -Recurse | Where-Object { -not $_.PSIsContainer } | Sort-Object FullName | ForEach-Object { '{0}  {1:N2} MB' -f $_.FullName, ($_.Length / 1MB) }"
 
 :success
+if "%BUILD_LOCK_ACQUIRED%"=="1" powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\build-lock.ps1" -Action release -Token "%XJC_BUILD_LOCK_TOKEN%" >nul
 echo.
 echo ========================================
 echo   XiaoJuClaw build release completed
@@ -198,6 +233,7 @@ echo [OK] %STEP_NAME%
 exit /b 0
 
 :fail
+if "%BUILD_LOCK_ACQUIRED%"=="1" powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\build-lock.ps1" -Action release -Token "%XJC_BUILD_LOCK_TOKEN%" >nul
 echo.
 echo ========================================
 echo   XiaoJuClaw build release failed
