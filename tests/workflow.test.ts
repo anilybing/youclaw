@@ -96,15 +96,54 @@ describe('workflow store', () => {
 
   test('内置种子：只种一次、删除不复活', () => {
     const db = getDatabase()
-    db.run("DELETE FROM kv_state WHERE key = 'workflow_builtin_seeded_v1'")
+    db.run("DELETE FROM kv_state WHERE key IN ('workflow_builtin_seeded_v1', 'workflow_builtin_seeded_v2', 'workflow_builtin_seeded_v3')")
     db.run("DELETE FROM workflows WHERE source = 'builtin'")
 
     expect(seedBuiltinWorkflows()).toBe(BUILTIN_WORKFLOWS.length)
     expect(getWorkflow('xianyu-new-listing')?.agentId).toBe('xianyu-cs')
+    const competitorFlow = getWorkflow('competitor-page-analysis')
+    expect(competitorFlow?.agentId).toBe('ecommerce-assistant')
+    expect(competitorFlow?.steps[0]).toMatchObject({
+      kind: 'tool',
+      tool: 'http_get',
+      forEach: { var: 'inputs.urls', maxItems: 5 },
+    })
+    expect(competitorFlow?.steps.map((step) => step.kind ?? 'agent')).toEqual(['tool', 'llm', 'llm'])
+    const businessBrief = getWorkflow('xjc-today-business-brief-v1')
+    expect(businessBrief?.agentId).toBe('office-assistant')
+    expect(businessBrief?.steps.map((step) => step.kind ?? 'agent')).toEqual(['tool', 'llm', 'tool'])
+    expect(businessBrief?.steps.map((step) => step.tool ?? null)).toEqual([
+      'today_business_snapshot',
+      null,
+      'render_today_business_brief',
+    ])
+    expect(businessBrief?.budgets).toMatchObject({ maxSteps: 3, maxToolCalls: 2, maxTotalTokens: 3000 })
 
     deleteWorkflow('content-pipeline')
     expect(seedBuiltinWorkflows()).toBe(0) // flag 已置，不复活
     expect(getWorkflow('content-pipeline')).toBeNull()
+
+    // 模拟已有 v1 用户升级：v2 只能增加新流程，不能复活用户删掉的 v1 流程。
+    db.run("DELETE FROM kv_state WHERE key = 'workflow_builtin_seeded_v2'")
+    deleteWorkflow('competitor-page-analysis')
+    expect(seedBuiltinWorkflows()).toBe(1)
+    expect(getWorkflow('competitor-page-analysis')).not.toBeNull()
+    expect(getWorkflow('content-pipeline')).toBeNull()
+
+    // 模拟已有 v2 用户升级：v3 只补经营简报，不复活旧版本中被用户删除的流程。
+    db.run("DELETE FROM kv_state WHERE key = 'workflow_builtin_seeded_v3'")
+    db.run("DELETE FROM workflows WHERE id = 'xjc-today-business-brief-v1'")
+    expect(seedBuiltinWorkflows()).toBe(1)
+    expect(getWorkflow('xjc-today-business-brief-v1')).not.toBeNull()
+    expect(getWorkflow('content-pipeline')).toBeNull()
+    expect(() => deleteWorkflow('xjc-today-business-brief-v1')).toThrow(/不可删除/)
+    expect(() => saveWorkflow({
+      id: 'xjc-today-business-brief-v1',
+      name: '覆盖尝试',
+      agentId: 'office-assistant',
+      steps: [{ title: '恶意步骤', prompt: '执行任意动作' }],
+      source: 'user',
+    })).toThrow(/不可覆盖/)
   })
 })
 
@@ -243,6 +282,35 @@ describe('workflow runner', () => {
     }])
     expect(aborted).toBe(true)
     expect(abortRegistry.has(finished.chatId)).toBe(false)
+  })
+
+  test('aborts and releases a hanging llm workflow step at the shared deadline', async () => {
+    let llmSignalAborted = false
+    resetWorkflowRuntimeForTest({
+      hasEmployee: () => true,
+      dispatchMessage: () => { throw new Error('纯 llm 工作流不应投递 agent 回合') },
+      subscribeChatEvents: () => () => {},
+      runLlm: async (_agentId, _prompt, context) => {
+        context?.signal?.addEventListener('abort', () => {
+          llmSignalAborted = true
+        }, { once: true })
+        return new Promise<string>(() => {})
+      },
+      stepTimeoutMs: 20,
+    })
+    saveWorkflow({
+      id: 'wt-llm-timeout',
+      name: 'LLM 超时流',
+      agentId: 'office-assistant',
+      steps: [{ title: '等待模型', kind: 'llm', prompt: '永远不返回' }],
+    })
+
+    const finished = await startWorkflowRun('wt-llm-timeout', {}).done
+    expect(finished.status).toBe('failed')
+    expect(finished.errorCode).toBe('WORKFLOW_STEP_TIMEOUT')
+    expect(finished.stopReason).toBe('step_timeout')
+    expect(llmSignalAborted).toBe(true)
+    expect(isWorkflowRunning('wt-llm-timeout')).toBe(false)
   })
 
   test('异构节点：llm 直调 + tool 确定性执行 + {{steps.x.output}} 显式引用', async () => {

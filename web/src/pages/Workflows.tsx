@@ -2,13 +2,35 @@
 // 列表（步骤构成/执行员工/运行统计）→ 运行（输入表单）→ 运行历史（进度/产出/失败续跑）。
 // 编辑走对话式（agent 沉淀）或 REST；本页聚焦"看得见、跑得动、失败能续"。
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Workflow as WorkflowIcon, Play, History, Trash2, RefreshCw, RotateCcw, Loader2, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import {
+  Workflow as WorkflowIcon,
+  Play,
+  History,
+  Trash2,
+  RefreshCw,
+  RotateCcw,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  CheckCircle2,
+  Circle,
+  Bot,
+  BrainCircuit,
+  Wrench,
+  Repeat2,
+  GitBranch,
+  Copy,
+  Download,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getWorkflows,
   runWorkflow,
   deleteWorkflowById,
   getWorkflowRuns,
+  getWorkflowRunDetail,
   resumeWorkflowRunById,
   type WorkflowDTO,
   type WorkflowRunDTO,
@@ -66,18 +88,134 @@ function formatDate(iso: string | null): string {
   return date.toLocaleString()
 }
 
-function kindSummary(wf: WorkflowDTO): string {
+interface PipelineLabels {
+  pipeline: string
+  kindAgent: string
+  kindLlm: string
+  kindTool: string
+  loop: string
+  condition: string
+}
+
+function kindLabel(kind: WorkflowDTO['steps'][number]['kind'], labels: PipelineLabels): string {
+  if (kind === 'tool') return labels.kindTool
+  if (kind === 'llm') return labels.kindLlm
+  return labels.kindAgent
+}
+
+function kindSummary(wf: WorkflowDTO, labels: PipelineLabels): string {
   const counts: Record<string, number> = {}
   for (const s of wf.steps) {
     const k = s.kind ?? 'agent'
     counts[k] = (counts[k] ?? 0) + 1
   }
-  return Object.entries(counts).map(([k, n]) => `${k}×${n}`).join(' ')
+  return Object.entries(counts)
+    .map(([k, n]) => `${kindLabel(k as WorkflowDTO['steps'][number]['kind'], labels)}×${n}`)
+    .join(' ')
+}
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '0s'
+  if (ms < 1_000) return `${Math.round(ms)}ms`
+  if (ms < 60_000) return `${(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0)}s`
+  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1_000)}s`
+}
+
+function stepState(run: WorkflowRunDTO | null, index: number): 'done' | 'active' | 'failed' | 'pending' {
+  if (!run) return 'pending'
+  if (run.status === 'success') return 'done'
+  if (index < run.currentStep) return 'done'
+  if (index === run.currentStep) return run.status === 'failed' ? 'failed' : 'active'
+  return 'pending'
+}
+
+function StepPipeline({
+  workflow,
+  run,
+  labels,
+}: {
+  workflow: WorkflowDTO
+  run: WorkflowRunDTO | null
+  labels: PipelineLabels
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">{labels.pipeline}</div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {workflow.steps.map((step, index) => {
+          const kind = step.kind ?? 'agent'
+          const state = stepState(run, index)
+          const KindIcon = kind === 'tool' ? Wrench : kind === 'llm' ? BrainCircuit : Bot
+          const StateIcon = state === 'done'
+            ? CheckCircle2
+            : state === 'active'
+              ? Loader2
+              : state === 'failed'
+                ? AlertTriangle
+                : Circle
+          return (
+            <div
+              key={step.id ?? index}
+              className={`min-w-44 flex-1 rounded-lg border p-2.5 ${
+                state === 'active'
+                  ? 'border-primary/50 bg-primary/5'
+                  : state === 'failed'
+                    ? 'border-destructive/40 bg-destructive/5'
+                    : 'border-[var(--subtle-border)] bg-background'
+              }`}
+              data-testid="workflow-step-card"
+            >
+              <div className="flex items-start gap-2">
+                <StateIcon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                  state === 'done'
+                    ? 'text-emerald-500'
+                    : state === 'active'
+                      ? 'animate-spin text-primary'
+                      : state === 'failed'
+                        ? 'text-destructive'
+                        : 'text-muted-foreground/40'
+                }`} />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium">{index + 1}. {step.title}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+                      <KindIcon className="h-2.5 w-2.5" />
+                      {kindLabel(kind, labels)}
+                    </span>
+                    {step.tool && <code className="rounded bg-muted px-1.5 py-0.5">{step.tool}</code>}
+                    {step.forEach && (
+                      <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+                        <Repeat2 className="h-2.5 w-2.5" />{labels.loop} ≤ {step.forEach.maxItems ?? 5}
+                      </span>
+                    )}
+                    {step.when && (
+                      <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5">
+                        <GitBranch className="h-2.5 w-2.5" />{labels.condition}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export function Workflows() {
   const { t } = useI18n()
+  const location = useLocation()
   const drag = useDragRegion()
+  const pipelineLabels: PipelineLabels = {
+    pipeline: t.workflows.pipeline,
+    kindAgent: t.workflows.kindAgent,
+    kindLlm: t.workflows.kindLlm,
+    kindTool: t.workflows.kindTool,
+    loop: t.workflows.loop,
+    condition: t.workflows.condition,
+  }
 
   const [workflows, setWorkflows] = useState<WorkflowDTO[]>([])
   const [workflowLoadState, setWorkflowLoadState] = useState<LoadState>('loading')
@@ -95,6 +233,7 @@ export function Workflows() {
   const [outputRun, setOutputRun] = useState<WorkflowRunDTO | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WorkflowDTO | null>(null)
   const [resumingId, setResumingId] = useState<string | null>(null)
+  const focusedRunRef = useRef('')
 
   const loadWorkflows = useCallback(async () => {
     setWorkflowLoadState('loading')
@@ -116,6 +255,10 @@ export function Workflows() {
     try {
       const res = await getWorkflowRuns(wfId)
       setRunsByWf((prev) => ({ ...prev, [wfId]: res.runs }))
+      setOutputRun((prev) => {
+        if (!prev) return prev
+        return res.runs.find((run) => run.id === prev.id) ?? prev
+      })
       setRunLoadStateByWf((prev) => ({ ...prev, [wfId]: 'ready' }))
     } catch {
       setRunLoadStateByWf((prev) => ({ ...prev, [wfId]: 'error' }))
@@ -127,6 +270,24 @@ export function Workflows() {
   useEffect(() => {
     void loadWorkflows()
   }, [loadWorkflows])
+
+  useEffect(() => {
+    if (workflowLoadState !== 'ready') return
+    const params = new URLSearchParams(location.search)
+    const workflowId = params.get('workflow')
+    const runId = params.get('run')
+    if (!workflowId || !workflows.some((workflow) => workflow.id === workflowId)) return
+    const focusKey = `${workflowId}:${runId ?? ''}`
+    if (focusedRunRef.current === focusKey) return
+    focusedRunRef.current = focusKey
+    setExpandedId(workflowId)
+    void loadRuns(workflowId)
+    if (runId) {
+      void getWorkflowRunDetail(runId)
+        .then(({ run }) => setOutputRun(run))
+        .catch(() => undefined)
+    }
+  }, [loadRuns, location.search, workflowLoadState, workflows])
 
   const expandedRuns = expandedId ? (runsByWf[expandedId] ?? []) : []
   const expandedHasRunningRun = hasRunningWorkflowRuns(expandedRuns)
@@ -207,6 +368,29 @@ export function Workflows() {
     }
   }
 
+  const handleCopyFinal = async () => {
+    const finalOutput = outputRun?.outputs.at(-1)
+    if (!finalOutput) return
+    await navigator.clipboard.writeText(finalOutput)
+    toast.success(t.workflows.copied)
+  }
+
+  const handleDownload = () => {
+    if (!outputRun) return
+    const workflow = workflows.find((item) => item.id === outputRun.workflowId)
+    const sections = outputRun.outputs.map((output, index) => {
+      const title = workflow?.steps[index]?.title ?? t.workflows.stepLabel.replace('{n}', String(index + 1))
+      return `## ${index + 1}. ${title}\n\n${output}`
+    })
+    const body = `# ${workflow?.name ?? outputRun.workflowId}\n\n${sections.join('\n\n')}\n`
+    const url = URL.createObjectURL(new Blob([body], { type: 'text/markdown;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${outputRun.workflowId}-${outputRun.id.slice(0, 8)}.md`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   const statusBadge = (run: WorkflowRunDTO, total: number) => {
     if (run.status === 'running') {
       return <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"><Loader2 className="h-3 w-3 animate-spin" />{t.workflows.statusRunning} {Math.min(run.currentStep, total)}/{total}</span>
@@ -219,6 +403,9 @@ export function Workflows() {
 
   const workflowViewState = resolveWorkflowCollectionViewState(workflowLoadState, workflows.length)
   const canDeleteTarget = deleteTarget ? canDeleteWorkflow(deleteTarget) : false
+  const outputWorkflow = outputRun
+    ? workflows.find((workflow) => workflow.id === outputRun.workflowId) ?? null
+    : null
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
@@ -290,7 +477,7 @@ export function Workflows() {
                           )}
                         </div>
                         <div className="truncate text-xs text-muted-foreground">
-                          {wf.steps.length} {t.workflows.stepsUnit} · {kindSummary(wf)} · {wf.agentId}
+                          {wf.steps.length} {t.workflows.stepsUnit} · {kindSummary(wf, pipelineLabels)} · {wf.agentId}
                           {wf.runCount > 0 && ` · ${t.workflows.ranTimes.replace('{n}', String(wf.runCount))}`}
                         </div>
                       </div>
@@ -323,6 +510,9 @@ export function Workflows() {
                   {expanded && (
                     <div className="border-t border-[var(--subtle-border)] bg-muted/10 px-3 py-2">
                       {wf.description && <p className="mb-2 text-xs text-muted-foreground">{wf.description}</p>}
+                      <div className="mb-3">
+                        <StepPipeline workflow={wf} run={null} labels={pipelineLabels} />
+                      </div>
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-xs font-medium text-muted-foreground">{t.workflows.recentRuns}</span>
                         <Button
@@ -357,12 +547,20 @@ export function Workflows() {
                           {runs.map((run) => (
                             <div key={run.id} className="flex items-center gap-2 rounded-md bg-background px-2 py-1.5 text-xs" data-testid="workflow-run-row">
                               {statusBadge(run, wf.steps.length)}
+                              {run.status === 'running' && wf.steps.length > 0 && (
+                                <span className="max-w-36 truncate font-medium text-primary">
+                                  {t.workflows.currentStep.replace(
+                                    '{name}',
+                                    wf.steps[Math.min(run.currentStep, wf.steps.length - 1)]?.title ?? '-',
+                                  )}
+                                </span>
+                              )}
                               <span className="text-muted-foreground">{formatDate(run.startedAt)}</span>
                               {run.error && <span className="min-w-0 flex-1 truncate text-destructive" title={run.error}>{run.error}</span>}
                               {!run.error && <span className="flex-1" />}
-                              {run.status !== 'running' && run.outputs.length > 0 && (
+                              {(run.status === 'running' || run.outputs.length > 0) && (
                                 <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setOutputRun(run)}>
-                                  {t.workflows.viewOutput}
+                                  {run.status === 'running' ? t.workflows.partialOutput : t.workflows.viewOutput}
                                 </Button>
                               )}
                               {run.status === 'failed' && (
@@ -423,18 +621,86 @@ export function Workflows() {
 
       {/* 产出查看：逐步展示 */}
       <Dialog open={!!outputRun} onOpenChange={(open) => !open && setOutputRun(null)}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{t.workflows.outputTitle}</DialogTitle>
-            <DialogDescription>{formatDate(outputRun?.startedAt ?? null)}</DialogDescription>
+            <DialogTitle>{outputWorkflow?.name ?? t.workflows.outputTitle}</DialogTitle>
+            <DialogDescription className="flex flex-wrap items-center gap-2">
+              <span>{formatDate(outputRun?.startedAt ?? null)}</span>
+              {outputRun && outputWorkflow && statusBadge(outputRun, outputWorkflow.steps.length)}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {outputWorkflow && outputRun && (
+              <StepPipeline workflow={outputWorkflow} run={outputRun} labels={pipelineLabels} />
+            )}
+
+            {outputRun && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">{t.workflows.usageTitle}</div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                  {[
+                    [t.workflows.modelCalls, String(outputRun.usage.modelCalls)],
+                    [t.workflows.totalTokens, outputRun.usage.totalTokens.toLocaleString()],
+                    [t.workflows.cost, `$${outputRun.usage.costUsd.toFixed(4)}`],
+                    [t.workflows.toolCalls, String(outputRun.usage.toolCalls)],
+                    [t.workflows.duration, formatDuration(outputRun.usage.activeDurationMs)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-[var(--subtle-border)] bg-muted/10 px-2.5 py-2">
+                      <div className="text-[10px] text-muted-foreground">{label}</div>
+                      <div className="mt-0.5 text-xs font-semibold tabular-nums">{value}</div>
+                    </div>
+                  ))}
+                </div>
+                {outputRun.traceId && (
+                  <div className="truncate font-mono text-[10px] text-muted-foreground" title={outputRun.traceId}>
+                    {t.workflows.traceId}: {outputRun.traceId}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {outputRun?.error && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                {outputRun.error}
+              </div>
+            )}
+
+            {outputRun?.status === 'running' && outputRun.outputs.length === 0 && (
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed py-8 text-xs text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t.workflows.currentStep.replace(
+                  '{name}',
+                  outputWorkflow?.steps[Math.min(outputRun.currentStep, Math.max(0, outputWorkflow.steps.length - 1))]?.title ?? '-',
+                )}
+              </div>
+            )}
+
             {(outputRun?.outputs ?? []).map((out, i) => (
               <div key={i}>
-                <div className="mb-1 text-xs font-medium text-muted-foreground">{t.workflows.stepLabel.replace('{n}', String(i + 1))}</div>
+                <div className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <span>{i + 1}. {outputWorkflow?.steps[i]?.title ?? t.workflows.stepLabel.replace('{n}', String(i + 1))}</span>
+                  {outputWorkflow?.steps[i] && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal">
+                      {kindLabel(outputWorkflow.steps[i].kind ?? 'agent', pipelineLabels)}
+                    </span>
+                  )}
+                </div>
                 <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[var(--subtle-border)] bg-muted/20 p-2 text-xs leading-relaxed">{out}</pre>
               </div>
             ))}
+
+            {(outputRun?.outputs.length ?? 0) > 0 && (
+              <div className="flex justify-end gap-2 border-t border-[var(--subtle-border)] pt-3">
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => void handleCopyFinal()}>
+                  <Copy className="h-3.5 w-3.5" />
+                  {t.workflows.copyFinal}
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={handleDownload}>
+                  <Download className="h-3.5 w-3.5" />
+                  {t.workflows.downloadMarkdown}
+                </Button>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

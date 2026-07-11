@@ -47,6 +47,7 @@ export interface SingleCompletionOptions {
   agentId?: string
   purpose?: string
   agentOps?: AgentOpsTraceContext
+  signal?: AbortSignal
 }
 
 const PERSONA_MAX_INPUT_CHARS = 2000
@@ -143,6 +144,7 @@ async function runCompletion(
       headers: model.headers,
       temperature: 0.3,
       maxTokens: 1200,
+      signal: options.signal,
     })
     const latencyMs = Date.now() - startedAt
     try {

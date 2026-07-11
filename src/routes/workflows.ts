@@ -61,9 +61,14 @@ export function createWorkflowsRoutes() {
   })
 
   app.delete('/workflows/:id', (c) => {
-    const ok = deleteWorkflow(c.req.param('id'))
-    if (!ok) return c.json({ error: '工作流不存在' }, 404)
-    return c.json({ ok: true })
+    try {
+      const ok = deleteWorkflow(c.req.param('id'))
+      if (!ok) return c.json({ error: '工作流不存在' }, 404)
+      return c.json({ ok: true })
+    } catch (err) {
+      const { status, body } = handleError(err, '删除工作流失败')
+      return c.json(body, status)
+    }
   })
 
   app.post('/workflows/:id/run', async (c) => {

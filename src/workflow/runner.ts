@@ -81,7 +81,13 @@ export interface WorkflowRuntimeDeps {
   runLlm?: (
     agentId: string,
     prompt: string,
-    context?: { traceId: string; spanId: string; workflowId: string; workflowRunId: string },
+    context?: {
+      traceId: string
+      spanId: string
+      workflowId: string
+      workflowRunId: string
+      signal?: AbortSignal
+    },
   ) => Promise<string>
   /** Queue-level exact cancellation; legacy embedders may omit it. */
   cancelTurn?: (chatId: string, turnId: string) => { queued: number; running: number } | void
@@ -92,6 +98,35 @@ export interface WorkflowRuntimeDeps {
 const STEP_TIMEOUT_MS = 300_000
 const PREV_OUTPUT_MAX = 8000
 const runningWorkflows = new Set<string>()
+
+function createStepTimeoutError(timeoutMs: number): Error & { code: string; stopReason: string } {
+  const error = new Error(`步骤超时（${timeoutMs / 1000}s）`) as Error & {
+    code: string
+    stopReason: string
+  }
+  error.code = 'WORKFLOW_STEP_TIMEOUT'
+  error.stopReason = 'step_timeout'
+  return error
+}
+
+async function runWithStepTimeout<T>(
+  timeoutMs: number,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(createStepTimeoutError(timeoutMs))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([operation(controller.signal), timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 let deps: WorkflowRuntimeDeps | null = null
 
@@ -296,7 +331,18 @@ async function executeStepOnce(
       const args = Object.fromEntries(
         Object.entries(step.args ?? {}).map(([k, v]) => [k, renderTemplate(v, vars)]),
       )
-      const output = await tool.execute(args)
+      const output = await runWithStepTimeout(
+        d.stepTimeoutMs ?? STEP_TIMEOUT_MS,
+        (signal) => tool.execute(args, {
+          workflowId: wf.id,
+          workflowRunId: runId,
+          traceId,
+          stepId: step.id ?? `step${index + 1}`,
+          stepIndex: index,
+          itemIndex,
+          signal,
+        }),
+      )
       enforceWorkflowActiveDuration(runId)
       finishAgentOpsSpan(span.id, 'success')
       return output
@@ -311,10 +357,13 @@ async function executeStepOnce(
     if (kind === 'llm') {
       const runLlm = d.runLlm
       if (!runLlm) throw new Error('llm 节点不可用：工作流运行时未装配模型直调')
-      const output = await runLlm(
-        wf.agentId,
-        [prevBlock, rendered].filter(Boolean).join('\n\n'),
-        { traceId, spanId: span.id, workflowId: wf.id, workflowRunId: runId },
+      const output = await runWithStepTimeout(
+        d.stepTimeoutMs ?? STEP_TIMEOUT_MS,
+        (signal) => runLlm(
+          wf.agentId,
+          [prevBlock, rendered].filter(Boolean).join('\n\n'),
+          { traceId, spanId: span.id, workflowId: wf.id, workflowRunId: runId, signal },
+        ),
       )
       enforceWorkflowActiveDuration(runId)
       finishAgentOpsSpan(span.id, 'success')

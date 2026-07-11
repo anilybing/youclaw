@@ -17,6 +17,10 @@ import {
 
 export const WORKFLOW_INVALID = 'WORKFLOW_INVALID'
 export const WORKFLOW_NOT_FOUND = 'WORKFLOW_NOT_FOUND'
+export const WORKFLOW_BUILTIN_PROTECTED = 'WORKFLOW_BUILTIN_PROTECTED'
+export const TODAY_BUSINESS_BRIEF_WORKFLOW_ID = 'xjc-today-business-brief-v1'
+
+const PROTECTED_BUILTIN_WORKFLOW_IDS = new Set([TODAY_BUSINESS_BRIEF_WORKFLOW_ID])
 
 export class WorkflowError extends Error {
   constructor(public code: string, message: string) {
@@ -365,12 +369,16 @@ export function saveWorkflow(input: {
   budgets?: WorkflowBudgets | null
   source?: Workflow['source']
 }): Workflow {
-  const existing = input.id ? getWorkflow(input.id) : null
+  const requestedId = input.id?.trim().toLowerCase()
+  const source = input.source ?? 'user'
+  if (requestedId && PROTECTED_BUILTIN_WORKFLOW_IDS.has(requestedId) && source !== 'builtin') {
+    throw new WorkflowError(WORKFLOW_BUILTIN_PROTECTED, '系统经营工作流不可覆盖；请复制为新的工作流后再修改')
+  }
+  const existing = requestedId ? getWorkflow(requestedId) : null
   const clean = validateWorkflowDraft({
     ...input,
     budgets: input.budgets === undefined ? existing?.budgets : input.budgets,
   })
-  const source = input.source ?? 'user'
   const at = nowIso()
   getDatabase().run(
     `INSERT INTO workflows (id, name, description, agent_id, steps_json, inputs_json, budgets_json, source, created_at, updated_at)
@@ -407,7 +415,11 @@ export function listWorkflows(): Workflow[] {
 }
 
 export function deleteWorkflow(id: string): boolean {
-  const result = getDatabase().run('DELETE FROM workflows WHERE id = ?', [id.trim().toLowerCase()])
+  const normalizedId = id.trim().toLowerCase()
+  if (PROTECTED_BUILTIN_WORKFLOW_IDS.has(normalizedId)) {
+    throw new WorkflowError(WORKFLOW_BUILTIN_PROTECTED, '系统经营工作流不可删除')
+  }
+  const result = getDatabase().run('DELETE FROM workflows WHERE id = ?', [normalizedId])
   return Number(result?.changes ?? 0) > 0
 }
 
@@ -610,8 +622,12 @@ export function reopenRun(runId: string): void {
   )
 }
 
-// ── 内置流水线种子（垂直 3 + 通用 1，只种一次；用户删除不复活）──────────
-const SEED_FLAG_KEY = 'workflow_builtin_seeded_v1'
+// ── 内置流水线种子（按版本增量种入；用户删除/修改过的旧流程不复活、不覆盖）────
+const SEED_FLAG_V1 = 'workflow_builtin_seeded_v1'
+const SEED_FLAG_V2 = 'workflow_builtin_seeded_v2'
+const SEED_FLAG_V3 = 'workflow_builtin_seeded_v3'
+const V2_WORKFLOW_IDS = new Set(['competitor-page-analysis'])
+const V3_WORKFLOW_IDS = new Set([TODAY_BUSINESS_BRIEF_WORKFLOW_ID])
 
 export const BUILTIN_WORKFLOWS: Array<Parameters<typeof saveWorkflow>[0]> = [
   {
@@ -668,21 +684,123 @@ export const BUILTIN_WORKFLOWS: Array<Parameters<typeof saveWorkflow>[0]> = [
     ],
     source: 'builtin',
   },
+  {
+    id: 'competitor-page-analysis',
+    name: '竞品网页批量分析',
+    description: '逐站安全抓取多个竞品页面，提取价格/卖点/活动信号并生成行动简报',
+    agentId: 'ecommerce-assistant',
+    inputs: [
+      { key: 'urls', label: '竞品网页（一行一个，最多 5 个）' },
+      { key: 'focus', label: '重点关注（价格/卖点/活动/评价等）' },
+    ],
+    budgets: {
+      maxSteps: 8,
+      maxTotalTokens: 20_000,
+      maxCostUsd: 0.5,
+      maxActiveDurationMs: 180_000,
+      maxToolCalls: 5,
+      unknownCostPolicy: 'allow',
+    },
+    steps: [
+      {
+        id: 'fetch_pages',
+        title: '逐站安全抓取',
+        kind: 'tool',
+        tool: 'http_get',
+        prompt: '',
+        args: { url: '{{item}}', maxChars: '20000' },
+        forEach: { var: 'inputs.urls', maxItems: 5 },
+      },
+      {
+        id: 'extract_signals',
+        title: '提取竞品信号',
+        kind: 'llm',
+        prompt: '重点关注：{{inputs.focus}}\n\n以下是逐站抓取结果：\n{{steps.fetch_pages.output}}\n\n按网页分别提取可验证信息：商品/品牌、价格与促销、核心卖点、规格、活动或上新信号。保留来源 URL；页面未提供的信息标注“未发现”，不要臆造。',
+      },
+      {
+        id: 'action_brief',
+        title: '生成行动简报',
+        kind: 'llm',
+        prompt: '基于竞品信号：\n{{steps.extract_signals.output}}\n\n输出一份可执行简报：① 三句结论；② 竞品对比表；③ 值得借鉴与应避免的做法；④ 按优先级排序的 3 条行动建议；⑤ 来源清单。事实与推断必须分开标注。',
+      },
+    ],
+    source: 'builtin',
+  },
+  {
+    id: TODAY_BUSINESS_BRIEF_WORKFLOW_ID,
+    name: '今日经营行动简报',
+    description: '读取本地经营画像和自动化实况，由模型只排序候选行动，再确定性生成不编造数据的今日简报',
+    agentId: 'office-assistant',
+    inputs: [],
+    budgets: {
+      maxSteps: 3,
+      maxTotalTokens: 3_000,
+      maxCostUsd: 0.1,
+      maxActiveDurationMs: 60_000,
+      maxToolCalls: 2,
+      unknownCostPolicy: 'allow',
+    },
+    steps: [
+      {
+        id: 'snapshot',
+        title: '读取经营实况',
+        kind: 'tool',
+        tool: 'today_business_snapshot',
+        prompt: '',
+        args: {},
+      },
+      {
+        id: 'rank_actions',
+        title: '排序今日行动',
+        kind: 'llm',
+        prompt: [
+          '你是经营行动排序器。下面的 JSON 是本机代码生成的事实快照。',
+          '只从 candidateActions 中选择最值得今天优先完成的 3 个 id，按优先级排序。',
+          '不得新增行动、数字或事实，不得改写行动内容。',
+          '只输出严格 JSON 字符串数组，例如 ["complete_profile","advance_goal_1","create_first_automation"]，不要解释、不要 Markdown。',
+          '',
+          '{{steps.snapshot.output}}',
+        ].join('\n'),
+      },
+      {
+        id: 'render_brief',
+        title: '校验并生成简报',
+        kind: 'tool',
+        tool: 'render_today_business_brief',
+        prompt: '',
+        args: {
+          snapshot: '{{steps.snapshot.output}}',
+          ranking: '{{steps.rank_actions.output}}',
+        },
+      },
+    ],
+    source: 'builtin',
+  },
 ]
 
-/** 预置内置流水线（进程首启种一次；用户删过不复活，改过不覆盖） */
+/** 分版本增量种入内置流水线；升级只增加新版本流程，不恢复旧版本中被用户删除的流程。 */
 export function seedBuiltinWorkflows(): number {
   const db = getDatabase()
-  const flag = db.query("SELECT value FROM kv_state WHERE key = ?").get(SEED_FLAG_KEY) as { value: string } | null
-  if (flag?.value === '1') return 0
   let seeded = 0
-  for (const wf of BUILTIN_WORKFLOWS) {
-    const exists = db.query('SELECT id FROM workflows WHERE id = ?').get(wf.id!.toLowerCase())
-    if (exists) continue
-    saveWorkflow(wf)
-    seeded++
+  const phases = [
+    {
+      key: SEED_FLAG_V1,
+      workflows: BUILTIN_WORKFLOWS.filter((wf) => !V2_WORKFLOW_IDS.has(wf.id!) && !V3_WORKFLOW_IDS.has(wf.id!)),
+    },
+    { key: SEED_FLAG_V2, workflows: BUILTIN_WORKFLOWS.filter((wf) => V2_WORKFLOW_IDS.has(wf.id!)) },
+    { key: SEED_FLAG_V3, workflows: BUILTIN_WORKFLOWS.filter((wf) => V3_WORKFLOW_IDS.has(wf.id!)) },
+  ]
+  for (const phase of phases) {
+    const flag = db.query("SELECT value FROM kv_state WHERE key = ?").get(phase.key) as { value: string } | null
+    if (flag?.value === '1') continue
+    for (const wf of phase.workflows) {
+      const exists = db.query('SELECT id FROM workflows WHERE id = ?').get(wf.id!.toLowerCase())
+      if (exists) continue
+      saveWorkflow(wf)
+      seeded++
+    }
+    db.run('INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)', [phase.key, '1'])
   }
-  db.run('INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)', [SEED_FLAG_KEY, '1'])
   if (seeded > 0) getLogger().info({ seeded, category: 'workflow' }, 'Builtin workflows seeded')
   return seeded
 }

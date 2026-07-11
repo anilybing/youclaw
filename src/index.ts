@@ -259,6 +259,7 @@ async function main() {
             agentModel: employee.config.hasExplicitModel ? employee.config.model : undefined,
             agentId,
             purpose: 'workflow_llm',
+            signal: context?.signal,
             agentOps: context
               ? {
                   traceId: context.traceId,
