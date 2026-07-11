@@ -13,6 +13,9 @@ export const VERSION_FILES = Object.freeze({
   cargoManifest: 'src-tauri/Cargo.toml',
   cargoLock: 'src-tauri/Cargo.lock',
   tauriPackageJson: 'src-tauri/package.json',
+  guideHtml: 'web/public/user-guide/index.html',
+  guideZh: 'docs/user-guide.zh.md',
+  guideEn: 'docs/user-guide.en.md',
 })
 
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -43,6 +46,13 @@ function readCargoPackageVersion(path, packageName) {
   return assertReleaseVersion(match[1])
 }
 
+function readTextVersion(path, pattern) {
+  const text = readFileSync(path, 'utf8')
+  const match = text.match(pattern)
+  if (!match?.[1]) throw new Error(`No release version found in ${path}`)
+  return assertReleaseVersion(match[1])
+}
+
 export function readDesktopVersions(repoRoot = DEFAULT_REPO_ROOT) {
   const root = resolve(repoRoot)
   return {
@@ -58,6 +68,18 @@ export function readDesktopVersions(repoRoot = DEFAULT_REPO_ROOT) {
     ),
     [VERSION_FILES.tauriPackageJson]: readJsonVersion(
       resolve(root, VERSION_FILES.tauriPackageJson),
+    ),
+    [VERSION_FILES.guideHtml]: readTextVersion(
+      resolve(root, VERSION_FILES.guideHtml),
+      /图文操作手册\s*·\s*([0-9A-Za-z.+-]+)/,
+    ),
+    [VERSION_FILES.guideZh]: readTextVersion(
+      resolve(root, VERSION_FILES.guideZh),
+      /适用版本：XiaoJuClaw\s+([0-9A-Za-z.+-]+)/,
+    ),
+    [VERSION_FILES.guideEn]: readTextVersion(
+      resolve(root, VERSION_FILES.guideEn),
+      /Applies to XiaoJuClaw\s+([0-9A-Za-z.+-]+)/,
     ),
   }
 }
@@ -124,6 +146,24 @@ export function setDesktopVersion(version, repoRoot = DEFAULT_REPO_ROOT) {
     const path = resolve(root, relative)
     const current = readFileSync(path, 'utf8')
     edits.push([path, replacePackageVersion(current, 'XiaoJuClaw', version, path)])
+  }
+  const guideReplacements = [
+    [VERSION_FILES.guideHtml, [
+      [/图文操作手册\s*·\s*[0-9A-Za-z.+-]+/g, `图文操作手册 · ${version}`],
+      [/适用版本\s+[0-9A-Za-z.+-]+/g, `适用版本 ${version}`],
+    ]],
+    [VERSION_FILES.guideZh, [
+      [/适用版本：XiaoJuClaw\s+[0-9A-Za-z.+-]+/g, `适用版本：XiaoJuClaw ${version}`],
+    ]],
+    [VERSION_FILES.guideEn, [
+      [/Applies to XiaoJuClaw\s+[0-9A-Za-z.+-]+/g, `Applies to XiaoJuClaw ${version}`],
+    ]],
+  ]
+  for (const [relative, replacements] of guideReplacements) {
+    const path = resolve(root, relative)
+    let next = readFileSync(path, 'utf8')
+    for (const [pattern, replacement] of replacements) next = next.replace(pattern, replacement)
+    edits.push([path, next])
   }
 
   for (const [path, content] of edits) writeFileSync(path, content, 'utf8')

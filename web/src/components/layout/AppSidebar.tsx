@@ -29,6 +29,7 @@ import { isFloatingSupported, toggleFloatingWindow } from "@/lib/floating-window
 import { notify } from "@/stores/app-runtime";
 import {
   BookOpen,
+  CircleHelp,
   Bot,
   Brain,
   BriefcaseBusiness,
@@ -153,6 +154,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     // [XJC] 卡密库（闲鱼虚拟商品自动发货）：库存水位 + 发货台账
     { to: "/fulfillment", icon: Ticket, label: t.nav.fulfillment },
     { to: "/logs", icon: ScrollText, label: t.nav.logs },
+    { to: "/guide", icon: CircleHelp, label: t.nav.userGuide },
   ];
 
   const displayName =
@@ -244,7 +246,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
       )}
 
       {/* Page navigation */}
-      <nav className="space-y-0.5 px-1.5">
+      <nav className="min-h-0 shrink space-y-0.5 overflow-y-auto px-1.5">
         {navItems.map((item) => (
           <NavLink
             key={item.to}

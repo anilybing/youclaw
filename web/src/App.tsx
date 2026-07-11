@@ -10,6 +10,7 @@ import { Fulfillment } from './pages/Fulfillment'
 import { Workflows } from './pages/Workflows'
 import { Tasks } from './pages/Tasks'
 import { Logs } from './pages/Logs'
+import { UserGuide } from './pages/UserGuide'
 import { Skills } from './pages/Skills'
 import { Login } from './pages/Login'
 import { EnvSetup } from './pages/EnvSetup'
@@ -348,6 +349,10 @@ export default function App() {
             注意用 isLoggedIn 而非 canPass：离线降级用户未真正登录，仍应能进入登录页，
             以便远程服务器恢复后主动登录使用云功能。 */}
         <Route path="/login" element={isLoggedIn ? <Navigate to="/today" replace /> : <Login />} />
+        <Route
+          path="/guide"
+          element={canPass ? <Shell><UserGuide /></Shell> : <UserGuide standalone />}
+        />
         <Route element={<AuthGuard />}>
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/chat" element={<Chat />} />

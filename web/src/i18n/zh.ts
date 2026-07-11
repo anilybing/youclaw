@@ -39,6 +39,7 @@ export const zh: Translations = {
     channels: '渠道',
     system: '系统',
     logs: '日志',
+    userGuide: '使用手册',
   },
   todayOperations: {
     title: '今日经营',

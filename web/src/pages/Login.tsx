@@ -13,6 +13,7 @@ import { ApiError } from "@/lib/api-error"
 import { useWorkbenchCardsStore } from "@/stores/workbench-cards"
 import {
   ArrowLeft,
+  BookOpenCheck,
   Calendar,
   KeyRound,
   Loader2,
@@ -491,6 +492,16 @@ export function Login() {
               >
                 <Settings2 size={14} />
                 {t.settings.title}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-xl"
+                onClick={() => navigate("/guide")}
+              >
+                <BookOpenCheck size={14} />
+                {t.nav.userGuide}
               </Button>
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
                 {isTauri ? version : t.settings.webVersion}

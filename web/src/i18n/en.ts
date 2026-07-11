@@ -37,6 +37,7 @@ export const en = {
     channels: 'Channels',
     system: 'System',
     logs: 'Logs',
+    userGuide: 'User Guide',
   },
   todayOperations: {
     title: 'Today’s Operations',

@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>XiaoJuClaw 图文操作手册</title>
+  <style>
+    :root {
+      --brand: #cf0024;
+      --brand-soft: #fff0f2;
+      --ink: #18181b;
+      --muted: #66666f;
+      --line: #e7e7eb;
+      --surface: #ffffff;
+      --page: #f7f7f8;
+      --ok: #057a55;
+      --warn: #9a5b00;
+      --danger: #b42318;
+      --shadow: 0 16px 44px rgba(24, 24, 27, .09);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      line-height: 1.72;
+    }
+    button, input { font: inherit; }
+    a { color: inherit; }
+    .layout { min-height: 100vh; }
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 10;
+      width: 286px;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, .97);
+      padding: 24px 18px;
+    }
+    .brand { display: flex; gap: 12px; align-items: center; margin-bottom: 22px; }
+    .brand-mark {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      border-radius: 13px;
+      color: white;
+      background: linear-gradient(145deg, #ff4a5f, var(--brand));
+      box-shadow: 0 8px 20px rgba(207, 0, 36, .24);
+      font-size: 23px;
+    }
+    .brand strong { display: block; font-size: 16px; }
+    .brand span { color: var(--muted); font-size: 12px; }
+    .progress-card {
+      margin-bottom: 16px;
+      padding: 12px;
+      border: 1px solid #ffd3da;
+      border-radius: 12px;
+      background: var(--brand-soft);
+    }
+    .progress-label { display: flex; justify-content: space-between; font-size: 12px; }
+    .progress-track { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #ffd3da; }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s; }
+    .search {
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      outline: none;
+      background: white;
+    }
+    .search:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(207, 0, 36, .08); }
+    .toc { display: grid; gap: 2px; }
+    .toc a {
+      display: block;
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: #4b4b53;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .toc a:hover, .toc a:focus { color: var(--brand); background: var(--brand-soft); }
+    .side-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+    .side-actions button {
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: white;
+      cursor: pointer;
+    }
+    .side-actions button:hover { border-color: var(--brand); color: var(--brand); }
+    main { margin-left: 286px; padding: 34px clamp(22px, 5vw, 76px) 80px; }
+    .content { max-width: 1120px; margin: 0 auto; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 28px;
+      padding: clamp(28px, 5vw, 54px);
+      border: 1px solid #ffd7dd;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 86% 18%, rgba(255, 93, 115, .18), transparent 30%),
+        linear-gradient(135deg, #fff 20%, #fff4f5);
+      box-shadow: var(--shadow);
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      color: var(--brand);
+      background: white;
+      border: 1px solid #ffd2d9;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    h1 { max-width: 760px; margin: 15px 0 10px; font-size: clamp(30px, 4vw, 50px); line-height: 1.18; letter-spacing: -.04em; }
+    .hero p { max-width: 760px; margin: 0; color: var(--muted); font-size: 16px; }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .pill { padding: 6px 10px; border-radius: 999px; background: white; border: 1px solid var(--line); font-size: 12px; }
+    .guide-section {
+      margin: 0 0 26px;
+      padding: clamp(20px, 3vw, 34px);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 8px 30px rgba(24, 24, 27, .045);
+      scroll-margin-top: 18px;
+    }
+    .guide-section[hidden] { display: none; }
+    .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .kicker { margin: 0 0 4px; color: var(--brand); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    h2 { margin: 0; font-size: clamp(23px, 3vw, 31px); line-height: 1.3; }
+    h3 { margin: 24px 0 8px; font-size: 18px; }
+    .lead { margin: 8px 0 0; color: var(--muted); }
+    .complete-label {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .complete-label:has(input:checked) { color: var(--ok); border-color: #a7e7cf; background: #effcf6; }
+    .complete-label input { accent-color: var(--ok); }
+    .quick-grid, .mode-grid, .two-col, .three-col {
+      display: grid;
+      gap: 14px;
+    }
+    .quick-grid { grid-template-columns: repeat(3, 1fr); }
+    .mode-grid, .three-col { grid-template-columns: repeat(3, 1fr); }
+    .two-col { grid-template-columns: repeat(2, 1fr); }
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfbfc;
+    }
+    .card .num {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 9px;
+      place-items: center;
+      border-radius: 50%;
+      color: white;
+      background: var(--brand);
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .card strong { display: block; margin-bottom: 4px; }
+    .card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .ui-figure { margin: 20px 0 14px; }
+    .image-wrap {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #d9d9de;
+      border-radius: 14px;
+      background: #eee;
+      box-shadow: var(--shadow);
+      cursor: zoom-in;
+    }
+    .image-wrap img { display: block; width: 100%; height: auto; }
+    .marker {
+      position: absolute;
+      left: var(--x);
+      top: var(--y);
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      transform: translate(-50%, -50%);
+      border: 3px solid white;
+      border-radius: 50%;
+      color: white;
+      background: var(--brand);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .36);
+      font-size: 13px;
+      font-weight: 800;
+      pointer-events: none;
+    }
+    figcaption { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .steps {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+    .steps li {
+      position: relative;
+      min-height: 34px;
+      margin: 9px 0;
+      padding-left: 42px;
+      counter-increment: step;
+    }
+    .steps li::before {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 50%;
+      color: white;
+      background: var(--brand);
+      content: counter(step);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .steps b { font-weight: 700; }
+    .note, .warning, .success {
+      margin: 16px 0 0;
+      padding: 13px 15px;
+      border-radius: 12px;
+      font-size: 13px;
+    }
+    .note { color: #31506d; background: #eff7ff; border: 1px solid #cde4fb; }
+    .warning { color: var(--warn); background: #fff8e8; border: 1px solid #f1dca7; }
+    .success { color: var(--ok); background: #effcf6; border: 1px solid #b7ead4; }
+    .danger { color: var(--danger); font-weight: 700; }
+    .root-diagram { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 18px 0; }
+    .root-box { padding: 16px; border-radius: 13px; border: 1px solid var(--line); background: #fbfbfc; }
+    .root-box.data { border-color: #9fdfc6; background: #f1fcf7; }
+    .root-box code { display: block; margin-bottom: 6px; font-weight: 800; }
+    .checklist { display: grid; gap: 8px; padding: 0; list-style: none; }
+    .checklist li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfbfc; }
+    .checklist li::before { margin-right: 8px; color: var(--ok); content: "✓"; font-weight: 900; }
+    details { margin: 9px 0; border: 1px solid var(--line); border-radius: 11px; background: #fbfbfc; }
+    summary { padding: 12px 14px; cursor: pointer; font-weight: 700; }
+    details p, details ul { margin: 0; padding: 0 18px 14px 34px; color: var(--muted); }
+    .empty-search {
+      display: none;
+      padding: 26px;
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      text-align: center;
+      color: var(--muted);
+      background: white;
+    }
+    .back-top {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 8;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 50%;
+      color: white;
+      background: var(--brand);
+      box-shadow: 0 8px 24px rgba(207, 0, 36, .28);
+      cursor: pointer;
+    }
+    dialog {
+      width: min(96vw, 1500px);
+      max-width: none;
+      padding: 0;
+      border: 0;
+      border-radius: 14px;
+      background: transparent;
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, .78); }
+    dialog img { display: block; width: 100%; border-radius: 14px; }
+    .dialog-close {
+      position: fixed;
+      right: 24px;
+      top: 20px;
+      width: 42px;
+      height: 42px;
+      border: 2px solid white;
+      border-radius: 50%;
+      color: white;
+      background: rgba(0, 0, 0, .5);
+      cursor: pointer;
+      font-size: 20px;
+    }
+    footer { padding: 20px 0; color: var(--muted); text-align: center; font-size: 12px; }
+    @media (max-width: 960px) {
+      .sidebar { position: static; width: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+      .toc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      main { margin-left: 0; padding: 22px 16px 60px; }
+      .quick-grid, .mode-grid, .three-col { grid-template-columns: 1fr; }
+      .two-col, .root-diagram { grid-template-columns: 1fr; }
+      .marker { width: 24px; height: 24px; border-width: 2px; }
+    }
+    @media (max-width: 560px) {
+      .toc { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      .complete-label { margin-top: 12px; }
+      .hero { border-radius: 16px; }
+      .guide-section { border-radius: 14px; }
+    }
+    @media print {
+      body { background: white; font-size: 10pt; }
+      .sidebar, .back-top, .complete-label, .dialog-close { display: none !important; }
+      main { margin: 0; padding: 0; }
+      .hero, .guide-section { box-shadow: none; break-inside: avoid; }
+      .guide-section { margin-bottom: 12mm; }
+      .ui-figure { break-inside: avoid; }
+      .image-wrap { box-shadow: none; }
+      a { text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">橘</div>
+        <div><strong>XiaoJuClaw</strong><span>图文操作手册 · 1.2.1</span></div>
+      </div>
+      <div class="progress-card">
+        <div class="progress-label"><span>阅读进度</span><b id="progressText">0 / 17</b></div>
+        <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+      </div>
+      <input class="search" id="searchInput" type="search" placeholder="搜索：模型、工作流、备份……" aria-label="搜索手册">
+      <nav class="toc" id="toc">
+        <a href="#quick">先看：10 分钟上手</a>
+        <a href="#start">1. 启动与登录</a>
+        <a href="#model">2. 配置模型</a>
+        <a href="#today">3. 今日经营</a>
+        <a href="#workbench">4. 数字员工</a>
+        <a href="#chat">5. 聊天执行任务</a>
+        <a href="#agents">6. 管理员工</a>
+        <a href="#knowledge">7. 知识库</a>
+        <a href="#workflow">8. 工作流</a>
+        <a href="#tasks">9. 定时任务</a>
+        <a href="#channels">10. 消息渠道</a>
+        <a href="#media">11. 语音与媒体</a>
+        <a href="#skills-memory">12. 技能与记忆</a>
+        <a href="#fulfillment">13. 卡密库</a>
+        <a href="#diagnostic">14. 日志与排障</a>
+        <a href="#data">15. 备份与升级</a>
+        <a href="#safety">16. 安全与验收</a>
+      </nav>
+      <div class="side-actions">
+        <button type="button" id="printBtn">打印 / 存 PDF</button>
+        <button type="button" id="resetBtn">重置进度</button>
+      </div>
+    </aside>
+
+    <main>
+      <div class="content">
+        <header class="hero" id="top">
+          <span class="hero-badge">真实界面截图 · 完全离线可看</span>
+          <h1>跟着图片操作，完成你的第一个数字员工任务</h1>
+          <p>本手册不是功能名词清单。每一章都对应当前软件界面，并用红色编号标出点击位置。截图使用隔离演示数据，不包含真实用户资料或密钥。</p>
+          <div class="hero-meta">
+            <span class="pill">16 张真实界面图</span>
+            <span class="pill">16 个操作章节</span>
+            <span class="pill">可搜索</span>
+            <span class="pill">可打印 / 保存 PDF</span>
+          </div>
+        </header>
+
+        <div class="empty-search" id="emptySearch">没有找到相关内容，请尝试更短的关键词。</div>
+
+        <section class="guide-section" id="quick" data-search="快速上手 首次使用 十分钟 启动 模型 经营画像 数字员工">
+          <div class="section-head">
+            <div><p class="kicker">建议从这里开始</p><h2>10 分钟完成首次使用</h2><p class="lead">第一次不要配置全部功能，只走通下面 6 步。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="quick">完成本章</label>
+          </div>
+          <div class="quick-grid">
+            <div class="card"><span class="num">1</span><strong>启动并选择模式</strong><p>安装版从桌面打开；便携版运行 Start-XiaoJuClaw.bat。</p></div>
+            <div class="card"><span class="num">2</span><strong>配置一个模型</strong><p>先用一句“请回复配置成功”确认模型可用。</p></div>
+            <div class="card"><span class="num">3</span><strong>填写经营画像</strong><p>告诉软件你做什么、服务谁、目标和红线。</p></div>
+            <div class="card"><span class="num">4</span><strong>选择一张任务卡</strong><p>从低风险任务开始，例如邮件、周报或文案。</p></div>
+            <div class="card"><span class="num">5</span><strong>检查并采用结果</strong><p>重点核对数字、日期、价格、承诺和外部事实。</p></div>
+            <div class="card"><span class="num">6</span><strong>退出后做一次备份</strong><p>完整复制用户数据目录，不要只复制数据库文件。</p></div>
+          </div>
+          <div class="warning"><b>人工确认红线：</b>付款、退款、发布、删除、改价、发货、登录验证等动作，不要直接交给 AI 无人审核执行。</div>
+        </section>
+
+        <section class="guide-section" id="start" data-search="启动 登录 验证码 手机号 邮箱 离线 激活码 设备 积分 安装版 便携版 U盘 SmartScreen">
+          <div class="section-head">
+            <div><p class="kicker">第 1 章</p><h2>启动、登录与离线使用</h2><p class="lead">先确认你拿到的是安装版、U 盘便携版还是离线版。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="start">完成本章</label>
+          </div>
+          <div class="mode-grid">
+            <div class="card"><strong>Windows 安装版</strong><p>从桌面或开始菜单打开，适合固定电脑长期使用。</p></div>
+            <div class="card"><strong>U 盘便携版</strong><p>完整解压后双击 Start-XiaoJuClaw.bat，不要只复制一个 EXE。</p></div>
+            <div class="card"><strong>离线版</strong><p>无需云账号；若配置在线模型，该模型服务仍会联网。</p></div>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img src="assets/ui/01-login.png" alt="XiaoJuClaw 登录页面">
+              <span class="marker" style="--x:85%;--y:40%">1</span>
+              <span class="marker" style="--x:85%;--y:62%">2</span>
+              <span class="marker" style="--x:85%;--y:71%">3</span>
+              <span class="marker" style="--x:85%;--y:78%">4</span>
+            </div>
+            <figcaption>登录页：点击图片可以放大。界面可能随版本微调，以实际按钮文字为准。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>选择手机号或邮箱。</b>输入可接收验证码的账号；昵称可不填。</li>
+            <li><b>点击“获取验证码”。</b>收到后输入验证码完成登录；验证码过期需重新获取。</li>
+            <li><b>云端不可用时选择离线使用。</b>本地聊天、知识库等仍可用，激活和云端能力暂不可用。</li>
+            <li><b>登录前也能打开设置和使用手册。</b>先看手册或先配置模型都可以。</li>
+          </ol>
+          <h3>兑换激活码与管理设备</h3>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/16-activation.png" alt="激活码与设备管理页面">
+              <span class="marker" style="--x:8%;--y:37%">1</span>
+              <span class="marker" style="--x:46%;--y:24%">2</span>
+              <span class="marker" style="--x:30%;--y:51%">3</span>
+              <span class="marker" style="--x:69%;--y:70%">4</span>
+            </div>
+            <figcaption>激活权益仅在线上版且云端可达时生效；离线版不需要激活。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>从侧栏打开“激活与设备”。</b>先确认当前登录的是准备长期使用的账号。</li>
+            <li><b>输入激活码并兑换。</b>兑换前确认套餐、有效期和目标设备。</li>
+            <li><b>检查权益或积分显示。</b>续费、升级和积分包不是同一种商品，以页面实际权益为准。</li>
+            <li><b>查看设备绑定。</b>更换长期使用设备前先阅读购买说明或联系售后。</li>
+          </ol>
+          <div class="note">出现 Windows“未知发布者”时，只使用官方交付文件并核对 SHA-256。不要关闭 Defender，也不要运行来源不明或哈希不一致的文件。</div>
+        </section>
+
+        <section class="guide-section" id="model" data-search="模型 API Key 接口地址 Base URL 自定义模型 401 403 429 设置">
+          <div class="section-head">
+            <div><p class="kicker">第 2 章</p><h2>配置聊天模型</h2><p class="lead">没有可用模型，聊天、工作流和经营简报都无法生成结果。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="model">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/03-models.png" alt="模型设置页面">
+              <span class="marker" style="--x:20%;--y:25%">1</span>
+              <span class="marker" style="--x:57%;--y:18%">2</span>
+              <span class="marker" style="--x:79%;--y:28%">3</span>
+            </div>
+            <figcaption>路径：左下角账号区域 → 设置 → 模型。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>打开“模型”页。</b>左侧红色高亮表示当前设置分类。</li>
+            <li><b>确认当前模型。</b>内置模型是否可用取决于当前版本和账号权益。</li>
+            <li><b>添加自定义模型。</b>按服务商文档填写接口地址、模型 ID 和 API Key，保存后选为当前模型。</li>
+          </ol>
+          <div class="two-col">
+            <div class="card"><strong>测试方法</strong><p>进入聊天发送“请只回复：配置成功”。短消息成功后再执行长文档或工作流。</p></div>
+            <div class="card"><strong>常见错误</strong><p>401/403：Key、地址或权限错误；429：限流或余额不足；超时：网络或服务商异常。</p></div>
+          </div>
+          <div class="warning">API Key 保存在本机用户数据目录，当前不是系统级加密保险箱。不要发送 secrets.json，也不要把生产 Key 留在公共电脑。</div>
+        </section>
+
+        <section class="guide-section" id="today" data-search="今日经营 经营画像 经营简报 目标 自动化 费用 一人公司">
+          <div class="section-head">
+            <div><p class="kicker">第 3 章</p><h2>用“今日经营”安排一天</h2><p class="lead">这里是“一人公司”的每日入口，不是营收看板。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="today">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/02-today.png" alt="今日经营页面">
+              <span class="marker" style="--x:7%;--y:10%">1</span>
+              <span class="marker" style="--x:94%;--y:7%">2</span>
+              <span class="marker" style="--x:39%;--y:39%">3</span>
+              <span class="marker" style="--x:50%;--y:86%">4</span>
+            </div>
+            <figcaption>截图使用虚构的“青禾内容工作室”演示画像，不包含真实经营数据。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>从侧栏进入“今日经营”。</b>顶部可看到工作流、自动化、计划和已知 AI 费用。</li>
+            <li><b>点击“生成经营简报”。</b>系统只使用已确认画像和本地状态；未接入的营收、订单不会被猜测。</li>
+            <li><b>优先完成前三项行动。</b>点击行动卡再进入对应功能，不要同时铺开十多个任务。</li>
+            <li><b>编辑经营画像。</b>至少填写业务、产品、客户、渠道、当前目标和人工确认红线。</li>
+          </ol>
+          <div class="success">原始画像保存在本机；点击“生成经营简报”时，本页所示画像摘要会发送给你选择的模型服务商。建议写“本周交付 3 份方案”这类可验收目标，不要只写“把业务做好”。</div>
+        </section>
+
+        <section class="guide-section" id="workbench" data-search="数字员工 任务卡 自动流水线 办公 电商 创作 财务 表单">
+          <div class="section-head">
+            <div><p class="kicker">第 4 章</p><h2>从数字员工任务卡开始工作</h2><p class="lead">任务卡是最适合新用户的入口：选场景、填资料、执行。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="workbench">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/04-workbench.png" alt="数字员工任务卡页面">
+              <span class="marker" style="--x:51%;--y:15%">1</span>
+              <span class="marker" style="--x:41%;--y:36%">2</span>
+              <span class="marker" style="--x:52%;--y:62%">3</span>
+            </div>
+            <figcaption>数字员工页面包含普通任务卡与自动流水线。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>先按业务分类筛选。</b>办公、电商、创作、财务、人事、客服、研究和闲鱼分别显示相关任务。</li>
+            <li><b>自动流水线是多步骤任务。</b>执行后进入工作流详情，可以查看每一步和失败原因。</li>
+            <li><b>普通卡是单次交付。</b>打开卡片，按表单提供主题、资料、语气、格式和验收标准。</li>
+          </ol>
+          <div class="note">任务卡不会自动知道你电脑外部的订单、价格、客户或政策。必须通过表单、附件、知识库或已授权工具提供。</div>
+        </section>
+
+        <section class="guide-section" id="chat" data-search="聊天 对话 附件 录音 员工 提示词 发送 停止 反馈">
+          <div class="section-head">
+            <div><p class="kicker">第 5 章</p><h2>在聊天中把要求说清楚</h2><p class="lead">一个可执行请求应包含目标、资料、限制、输出格式和验收标准。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="chat">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/05-chat.png" alt="聊天页面">
+              <span class="marker" style="--x:31%;--y:5%">1</span>
+              <span class="marker" style="--x:65%;--y:51%">2</span>
+              <span class="marker" style="--x:55%;--y:55%">3</span>
+              <span class="marker" style="--x:90%;--y:55%">4</span>
+            </div>
+            <figcaption>聊天页支持选择员工、添加附件、语音输入和多轮任务。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>新建或选择对话。</b>不同客户/项目建议分开对话，避免上下文混淆。</li>
+            <li><b>输入完整要求。</b>示例：“整理附件会议记录，输出决策、负责人、截止日、待确认项；不补写原文没有的事实。”</li>
+            <li><b>添加附件并选择员工。</b>图片需要视觉模型，录音需要先配置语音识别。</li>
+            <li><b>发送后等待完成。</b>长任务可要求先建立计划；遇到付款、发布、删除时要求暂停。</li>
+          </ol>
+          <div class="warning">反馈时说明具体问题，例如“价格写错”“引用不是来自附件”。不要把密码、验证码或临时密钥写进长期记忆。</div>
+        </section>
+
+        <section class="guide-section" id="agents" data-search="Agents 员工 创建员工 人设 模型 技能 岗位">
+          <div class="section-head">
+            <div><p class="kicker">第 6 章</p><h2>管理和创建数字员工</h2><p class="lead">任务卡负责“做什么”，Agents 页面负责“由谁做、用什么模型和技能”。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="agents">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/06-agents.png" alt="Agents 数字员工管理页面">
+              <span class="marker" style="--x:31%;--y:5%">1</span>
+              <span class="marker" style="--x:23%;--y:28%">2</span>
+              <span class="marker" style="--x:67%;--y:54%">3</span>
+            </div>
+            <figcaption>内置员工按岗位隔离工作区、技能和记忆。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>点击“+”创建员工。</b>先用一句话写岗位，再用 AI 优化人设。</li>
+            <li><b>选择已有员工。</b>办公、财务、电商、客服等员工职责不同。</li>
+            <li><b>在详情区检查模型、技能和人设。</b>新员工先用非敏感小任务测试。</li>
+          </ol>
+          <div class="note">不要把财务、删除、发货和外部发布等全部权限集中给一个“万能员工”。职责越清楚，错误越容易发现。</div>
+        </section>
+
+        <section class="guide-section" id="knowledge" data-search="知识库 上传 文档 PDF DOCX TXT MD 引用 搜索 OCR">
+          <div class="section-head">
+            <div><p class="kicker">第 7 章</p><h2>建立可引用的知识库</h2><p class="lead">把产品手册、报价、制度和 FAQ 交给员工，并要求回答注明来源。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="knowledge">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/07-knowledge.png" alt="知识库页面">
+              <span class="marker" style="--x:96%;--y:5%">1</span>
+              <span class="marker" style="--x:55%;--y:17%">2</span>
+            </div>
+            <figcaption>支持 txt、md、pdf、docx，单文件上限以界面提示为准。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>点击“上传文档”。</b>等待解析完成；不要上传不需要处理的客户秘密。</li>
+            <li><b>先搜索一个原文关键词。</b>确认文档可检索，再到聊天中要求“只根据知识库回答并列出来源”。</li>
+          </ol>
+          <div class="warning">扫描图片型 PDF 可能没有可提取文字。当前不要假设所有扫描件都能自动 OCR，必要时先转换为可复制文本。</div>
+        </section>
+
+        <section class="guide-section" id="workflow" data-search="工作流 多步骤 运行 历史 续跑 失败 成本 工具">
+          <div class="section-head">
+            <div><p class="kicker">第 8 章</p><h2>运行并检查工作流</h2><p class="lead">工作流把重复业务拆成可见、可恢复的步骤。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="workflow">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/08-workflows.png" alt="工作流列表页面">
+              <span class="marker" style="--x:18%;--y:20%">1</span>
+              <span class="marker" style="--x:94%;--y:20%">2</span>
+              <span class="marker" style="--x:97%;--y:20%">3</span>
+            </div>
+            <figcaption>每条工作流显示步骤数、节点类型和执行员工。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>展开流程查看完整步骤。</b>确认它是否会调用工具、AI 或专用员工。</li>
+            <li><b>点击“运行”并填写输入。</b>先用少量真实数据验证，不要直接做大批量。</li>
+            <li><b>打开运行历史。</b>失败时查看具体步骤，修复模型、网络、输入或权限后再点续跑。</li>
+          </ol>
+          <div class="note">不要连续重复点击“运行”，否则可能产生多次模型费用。已修改过流程定义的旧运行可能需要重新发起。</div>
+        </section>
+
+        <section class="guide-section" id="tasks" data-search="定时任务 计划 Cron 间隔 一次性 推送 渠道 休眠">
+          <div class="section-head">
+            <div><p class="kicker">第 9 章</p><h2>创建定时任务</h2><p class="lead">让指定员工按间隔、日周月或指定时间执行任务。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="tasks">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/09-tasks-create.png" alt="创建定时任务页面">
+              <span class="marker" style="--x:31%;--y:5%">1</span>
+              <span class="marker" style="--x:52%;--y:14%">2</span>
+              <span class="marker" style="--x:52%;--y:32%">3</span>
+              <span class="marker" style="--x:47%;--y:55%">4</span>
+              <span class="marker" style="--x:48%;--y:72%">5</span>
+              <span class="marker" style="--x:37%;--y:78%">6</span>
+            </div>
+            <figcaption>路径：定时任务 → 左上角“+”。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>点击“+”。</b>打开创建表单。</li>
+            <li><b>填写名称和说明。</b>名称要能看出执行频率和目的。</li>
+            <li><b>选择员工并写完整提示词。</b>明确输入来源、输出格式和禁止事项。</li>
+            <li><b>选择间隔、Cron 或一次性。</b>第一次建议设置 5 分钟后的一次性任务。</li>
+            <li><b>选择结果投递。</b>可只保存记录，或推送到已配置渠道。</li>
+            <li><b>创建后检查运行记录。</b>连续失败应先停用，避免重复消耗。</li>
+          </ol>
+          <div class="warning"><b>本机调度限制：</b>计划时间到达时 XiaoJuClaw 必须正在运行，电脑不能关机或休眠。</div>
+        </section>
+
+        <section class="guide-section" id="channels" data-search="渠道 飞书 企业微信 钉钉 Telegram QQ 微信 消息 推送 机器人">
+          <div class="section-head">
+            <div><p class="kicker">第 10 章</p><h2>接入消息渠道</h2><p class="lead">先用测试账号或测试群完成收发验证，再接真实客户。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="channels">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/10-channels.png" alt="渠道设置页面">
+              <span class="marker" style="--x:44%;--y:10%">1</span>
+              <span class="marker" style="--x:20%;--y:37%">2</span>
+              <span class="marker" style="--x:66%;--y:52%">3</span>
+            </div>
+            <figcaption>路径：设置 → 渠道。不同平台所需凭据以平台后台为准。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>点击“+”添加渠道。</b>选择平台并按表单填写机器人或应用凭据。</li>
+            <li><b>在渠道列表检查状态。</b>一个平台可以有多个实例，名称要便于区分。</li>
+            <li><b>选择实例查看详情。</b>按“收文字 → 发文字 → 发图片/文件”的顺序测试。</li>
+          </ol>
+          <div class="warning">平台权限、限流和风控优先于软件。登录、扫码、验证码和安全确认必须由人完成，不要自动绕过。</div>
+        </section>
+
+        <section class="guide-section" id="media" data-search="语音 媒体 ASR TTS 生图 改图 视频 服务商 API Key">
+          <div class="section-head">
+            <div><p class="kicker">第 11 章</p><h2>配置语音、图片和视频</h2><p class="lead">聊天模型与媒体模型是不同能力，需要单独配置和测试。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="media">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/11-media.png" alt="语音与媒体设置页面">
+              <span class="marker" style="--x:58%;--y:29%">1</span>
+              <span class="marker" style="--x:57%;--y:43%">2</span>
+              <span class="marker" style="--x:49%;--y:53%">3</span>
+              <span class="marker" style="--x:80%;--y:57%">4</span>
+            </div>
+            <figcaption>截图中的接口地址是服务商预设示例，API Key 为空。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>选择服务商预设。</b>预设只负责填入推荐地址和模型，仍需你自己的账号。</li>
+            <li><b>填写接口和 API Key。</b>确保服务商账号有相应能力和余额。</li>
+            <li><b>勾选要应用的能力。</b>语音识别、语音合成、图片和视频可分开配置。</li>
+            <li><b>点击“一键应用”后逐项测试。</b>生成内容仍需检查版权、肖像和平台规则。</li>
+          </ol>
+          <div class="note">图片和视频通常按张/条收费。不要用生产素材做第一次连通测试。</div>
+        </section>
+
+        <section class="guide-section" id="skills-memory" data-search="技能 技能市场 安装 第三方 记忆 MEMORY 偏好 纠正">
+          <div class="section-head">
+            <div><p class="kicker">第 12 章</p><h2>技能与记忆</h2><p class="lead">技能决定员工会怎样做，记忆保存长期事实和偏好。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="skills-memory">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/12-skills.png" alt="技能页面">
+              <span class="marker" style="--x:23%;--y:7%">1</span>
+              <span class="marker" style="--x:52%;--y:13%">2</span>
+              <span class="marker" style="--x:90%;--y:13%">3</span>
+              <span class="marker" style="--x:43%;--y:34%">4</span>
+            </div>
+            <figcaption>技能页面：查看已安装技能、搜索和新建技能。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>在“已安装”与市场之间切换。</b>先用内置技能，不要为了数量安装无关技能。</li>
+            <li><b>按岗位搜索。</b>例如文档、表格、电商或研究。</li>
+            <li><b>新建或导入前检查来源。</b>第三方技能可能包含工具和外部依赖。</li>
+            <li><b>打开技能卡查看说明。</b>只给员工启用工作真正需要的技能。</li>
+          </ol>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/13-memory.png" alt="记忆页面">
+              <span class="marker" style="--x:98%;--y:5%">1</span>
+              <span class="marker" style="--x:43%;--y:16%">2</span>
+            </div>
+            <figcaption>记忆页面：右上角编辑，正文保存长期共用事实。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>点击编辑维护长期记忆。</b>及时更新旧报价、联系人和错误偏好。</li>
+            <li><b>只保存稳定事实。</b>密码、验证码、银行卡和临时密钥不要写入记忆。</li>
+          </ol>
+        </section>
+
+        <section class="guide-section" id="fulfillment" data-search="卡密库 闲鱼 虚拟商品 SKU 库存 导入 发货 台账 订单">
+          <div class="section-head">
+            <div><p class="kicker">第 13 章</p><h2>卡密库与闲鱼辅助发货</h2><p class="lead">先建立 SKU 和库存，再由闲鱼客服员工按唯一订单号辅助领取。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="fulfillment">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/14-fulfillment.png" alt="卡密库页面">
+              <span class="marker" style="--x:96%;--y:5%">1</span>
+              <span class="marker" style="--x:72%;--y:21%">2</span>
+              <span class="marker" style="--x:94%;--y:22%">3</span>
+              <span class="marker" style="--x:42%;--y:29%">4</span>
+            </div>
+            <figcaption>截图中的商品与兑换码均为演示数据。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>点击“新建商品”。</b>创建稳定的 SKU 编码、商品名和交付模板。</li>
+            <li><b>检查可发库存。</b>正式使用前先导入少量测试码。</li>
+            <li><b>使用商品右侧操作导入或清理库存。</b>卡密通常一行一条。</li>
+            <li><b>在发货台账对账。</b>同一订单号会做幂等控制，避免重复领取不同卡密。</li>
+          </ol>
+          <div class="warning"><b>当前真实边界：</b>这不是闲鱼平台无人值守全托管。软件不会自动感知真实订单或自动发送闲鱼消息，卖家仍需核对订单、SKU 和买家状态；退款、纠纷及实物物流必须人工处理。</div>
+        </section>
+
+        <section class="guide-section" id="diagnostic" data-search="日志 排障 诊断 错误 401 403 429 超时 启动 客服">
+          <div class="section-head">
+            <div><p class="kicker">第 14 章</p><h2>查看日志并排查问题</h2><p class="lead">先记录时间和操作，再从同一时间点找错误。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="diagnostic">完成本章</label>
+          </div>
+          <figure class="ui-figure">
+            <div class="image-wrap" data-zoom>
+              <img loading="lazy" src="assets/ui/15-logs.png" alt="日志页面">
+              <span class="marker" style="--x:44%;--y:11%">1</span>
+              <span class="marker" style="--x:79%;--y:11%">2</span>
+              <span class="marker" style="--x:60%;--y:48%">3</span>
+            </div>
+            <figcaption>日志截图来自隔离演示环境，只包含启动和演示数据记录。</figcaption>
+          </figure>
+          <ol class="steps">
+            <li><b>按日期、分类和级别筛选。</b>模型问题看 Agent/工具调用，定时问题看定时任务。</li>
+            <li><b>搜索错误文字或时间。</b>常见状态：401/403 凭据，429 限流，timeout 超时。</li>
+            <li><b>展开相关行查看详情。</b>联系售后时提供版本、时间、操作步骤和脱敏日志。</li>
+          </ol>
+          <div class="two-col">
+            <details><summary>软件打不开</summary><p>确认已完整解压、便携目录齐全、磁盘可写；检查安全软件隔离记录。不要反复删除用户数据目录。</p></details>
+            <details><summary>聊天没有回复</summary><p>检查当前模型、接口地址、Key、模型 ID、余额、限流和网络。</p></details>
+            <details><summary>工作流长时间运行</summary><p>打开运行详情看当前步骤，不要连续重复点击运行。</p></details>
+            <details><summary>定时任务没有执行</summary><p>确认软件当时在运行、电脑未休眠、时区正确、任务已启用。</p></details>
+          </div>
+          <div class="danger">不要把 secrets.json、完整数据库、完整卡密、验证码或未脱敏客户资料发给售后。</div>
+        </section>
+
+        <section class="guide-section" id="data" data-search="数据 备份 恢复 升级 USB U盘 XiaoJuClawData 数据库 WAL 安装版">
+          <div class="section-head">
+            <div><p class="kicker">第 15 章</p><h2>备份、恢复与安全升级</h2><p class="lead">程序可以替换，用户数据绝不能被升级包覆盖。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="data">完成本章</label>
+          </div>
+          <div class="root-diagram">
+            <div class="root-box"><code>XiaoJuClaw\</code><span>程序文件；完整包升级时可以替换。</span></div>
+            <div class="root-box"><code>XiaoJuClawRuntime\</code><span>随包工具；完整包升级时可以替换。</span></div>
+            <div class="root-box"><code>XiaoJuClaw-User-Guide\</code><span>图文操作手册；完整包升级时应同步替换。</span></div>
+            <div class="root-box data"><code>XiaoJuClawData\</code><span>Key、聊天、知识库、任务和工作区；永远保留。</span></div>
+          </div>
+          <h3>正确备份</h3>
+          <ol class="steps">
+            <li>等待聊天、工作流和定时任务结束。</li>
+            <li>退出主窗口和悬浮提醒窗，确认两个 XiaoJuClaw 进程都已结束。</li>
+            <li>便携版复制整个 XiaoJuClawData；安装版在“设置 → 环境”查看实际数据路径。</li>
+            <li>把备份保存到另一块磁盘，并标注日期与版本。</li>
+          </ol>
+          <h3>完整包升级</h3>
+          <ol class="steps">
+            <li>先完成备份。</li>
+            <li>用新包覆盖 XiaoJuClaw、XiaoJuClawRuntime 和 XiaoJuClaw-User-Guide。</li>
+            <li>保留原 XiaoJuClawData，启动后检查 Key、聊天、知识库和任务。</li>
+          </ol>
+          <div class="warning">不要在软件运行时只复制 XiaoJuClaw.db。SQLite 可能同时使用 -wal 和 -shm 文件，单独复制可能得到不完整备份。</div>
+        </section>
+
+        <section class="guide-section" id="safety" data-search="安全 人工确认 验收 隐私 第三方模型 付款 退款 删除 发布 第一天">
+          <div class="section-head">
+            <div><p class="kicker">第 16 章</p><h2>安全边界与第一天验收</h2><p class="lead">完成下面清单后，再接真实客户、生产 Key 和正式渠道。</p></div>
+            <label class="complete-label"><input type="checkbox" data-complete="safety">完成本章</label>
+          </div>
+          <h3>必须人工确认的动作</h3>
+          <div class="three-col">
+            <div class="card"><strong>资金与承诺</strong><p>付款、退款、转账、开票、赔偿、价格和时效承诺。</p></div>
+            <div class="card"><strong>外部与破坏性动作</strong><p>发布、改价、发货、删除、库存清零和批量修改。</p></div>
+            <div class="card"><strong>账号与隐私</strong><p>扫码、验证码、风控、客户资料、完整卡密和商业机密。</p></div>
+          </div>
+          <h3>第一天验收清单</h3>
+          <ul class="checklist">
+            <li>能够启动并确认版本与交付形态。</li>
+            <li>登录或离线模式已说明清楚。</li>
+            <li>模型短消息测试成功。</li>
+            <li>经营画像使用真实但非秘密的信息。</li>
+            <li>至少完成一张低风险任务卡。</li>
+            <li>上传一份测试知识文档并能检索。</li>
+            <li>运行一条工作流并看懂步骤状态。</li>
+            <li>创建一个 5 分钟后的一次性任务。</li>
+            <li>如使用渠道，已在测试会话验证收发。</li>
+            <li>如使用卡密库，已用测试 SKU 和测试订单验证。</li>
+            <li>能找到日志和本手册。</li>
+            <li>退出软件并完成一次完整数据目录备份。</li>
+          </ul>
+          <div class="warning">第三方模型、搜索、媒体和消息渠道可能接收任务输入。只提供完成任务所需的最少数据，并遵守客户授权、隐私、版权和平台规则。</div>
+        </section>
+
+        <footer>
+          XiaoJuClaw 图文操作手册 · 适用版本 1.2.1 · 截图为隔离演示数据<br>
+          官方网站：https://www.xiaojuclaw.top
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <button class="back-top" type="button" id="backTop" aria-label="返回顶部">↑</button>
+  <dialog id="imageDialog" aria-label="软件界面截图预览">
+    <button class="dialog-close" type="button" aria-label="关闭">×</button>
+    <img id="dialogImage" alt="放大的软件界面截图">
+  </dialog>
+
+  <script>
+    (() => {
+      const storageKey = 'xjc-illustrated-guide-progress-v1'
+      const checks = [...document.querySelectorAll('[data-complete]')]
+      const progressText = document.getElementById('progressText')
+      const progressBar = document.getElementById('progressBar')
+      let saved = {}
+      try {
+        const parsed = JSON.parse(localStorage.getItem(storageKey) || '{}')
+        saved = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+      } catch {
+        saved = {}
+      }
+
+      function updateProgress() {
+        const completed = checks.filter((input) => input.checked).length
+        progressText.textContent = `${completed} / ${checks.length}`
+        progressBar.style.width = `${Math.round(completed / checks.length * 100)}%`
+        const state = Object.fromEntries(checks.map((input) => [input.dataset.complete, input.checked]))
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(state))
+        } catch {
+          // Some browsers restrict localStorage for file:// pages. The guide remains fully usable.
+        }
+      }
+
+      checks.forEach((input) => {
+        input.checked = Boolean(saved[input.dataset.complete])
+        input.addEventListener('change', updateProgress)
+      })
+      updateProgress()
+
+      const searchInput = document.getElementById('searchInput')
+      const sections = [...document.querySelectorAll('.guide-section')]
+      const tocLinks = [...document.querySelectorAll('.toc a')]
+      const emptySearch = document.getElementById('emptySearch')
+      searchInput.addEventListener('input', () => {
+        const query = searchInput.value.trim().toLocaleLowerCase('zh-CN')
+        let visible = 0
+        sections.forEach((section) => {
+          const haystack = `${section.dataset.search || ''} ${section.innerText}`.toLocaleLowerCase('zh-CN')
+          const match = !query || haystack.includes(query)
+          section.hidden = !match
+          if (match) visible += 1
+        })
+        tocLinks.forEach((link) => {
+          const target = document.querySelector(link.getAttribute('href'))
+          link.hidden = Boolean(target && target.hidden)
+        })
+        emptySearch.style.display = visible === 0 ? 'block' : 'none'
+      })
+
+      const dialog = document.getElementById('imageDialog')
+      const dialogImage = document.getElementById('dialogImage')
+      document.querySelectorAll('[data-zoom]').forEach((wrap) => {
+        const image = wrap.querySelector('img')
+        wrap.tabIndex = 0
+        wrap.setAttribute('role', 'button')
+        wrap.setAttribute('aria-label', `放大查看：${image?.alt || '软件界面截图'}`)
+        const open = () => {
+          if (!image) return
+          dialogImage.src = image.src
+          dialogImage.alt = image.alt
+          dialog.showModal()
+        }
+        wrap.addEventListener('click', open)
+        wrap.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            open()
+          }
+        })
+      })
+      dialog.querySelector('.dialog-close').addEventListener('click', () => dialog.close())
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close()
+      })
+
+      let printVisibility = null
+      window.addEventListener('beforeprint', () => {
+        printVisibility = {
+          sections: sections.map((section) => section.hidden),
+          links: tocLinks.map((link) => link.hidden),
+        }
+        sections.forEach((section) => { section.hidden = false })
+        tocLinks.forEach((link) => { link.hidden = false })
+      })
+      window.addEventListener('afterprint', () => {
+        if (!printVisibility) return
+        sections.forEach((section, index) => { section.hidden = printVisibility.sections[index] })
+        tocLinks.forEach((link, index) => { link.hidden = printVisibility.links[index] })
+        printVisibility = null
+      })
+      document.getElementById('printBtn').addEventListener('click', () => window.print())
+      document.getElementById('resetBtn').addEventListener('click', () => {
+        checks.forEach((input) => { input.checked = false })
+        updateProgress()
+      })
+      document.getElementById('backTop').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }))
+    })()
+  </script>
+</body>
+</html>
