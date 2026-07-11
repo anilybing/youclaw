@@ -165,6 +165,7 @@ describe('desktop version tooling', () => {
       'utf8',
     ))
     expect(buildRelease).toContain('TAURI_SIGNING_PRIVATE_KEY_PATH')
+    expect(buildRelease).toContain('set /p TAURI_SIGNING_PRIVATE_KEY=<"%TAURI_SIGNING_PRIVATE_KEY_PATH%"')
     expect(buildRelease).toContain('bun run build:tauri:updater')
     expect(updaterConfig.bundle).toMatchObject({
       createUpdaterArtifacts: true,
