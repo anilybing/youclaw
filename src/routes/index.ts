@@ -31,6 +31,7 @@ import { createFulfillmentRoutes } from './fulfillment.ts'
 import { createMcpServerRoutes } from './mcp-server.ts'
 import { createWorkflowsRoutes } from './workflows.ts'
 import { createAgentOpsRoutes } from './agentops.ts'
+import { createBusinessRoutes } from './business.ts'
 import { resolveRuntimeModelConfig } from '../agent/runtime-model.ts'
 import type { AgentManager, AgentQueue } from '../agent/index.ts'
 import type { EventBus } from '../events/index.ts'
@@ -122,6 +123,8 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createWorkflowsRoutes())
   // [XJC-PATCH] Local-only execution traces; protected by the same /api token gate.
   app.route('/api', createAgentOpsRoutes())
+  // [XJC] 一人公司经营入口：本地画像 + 今日自动化经营快照。
+  app.route('/api', createBusinessRoutes())
   // [XJC] 内置 MCP Server（对接 Cursor，路线 A）：默认关、Bearer 鉴权，挂根路径 /mcp。
   // 对话桥复用 web 消息同款链路（router.handleInbound + EventBus complete/error）。
   app.route('/', createMcpServerRoutes({
