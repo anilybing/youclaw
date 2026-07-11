@@ -5,6 +5,7 @@ import { inferChannelType } from '../channel/config-schema.ts'
 import { getLogger } from '../logger/index.ts'
 import type { SkillsLoader } from '../skills/index.ts'
 import type { MemoryManager } from '../memory/index.ts'
+import type { MediaStatus } from '../media/types.ts'
 import type { AgentConfig } from './types.ts'
 import { getOrLoadBootstrapDocs } from './bootstrap-cache.ts'
 import type { BrowserDriver, BrowserTarget } from '../browser/index.ts'
@@ -48,6 +49,9 @@ export class PromptBuilder {
       browserProfileId?: string
       browserDisabled?: boolean
       browserTarget?: BrowserTarget
+      mediaStatus?: MediaStatus
+      mediaTurnInstruction?: string | null
+      availableToolNames?: string[]
       browserProfile?: {
         id: string
         driver: BrowserDriver
@@ -156,12 +160,18 @@ export class PromptBuilder {
       parts.push(channelContext)
     }
 
-    parts.push(
-      `## Image Handling Rule\n` +
-      `When the user sends or references image files (jpg, png, gif, webp, bmp, svg, etc.), you MUST use the \`mcp__minimax__understand_image\` tool to analyze them.\n` +
-      `NEVER use the \`Read\` tool on image files — it cannot interpret visual content and will only return useless binary data.\n` +
-      `This rule is absolute and has no exceptions.`
-    )
+    const availableTools = new Set(context?.availableToolNames ?? [])
+    const mediaRule = this.buildMediaGenerationRule(context?.mediaStatus, availableTools)
+    if (mediaRule) parts.push(mediaRule)
+    if (context?.mediaTurnInstruction) parts.push(context.mediaTurnInstruction)
+
+    if (availableTools.has('mcp__minimax__understand_image')) {
+      parts.push(
+        `## Image Understanding Rule\n` +
+        `When the task requires analyzing, describing, or extracting information from an image, use \`mcp__minimax__understand_image\`.\n` +
+        `Do not use the \`Read\` tool on image files. For an explicit image-edit request, \`mcp__media__edit_image\` may operate directly from the user's instruction; call the understanding tool first only when visual inspection is actually needed.`
+      )
+    }
 
     parts.push(
       `## Document Handling Rule\n` +
@@ -181,7 +191,8 @@ export class PromptBuilder {
     // [XJC] 对话式技能自管理规则（覆盖已有安装的旧 AGENTS.md，见 skills-mcp.ts）
     parts.push(
       `## Skill Self-Service Rule\n` +
-      `When a user request needs a capability your current skills do not cover, first call \`mcp__skills__list_skills\`; enable an installed skill yourself with \`mcp__skills__set_skill_enabled\`, or — only after explaining what/where-from/why and getting the user's consent — install one with \`mcp__skills__install_skill\`. Then continue the user's original request immediately. Never ask the user to toggle skills in the settings UI.`
+      `When a user request needs a capability your current skills do not cover, first call \`mcp__skills__list_skills\`; enable an installed skill yourself with \`mcp__skills__set_skill_enabled\`, or — only after explaining what/where-from/why and getting the user's consent — install one with \`mcp__skills__install_skill\`. Then continue the user's original request immediately. Never ask the user to toggle skills in the settings UI.\n` +
+      `This rule does NOT apply to built-in runtime tools that are actually listed as available in this prompt, including media tools; use those tools under their dedicated rules.`
     )
 
     if (context) {
@@ -191,6 +202,28 @@ export class PromptBuilder {
     }
 
     return parts.join('\n\n')
+  }
+
+  private buildMediaGenerationRule(status: MediaStatus | undefined, availableTools: ReadonlySet<string>): string | null {
+    const hasGenerateImage = availableTools.has('mcp__media__generate_image')
+    const hasEditImage = availableTools.has('mcp__media__edit_image')
+    const hasGenerateVideo = availableTools.has('mcp__media__generate_video')
+    if (!hasGenerateImage && !hasEditImage && !hasGenerateVideo) return null
+    const imageState = status ? (status.imageConfigured ? 'configured' : 'not configured') : 'unknown'
+    const editState = status ? (status.imageEditConfigured ? 'configured' : 'not configured') : 'unknown'
+    const videoState = status ? (status.videoConfigured ? 'configured' : 'not configured') : 'unknown'
+
+    return (
+      `## Built-in Media Generation Rule\n` +
+      `Image and video generation are built-in runtime tools, NOT skills. ` +
+      `Never call skill list/discovery/install tools merely to look for an image-generation capability.\n` +
+      `Available media tools: ${[...availableTools].filter((name) => name.startsWith('mcp__media__')).join(', ')}.\n` +
+      `Current media configuration: text-to-image=${hasGenerateImage ? imageState : 'tool-unavailable'}, image-edit=${hasEditImage ? editState : 'tool-unavailable'}, video=${hasGenerateVideo ? videoState : 'tool-unavailable'}.\n` +
+      `- Tool execution enforces per-turn authorization and call limits. Never infer billing authorization from capability questions, tutorials, troubleshooting, or prompt-writing requests.\n` +
+      `- If requested visual content is missing, ask only for the missing subject/style/use details; do not claim that an image skill is missing.\n` +
+      `- Video generation requires an explicit billed-call confirmation that is enforced by the runtime before the tool can execute.\n` +
+      `- If the corresponding configuration is not configured or a media tool returns MEDIA_NOT_CONFIGURED, guide the user to 设置 → 语音与媒体. Never ask them to paste secrets into chat.`
+    )
   }
 
   private loadWorkspaceDocs(

@@ -19,6 +19,8 @@ export interface MediaFileResult {
 export const MEDIA_NOT_CONFIGURED = 'MEDIA_NOT_CONFIGURED'
 export const MEDIA_PROVIDER_ERROR = 'MEDIA_PROVIDER_ERROR'
 export const MEDIA_INVALID_INPUT = 'MEDIA_INVALID_INPUT'
+export const MEDIA_AUTHORIZATION_REQUIRED = 'MEDIA_AUTHORIZATION_REQUIRED'
+export const MEDIA_CALL_LIMIT = 'MEDIA_CALL_LIMIT'
 
 export class MediaError extends Error {
   code: string

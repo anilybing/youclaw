@@ -29,9 +29,12 @@ import type { SecretsManager } from './secrets.ts'
 import { buildRuntimeCustomTools, filterConfiguredTools } from './runtime-tools.ts'
 import { createSubagentTool } from './subagent-mcp.ts'
 import { AgentCompiler } from './compiler.ts'
+import { resolveMediaTurnContext } from './media-intent.ts'
 import { getEvolutionService } from '../evolution/service.ts'
 import { buildLessonsBlock } from '../feedback/lessons.ts'
 import { buildPlanBlock } from '../plans/store.ts'
+import { getMediaService } from '../media/service.ts'
+import type { MediaStatus } from '../media/types.ts'
 import { resolveRuntimeModelConfig } from './runtime-model.ts'
 import {
   classifyToolEffect,
@@ -504,28 +507,13 @@ export class AgentRuntime {
     } catch { /* 计划注入失败不影响对话 */ }
 
     let fullText = ''
-
-    const systemPrompt = this.promptBuilder.build(
-      this.config.workspaceDir,
-      this.config,
-      {
-        agentId,
-        chatId,
-        requestedSkills,
-        skillsPrompt,
-        memoryContext,
-        browserProfileId: effectiveBrowserProfileId,
-        browserDisabled,
-        browserTarget,
-        browserProfile: resolvedBrowserProfile
-          ? {
-              id: resolvedBrowserProfile.id,
-              driver: resolvedBrowserProfile.driver,
-              userDataDir: resolvedBrowserProfile.userDataDir,
-            }
-          : undefined,
-      },
-    )
+    let mediaStatus: MediaStatus | undefined
+    try {
+      mediaStatus = getMediaService().status()
+    } catch {
+      // Advisory prompt context only; media tool execution remains authoritative.
+    }
+    const mediaTurnContext = resolveMediaTurnContext(chatId, prompt, mediaStatus)
 
     const cwd = this.config.workspaceDir
     const model = resolvePiModel(modelConfig)
@@ -567,6 +555,7 @@ export class AgentRuntime {
       documentAttachmentPaths: attachments
         ?.map((attachment) => attachment.filePath)
         .filter((filePath): filePath is string => typeof filePath === 'string' && filePath.length > 0),
+      mediaAuthorization: mediaTurnContext.authorization,
       browserProfileId: effectiveBrowserProfileId,
       browserTarget,
       reservedToolNames: tools.map((tool) => tool.name),
@@ -599,6 +588,42 @@ export class AgentRuntime {
     } catch (err) {
       getLogger().warn({ agentId, error: err instanceof Error ? err.message : String(err), category: 'subagent' }, 'Failed to mount delegate tool')
     }
+    const availableToolNames = [...tools, ...effectiveCustomTools].map((tool) => tool.name)
+    const requiredMediaTool = mediaTurnContext.intent === 'generate-image'
+      ? 'mcp__media__generate_image'
+      : mediaTurnContext.intent === 'edit-image'
+        ? 'mcp__media__edit_image'
+        : mediaTurnContext.intent === 'generate-video'
+          ? 'mcp__media__generate_video'
+          : null
+    const mediaTurnInstruction = requiredMediaTool && !availableToolNames.includes(requiredMediaTool)
+      ? `<runtime_media_instruction>The current employee configuration does not allow ${requiredMediaTool}. ` +
+        `Do not search for a skill or ask for an API Key. Explain that this employee must be allowed to use the built-in media tool.</runtime_media_instruction>`
+      : mediaTurnContext.systemInstruction
+    const systemPrompt = this.promptBuilder.build(
+      this.config.workspaceDir,
+      this.config,
+      {
+        agentId,
+        chatId,
+        requestedSkills,
+        skillsPrompt,
+        memoryContext,
+        browserProfileId: effectiveBrowserProfileId,
+        browserDisabled,
+        browserTarget,
+        mediaStatus,
+        mediaTurnInstruction,
+        availableToolNames,
+        browserProfile: resolvedBrowserProfile
+          ? {
+              id: resolvedBrowserProfile.id,
+              driver: resolvedBrowserProfile.driver,
+              userDataDir: resolvedBrowserProfile.userDataDir,
+            }
+          : undefined,
+      },
+    )
     let modelRound = 0
     let workflowBudgetStop: WorkflowBudgetError | null = null
     const pricingKnown = isModelPriceKnown(model)

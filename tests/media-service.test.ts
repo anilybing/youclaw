@@ -319,19 +319,39 @@ describe('MediaService.generateVideo', () => {
 })
 
 describe('assertEditableImagePath 输入安全', () => {
-  test('工作区/附件目录内的图片放行', () => {
-    const okPath = resolve(getPaths().data, 'attachments', 'src-image.png')
-    mkdirSync(resolve(getPaths().data, 'attachments'), { recursive: true })
-    writeFileSync(okPath, FAKE_PNG)
-    expect(assertEditableImagePath(okPath)).toBe(resolve(okPath))
+  const workspaceDir = resolve(getPaths().workspace, 'agents', 'media-scope-agent')
+  const attachmentDir = resolve(getPaths().data, 'attachments')
+
+  test('当前员工工作区与当前消息精确附件放行', () => {
+    const workspaceImage = resolve(workspaceDir, 'workspace-image.png')
+    const attachmentImage = resolve(attachmentDir, 'current-message.png')
+    mkdirSync(workspaceDir, { recursive: true })
+    mkdirSync(attachmentDir, { recursive: true })
+    writeFileSync(workspaceImage, FAKE_PNG)
+    writeFileSync(attachmentImage, FAKE_PNG)
+    const scope = { workspaceDir, attachmentPaths: [attachmentImage] }
+    expect(assertEditableImagePath(workspaceImage, scope)).toBe(resolve(workspaceImage))
+    expect(assertEditableImagePath(attachmentImage, scope)).toBe(resolve(attachmentImage))
+  })
+
+  test('拒绝其他会话附件和其他员工工作区图片', () => {
+    const otherAttachment = resolve(attachmentDir, 'other-message.png')
+    const otherWorkspace = resolve(getPaths().workspace, 'agents', 'other-agent', 'private.png')
+    mkdirSync(resolve(otherWorkspace, '..'), { recursive: true })
+    writeFileSync(otherAttachment, FAKE_PNG)
+    writeFileSync(otherWorkspace, FAKE_PNG)
+    const scope = { workspaceDir, attachmentPaths: [] }
+    expect(() => assertEditableImagePath(otherAttachment, scope)).toThrow(/当前消息附件/)
+    expect(() => assertEditableImagePath(otherWorkspace, scope)).toThrow(/当前员工工作区/)
   })
 
   test('目录外文件拒绝（防 prompt 注入外泄本地文件）', () => {
     const outside = resolve(getPaths().data, '..', 'outside-secret.png')
     writeFileSync(outside, FAKE_PNG)
     try {
-      expect(() => assertEditableImagePath(outside)).toThrow(MediaError)
-      expect(() => assertEditableImagePath(outside)).toThrow(/工作区/)
+      const scope = { workspaceDir, attachmentPaths: [] }
+      expect(() => assertEditableImagePath(outside, scope)).toThrow(MediaError)
+      expect(() => assertEditableImagePath(outside, scope)).toThrow(/当前员工工作区/)
     } finally {
       rmSync(outside, { force: true })
     }
@@ -340,11 +360,19 @@ describe('assertEditableImagePath 输入安全', () => {
   test('非图片扩展名拒绝', () => {
     const bad = resolve(getPaths().data, 'attachments', 'notes.txt')
     writeFileSync(bad, 'text')
-    const err = (() => { try { assertEditableImagePath(bad); return null } catch (e) { return e as MediaError } })()
+    const err = (() => {
+      try {
+        assertEditableImagePath(bad, { workspaceDir, attachmentPaths: [bad] })
+        return null
+      } catch (e) {
+        return e as MediaError
+      }
+    })()
     expect(err?.code).toBe(MEDIA_INVALID_INPUT)
   })
 
   test('不存在的文件拒绝', () => {
-    expect(() => assertEditableImagePath(resolve(getPaths().data, 'attachments', 'ghost.png'))).toThrow(MediaError)
+    const ghost = resolve(getPaths().data, 'attachments', 'ghost.png')
+    expect(() => assertEditableImagePath(ghost, { workspaceDir, attachmentPaths: [ghost] })).toThrow(MediaError)
   })
 })

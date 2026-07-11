@@ -31,6 +31,13 @@ describe('runtime-tools', () => {
       secretsManager: null,
       chatId: 'chat-1',
       agentId: 'agent-1',
+      workspaceDir: process.cwd(),
+      mediaAuthorization: {
+        allowGenerateImage: false,
+        allowEditImage: false,
+        allowGenerateVideo: false,
+        reason: 'test',
+      },
     })
 
     const names = (result.tools as ToolDefinition[]).map((tool) => tool.name)
@@ -39,6 +46,9 @@ describe('runtime-tools', () => {
     expect(names).toContain('mcp__skills__list_skills')
     expect(names).toContain('mcp__skills__set_skill_enabled')
     expect(names).toContain('mcp__skills__install_skill')
+    expect(names).toContain('mcp__media__generate_image')
+    expect(names).toContain('mcp__media__edit_image')
+    expect(names).toContain('mcp__media__generate_video')
 
     await result.dispose()
   })

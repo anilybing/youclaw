@@ -4,9 +4,14 @@
 
 import { Type } from '@mariozechner/pi-ai'
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
-import { assertEditableImagePath, getMediaService } from '../media/service.ts'
-import { MediaError } from '../media/types.ts'
+import { assertEditableImagePath, getMediaService, type LocalMediaInputScope } from '../media/service.ts'
+import {
+  MEDIA_AUTHORIZATION_REQUIRED,
+  MEDIA_CALL_LIMIT,
+  MediaError,
+} from '../media/types.ts'
 import { getLogger } from '../logger/index.ts'
+import type { MediaToolAuthorization } from './media-intent.ts'
 
 const GenerateImageParams = Type.Object({
   prompt: Type.String({ description: 'Detailed description of the image to generate (Chinese or English). Include subject, style, composition, lighting.' }),
@@ -32,27 +37,66 @@ function ok(text: string): MediaToolResult {
 }
 
 function rethrow(err: unknown, fallback: string): never {
-  if (err instanceof MediaError) throw new Error(err.message)
+  if (err instanceof MediaError) throw new Error(`${err.code}: ${err.message}`)
   getLogger().error({ error: String(err), category: 'media' }, fallback)
   throw new Error(fallback)
 }
 
-export function createMediaTools(params: { agentId: string }): ToolDefinition[] {
+export function createMediaTools(params: {
+  agentId: string
+  workspaceDir: string
+  attachmentPaths?: string[]
+  authorization: MediaToolAuthorization
+}): ToolDefinition[] {
   const service = getMediaService()
   const agentId = params.agentId
+  const inputScope: LocalMediaInputScope = {
+    workspaceDir: params.workspaceDir,
+    attachmentPaths: params.attachmentPaths,
+  }
+  let imageCalls = 0
+  let videoCalls = 0
+
+  const authorizeImageCall = (allowed: boolean, action: string) => {
+    if (!allowed) {
+      throw new MediaError(
+        MEDIA_AUTHORIZATION_REQUIRED,
+        `${action}未获得当前用户回合的明确授权，请先确认用户是在执行操作而非咨询能力`,
+      )
+    }
+    if (imageCalls >= 1) {
+      throw new MediaError(MEDIA_CALL_LIMIT, '当前用户回合最多执行一次生图或改图；继续生成请先向用户确认')
+    }
+    imageCalls += 1
+  }
+
+  const authorizeVideoCall = () => {
+    if (!params.authorization.allowGenerateVideo) {
+      throw new MediaError(
+        MEDIA_AUTHORIZATION_REQUIRED,
+        '视频生成需要用户对本次付费调用进行明确确认',
+      )
+    }
+    if (videoCalls >= 1) {
+      throw new MediaError(MEDIA_CALL_LIMIT, '当前用户回合最多执行一次视频生成')
+    }
+    videoCalls += 1
+  }
 
   return [
     {
       name: 'mcp__media__generate_image',
       label: 'mcp__media__generate_image',
       description:
-        'Generate an image from a text prompt using the user-configured image API. '
+        'BUILT-IN text-to-image tool (not a skill). 用户明确要求“生成图片/生图/画一张/做海报”且画面信息足够时，直接调用本工具；不要搜索技能，也不要再次索要已在设置中保存的 API Key。 '
+        + 'Generate an image from a text prompt using the user-configured image API. '
         + 'COST: each call bills the user\'s API account per image — do not call repeatedly without need; refine the prompt instead. '
         + 'Returns the saved file path (媒体产出 folder). Tell the user the path; in channel chats you may send the file via mcp__message__send_to_current_chat. '
         + 'If not configured, guide the user to 设置 → 语音与媒体.',
       parameters: GenerateImageParams,
       async execute(_id, args: { prompt: string }) {
         try {
+          authorizeImageCall(params.authorization.allowGenerateImage, '图像生成')
           const result = await service.generateImage(args.prompt, agentId)
           return ok(JSON.stringify({ saved: result.filePath, note: '图片已生成并保存到「媒体产出」。' }, null, 2))
         } catch (err) {
@@ -64,13 +108,15 @@ export function createMediaTools(params: { agentId: string }): ToolDefinition[] 
       name: 'mcp__media__edit_image',
       label: 'mcp__media__edit_image',
       description:
-        'Edit an existing local image with a natural-language instruction (instruction-based editing: change background, remove/replace objects, adjust style/text) while preserving the rest. '
+        'BUILT-IN image editing tool (not a skill). 用户要求修改已上传或刚生成的图片时直接调用。 '
+        + 'Edit an existing local image with a natural-language instruction (instruction-based editing: change background, remove/replace objects, adjust style/text) while preserving the rest. '
         + 'Use when the user uploads an image and asks to modify it, or to iterate on a previously generated image (pass the last output path for multi-turn editing). '
         + 'COST: bills per image. Source image must be inside chat attachments or the workspace. Returns the new file path.',
       parameters: EditImageParams,
       async execute(_id, args: { imagePath: string; prompt: string }) {
         try {
-          const safePath = assertEditableImagePath(args.imagePath)
+          const safePath = assertEditableImagePath(args.imagePath, inputScope)
+          authorizeImageCall(params.authorization.allowEditImage, '图片编辑')
           const result = await service.editImage(safePath, args.prompt, agentId)
           return ok(JSON.stringify({ saved: result.filePath, note: '改图完成，已保存到「媒体产出」。继续修改可把该路径再次传入本工具。' }, null, 2))
         } catch (err) {
@@ -82,13 +128,14 @@ export function createMediaTools(params: { agentId: string }): ToolDefinition[] 
       name: 'mcp__media__generate_video',
       label: 'mcp__media__generate_video',
       description:
-        'Generate a short video from a text prompt (optionally seeded with a source image for image-to-video). '
+        'BUILT-IN video generation tool (not a skill). Generate a short video from a text prompt (optionally seeded with a source image for image-to-video). '
         + 'COST: video generation is EXPENSIVE and slow (minutes). POLICY: before calling, you MUST confirm with the user (prompt + that it will bill their API account). '
         + 'Blocks until the video is ready (up to 10 minutes) and returns the saved .mp4 path.',
       parameters: GenerateVideoParams,
       async execute(_id, args: { prompt: string; imagePath?: string }) {
         try {
-          const safePath = args.imagePath ? assertEditableImagePath(args.imagePath) : undefined
+          const safePath = args.imagePath ? assertEditableImagePath(args.imagePath, inputScope) : undefined
+          authorizeVideoCall()
           const result = await service.generateVideo(args.prompt, agentId, safePath)
           return ok(JSON.stringify({ saved: result.filePath, note: '视频已生成并保存到「媒体产出」。' }, null, 2))
         } catch (err) {

@@ -143,6 +143,77 @@ describe('PromptBuilder channel context', () => {
     expect(prompt).not.toContain('Persistent scheduled tasks are managed through IPC task files')
     expect(prompt).not.toContain('IPC Directory:')
   })
+
+  test('routes configured image requests to the built-in media tool instead of skill discovery', () => {
+    const builder = new PromptBuilder(null, null)
+    const prompt = builder.build(
+      resolve(import.meta.dir, '..'),
+      { workspaceDir: resolve(import.meta.dir, '..') } as AgentConfig,
+      {
+        agentId: 'default',
+        chatId: 'web:chat-media',
+        mediaStatus: {
+          imageConfigured: true,
+          imageEditConfigured: true,
+          videoConfigured: false,
+        },
+        mediaTurnInstruction: '<runtime_media_instruction>authorized test turn</runtime_media_instruction>',
+        availableToolNames: [
+          'Read',
+          'mcp__media__generate_image',
+          'mcp__media__edit_image',
+          'mcp__media__generate_video',
+        ],
+      },
+    )
+
+    expect(prompt).toContain('## Built-in Media Generation Rule')
+    expect(prompt).toContain('text-to-image=configured')
+    expect(prompt).toContain('Tool execution enforces per-turn authorization and call limits')
+    expect(prompt).toContain('Never call skill list/discovery/install tools')
+    expect(prompt).toContain('do not claim that an image skill is missing')
+    expect(prompt).toContain('This rule does NOT apply to built-in runtime tools')
+    expect(prompt).toContain('<runtime_media_instruction>authorized test turn</runtime_media_instruction>')
+    expect(prompt).not.toContain('## Image Understanding Rule')
+  })
+
+  test('only injects image understanding policy when the VLM tool is actually available', () => {
+    const builder = new PromptBuilder(null, null)
+    const prompt = builder.build(
+      resolve(import.meta.dir, '..'),
+      { workspaceDir: resolve(import.meta.dir, '..') } as AgentConfig,
+      {
+        agentId: 'default',
+        chatId: 'web:chat-vlm',
+        availableToolNames: ['Read', 'mcp__minimax__understand_image'],
+      },
+    )
+
+    expect(prompt).toContain('## Image Understanding Rule')
+    expect(prompt).toContain('mcp__minimax__understand_image')
+    expect(prompt).toContain('edit_image` may operate directly')
+  })
+
+  test('does not advertise configured media tools that were filtered out for the employee', () => {
+    const builder = new PromptBuilder(null, null)
+    const prompt = builder.build(
+      resolve(import.meta.dir, '..'),
+      { workspaceDir: resolve(import.meta.dir, '..') } as AgentConfig,
+      {
+        agentId: 'restricted',
+        chatId: 'web:chat-restricted',
+        mediaStatus: {
+          imageConfigured: true,
+          imageEditConfigured: true,
+          videoConfigured: true,
+        },
+        availableToolNames: ['Read'],
+      },
+    )
+
+    expect(prompt).not.toContain('## Built-in Media Generation Rule')
+    expect(prompt).not.toContain('mcp__media__generate_image')
+  })
 })
 
 describe('PromptBuilder bootstrap snapshots', () => {

@@ -13,6 +13,7 @@ import { createEmployeeTools } from './employee-mcp.ts'
 import { createVoiceTools } from './voice-mcp.ts'
 import { createFulfillmentTools } from './fulfillment-mcp.ts'
 import { createWorkflowTools } from './workflow-mcp.ts'
+import type { MediaToolAuthorization } from './media-intent.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { BrowserManager, BrowserTarget } from '../browser/index.ts'
 import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
@@ -55,6 +56,7 @@ export async function buildRuntimeCustomTools(params: {
   agentId: string
   workspaceDir: string
   documentAttachmentPaths?: string[]
+  mediaAuthorization: MediaToolAuthorization
   browserProfileId?: string
   browserTarget?: BrowserTarget
   reservedToolNames?: string[]
@@ -76,7 +78,12 @@ export async function buildRuntimeCustomTools(params: {
     // [XJC] 知识库检索（T-A1）：FTS5 全文检索用户上传文档，回答须标注来源
     ...createKnowledgeTools(),
     // [XJC] 媒体生成（T-B7）：生图/对话式改图/视频，产物落「媒体产出」
-    ...createMediaTools({ agentId: params.agentId }),
+    ...createMediaTools({
+      agentId: params.agentId,
+      workspaceDir: params.workspaceDir,
+      attachmentPaths: params.documentAttachmentPaths,
+      authorization: params.mediaAuthorization,
+    }),
     // [XJC] 记忆自管理（学习强化）：确定性「记住/回忆」，用户显式教学不再靠 agent 自觉写文件
     ...(params.memoryManager ? createMemoryTools({ agentId: params.agentId, memoryManager: params.memoryManager }) : []),
     // [XJC] 显式计划（自主强化）：多步任务建持久化计划，每轮注入，压缩/重启不丢

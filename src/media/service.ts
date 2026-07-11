@@ -45,7 +45,7 @@ const EDIT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 const EDIT_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 function endpointUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}${path}`
+  return `${baseUrl.trim().replace(/\/+$/, '')}${path}`
 }
 
 function imageConfig(): MediaImageConfig {
@@ -57,20 +57,42 @@ function videoConfig(): MediaVideoConfig {
 }
 
 /** 图像生成支持的两种服务风格：OpenAI 兼容（硅基流动等）与阿里百炼原生 */
+function isHttpEndpoint(value: string): boolean {
+  try {
+    const url = new URL(value.trim())
+    return (url.protocol === 'http:' || url.protocol === 'https:') && Boolean(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+function hasValue(value: string): boolean {
+  return value.trim().length > 0
+}
+
 function isImageProviderReady(cfg: MediaImageConfig): boolean {
-  return (cfg.provider === 'openai-compatible' || cfg.provider === 'dashscope') && !!cfg.baseUrl && !!cfg.apiKey
+  return (
+    (cfg.provider === 'openai-compatible' || cfg.provider === 'dashscope')
+    && isHttpEndpoint(cfg.baseUrl)
+    && hasValue(cfg.apiKey)
+  )
 }
 
 function isImageConfigured(cfg: MediaImageConfig): boolean {
-  return isImageProviderReady(cfg) && !!cfg.model
+  return isImageProviderReady(cfg) && hasValue(cfg.model)
 }
 
 function isImageEditConfigured(cfg: MediaImageConfig): boolean {
-  return isImageProviderReady(cfg) && !!cfg.editModel
+  return isImageProviderReady(cfg) && hasValue(cfg.editModel)
 }
 
 function isVideoConfigured(cfg: MediaVideoConfig): boolean {
-  return cfg.provider === 'openai-compatible' && !!cfg.baseUrl && !!cfg.apiKey && !!cfg.model
+  return (
+    cfg.provider === 'openai-compatible'
+    && isHttpEndpoint(cfg.baseUrl)
+    && hasValue(cfg.apiKey)
+    && hasValue(cfg.model)
+  )
 }
 
 async function providerErrorFromResponse(action: string, res: Response): Promise<MediaError> {
@@ -399,13 +421,21 @@ export class MediaService {
   }
 }
 
+export interface LocalMediaInputScope {
+  workspaceDir: string
+  attachmentPaths?: string[]
+}
+
 /**
- * 本地输入文件安全校验（改图/图生视频/音频转写共用）：仅允许 聊天附件目录 / 工作区
- * （含各 agent 目录与产出目录）内、扩展名在白名单内的真实文件，
- * 防 prompt 注入借工具读取任意本地文件外泄到第三方 API。
- * 双侧 realpath：文件与允许根都解析符号链接/junction，防"工作区内放 symlink 指向外部文件"逃逸。
+ * 本地输入文件安全校验：仅允许当前员工工作区内文件，或当前消息明确拥有的附件。
+ * 双侧 realpath 防 symlink/junction 逃逸；附件按 realpath 精确匹配，禁止跨会话读取。
  */
-export function assertSafeLocalInputPath(rawPath: string, allowedExtensions: ReadonlySet<string>, kindLabel: string): string {
+export function assertSafeLocalInputPath(
+  rawPath: string,
+  allowedExtensions: ReadonlySet<string>,
+  kindLabel: string,
+  scope: LocalMediaInputScope,
+): string {
   const ext = extname(rawPath).toLowerCase()
   if (!allowedExtensions.has(ext)) {
     throw new MediaError(MEDIA_INVALID_INPUT, `仅支持 ${[...allowedExtensions].map((e) => e.slice(1)).join('/')} 格式的${kindLabel}`)
@@ -416,26 +446,33 @@ export function assertSafeLocalInputPath(rawPath: string, allowedExtensions: Rea
   } catch {
     throw new MediaError(MEDIA_INVALID_INPUT, `输入${kindLabel}不存在或不可读`)
   }
-  const allowedRoots = [
-    resolve(getPaths().data, 'attachments'),
-    resolve(getPaths().workspace),
-  ].map((root) => {
-    try { return realpathSync(root) } catch { return root } // 根不存在时保持原值（前缀必不命中）
-  })
+  let workspaceRoot: string
+  try {
+    workspaceRoot = realpathSync(resolve(scope.workspaceDir))
+  } catch {
+    workspaceRoot = resolve(scope.workspaceDir)
+  }
+  const exactAttachments = new Set(
+    (scope.attachmentPaths ?? []).flatMap((path) => {
+      try { return [realpathSync(resolve(path))] } catch { return [] }
+    }).map((path) => process.platform === 'win32' ? path.toLowerCase() : path),
+  )
   const normalized = process.platform === 'win32' ? real.toLowerCase() : real
-  const allowed = allowedRoots.some((root) => {
-    const r = process.platform === 'win32' ? root.toLowerCase() : root
-    return normalized === r || normalized.startsWith(`${r}\\`) || normalized.startsWith(`${r}/`)
-  })
+  const normalizedWorkspace = process.platform === 'win32' ? workspaceRoot.toLowerCase() : workspaceRoot
+  const insideWorkspace =
+    normalized === normalizedWorkspace
+    || normalized.startsWith(`${normalizedWorkspace}\\`)
+    || normalized.startsWith(`${normalizedWorkspace}/`)
+  const allowed = insideWorkspace || exactAttachments.has(normalized)
   if (!allowed) {
-    throw new MediaError(MEDIA_INVALID_INPUT, `输入${kindLabel}必须位于聊天附件或工作区目录内`)
+    throw new MediaError(MEDIA_INVALID_INPUT, `输入${kindLabel}必须位于当前员工工作区或当前消息附件中`)
   }
   return real
 }
 
-/** 改图/图生视频输入路径安全校验（assertSafeLocalInputPath 的图片特化，签名保持不变） */
-export function assertEditableImagePath(rawPath: string): string {
-  return assertSafeLocalInputPath(rawPath, EDIT_IMAGE_EXTENSIONS, '图片')
+/** 改图/图生视频输入路径安全校验（assertSafeLocalInputPath 的图片特化） */
+export function assertEditableImagePath(rawPath: string, scope: LocalMediaInputScope): string {
+  return assertSafeLocalInputPath(rawPath, EDIT_IMAGE_EXTENSIONS, '图片', scope)
 }
 
 let singleton: MediaService | null = null
