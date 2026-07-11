@@ -142,10 +142,17 @@ function Get-PortableArtifactRoots {
 function Get-FinalizedArtifactRoots {
   $seen = @{}
   $found = @()
-  $candidates = @($ArtifactRoot)
+  $candidates = @()
+  foreach ($candidate in @($ArtifactRoot)) {
+    if ($candidate) {
+      $candidates += [pscustomobject]@{ Path = $candidate; Explicit = $true }
+    }
+  }
   $releaseDir = Join-Path $repo "release"
   if (Test-Path $releaseDir) {
-    $candidates += @(Get-ChildItem -Path $releaseDir -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    $candidates += @(Get-ChildItem -Path $releaseDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+      [pscustomobject]@{ Path = $_.FullName; Explicit = $false }
+    })
   }
   foreach ($relative in @(
     "..\dist-production\usb-portable",
@@ -157,11 +164,26 @@ function Get-FinalizedArtifactRoots {
     "..\MVPClawToC\dist-production\desktop-exe",
     "..\MVPClawToC\dist-production\offline-exe"
   )) {
-    $candidates += (Join-Path $repo $relative)
+    $candidates += [pscustomobject]@{ Path = (Join-Path $repo $relative); Explicit = $false }
   }
+  $currentVersion = (Get-Content (Join-Path $repo "package.json") -Raw | ConvertFrom-Json).version
   foreach ($candidate in $candidates) {
-    if (-not $candidate -or -not (Test-Path (Join-Path $candidate "artifact-manifest.json"))) { continue }
-    $resolved = (Resolve-Path $candidate).Path
+    $candidatePath = [string]$candidate.Path
+    $manifestPath = Join-Path $candidatePath "artifact-manifest.json"
+    if (-not $candidatePath -or -not (Test-Path $manifestPath)) { continue }
+    if (-not $candidate.Explicit) {
+      try {
+        $manifestVersion = (Get-Content $manifestPath -Raw | ConvertFrom-Json).version
+      } catch {
+        Write-Host ("[WARN] Ignoring unreadable artifact manifest: " + $manifestPath) -ForegroundColor Yellow
+        continue
+      }
+      if ($manifestVersion -ne $currentVersion) {
+        Write-Host ("[skip] Historical artifact " + $manifestVersion + " while source is " + $currentVersion + ": " + $candidatePath) -ForegroundColor DarkGray
+        continue
+      }
+    }
+    $resolved = (Resolve-Path $candidatePath).Path
     $key = $resolved.ToLowerInvariant()
     if (-not $seen.ContainsKey($key)) {
       $seen[$key] = $true

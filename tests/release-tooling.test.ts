@@ -143,6 +143,14 @@ describe('desktop version tooling', () => {
     expect(JSON.parse(readFileSync(resolve(root, 'web', 'package.json'), 'utf8')).version).toBe('0.0.0')
     expect(JSON.parse(readFileSync(resolve(root, 'mvp', 'package.json'), 'utf8')).version).toBe('0.1.0')
   })
+
+  test('release gate skips auto-discovered historical artifacts after a version bump', () => {
+    const gate = readFileSync(resolve(import.meta.dir, '..', 'scripts', 'release-gate.ps1'), 'utf8')
+    expect(gate).toContain('[pscustomobject]@{ Path = $candidate; Explicit = $true }')
+    expect(gate).toContain('if (-not $candidate.Explicit)')
+    expect(gate).toContain('if ($manifestVersion -ne $currentVersion)')
+    expect(gate).toContain('[skip] Historical artifact')
+  })
 })
 
 describe('SBOM and artifact verification', () => {
