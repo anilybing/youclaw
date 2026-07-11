@@ -75,7 +75,7 @@
       "endpoints": [
         "https://www.xiaojuclaw.top/api/client/releases/latest.json?current={{current_version}}&platform={{target}}-{{arch}}"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBMUNCNzUwMDZGRUMxNDMKUldSRHdmNEdVTGNjS2p2TWNSaFlsYVUvVFVxNEVENy9lS1BUakxyT2lUUkQvangzTmhrSUJnVzEK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEExMzUyMzBFREY4MDcyODAKUldTQWNvRGZEaU0xb1lFcEJYcVI5V29JZWlVQ0ZvSnNJN0Z1T3dPSTBydmt1NFVyS0hjQU1wRU0K"
     }
   }
 }
