@@ -2478,3 +2478,34 @@ mod portable_layout_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+mod port_resolution_tests {
+    use super::*;
+
+    #[test]
+    fn prefers_a_bindable_preferred_port() {
+        // Reserve then release a port so we know it is currently free.
+        let free = {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            port
+        };
+        assert_eq!(resolve_free_port(free), free);
+    }
+
+    #[test]
+    fn falls_back_when_preferred_port_is_occupied() {
+        // Hold the port open for the whole call so it cannot be bound. This mimics
+        // a zombie sidecar / inherited socket keeping the preferred port busy.
+        let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let taken = occupied.local_addr().unwrap().port();
+
+        let resolved = resolve_free_port(taken);
+
+        assert_ne!(resolved, taken, "must not return the occupied port");
+        let probe = std::net::TcpListener::bind(("127.0.0.1", resolved));
+        assert!(probe.is_ok(), "resolved port {resolved} should be bindable");
+    }
+}
