@@ -12,6 +12,7 @@ import {
   MAX_TASK_ATTACHMENTS,
   validateAttachmentPaths,
 } from './attachments.ts'
+import { buildTaskMediaAttachments } from './media-attachments.ts'
 import { cleanOldLogs } from '../logger/reader.ts'
 import {
   calculateTaskNextRun,
@@ -388,6 +389,25 @@ export class Scheduler {
     const { cleanText, paths } = extractAttachments(result)
     const displayResult = formatResultWithAttachmentLines(cleanText, paths)
 
+    // [XJC] 结构化媒体附件：把工作区内、真实存在的图片/视频转成 messages.attachments，
+    // 让定时任务产出在应用内像 web 聊天一样内联展示（正文仍保留上面的 📎 行不变）。
+    // 附件准备任何意外都吞掉，绝不影响消息落库（与 deliver() 的 best-effort 口径一致）。
+    let attachmentsJson: string | undefined
+    try {
+      if (paths.length > 0) {
+        const agentWorkspaceDir = resolve(getPaths().agents, task.agent_id)
+        const mediaAttachments = buildTaskMediaAttachments(paths, agentWorkspaceDir)
+        if (mediaAttachments.length > 0) {
+          attachmentsJson = JSON.stringify(mediaAttachments)
+        }
+      }
+    } catch (err) {
+      getLogger().warn(
+        { taskId: task.id, error: String(err), category: 'task' },
+        'Task media attachment preparation failed, saving message text only',
+      )
+    }
+
     // Save user prompt message (isFromMe=false means not sent by bot, consistent with router semantics)
     saveMessage({
       id: `${task.id}-${runAt}-user`,
@@ -401,6 +421,7 @@ export class Scheduler {
     })
 
     // Save bot result message (isFromMe=true means sent by bot)
+    // [XJC] attachments：结构化图片/视频，供应用内内联展示（无媒体产物时为 undefined，与旧行为一致）
     saveMessage({
       id: `${task.id}-${runAt}-bot`,
       chatId: task.chat_id,
@@ -410,6 +431,7 @@ export class Scheduler {
       timestamp,
       isFromMe: true,
       isBotMessage: true,
+      attachments: attachmentsJson,
     })
 
     // Update chat record
