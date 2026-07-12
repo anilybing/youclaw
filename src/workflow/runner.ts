@@ -334,6 +334,7 @@ async function executeStepOnce(
       const output = await runWithStepTimeout(
         d.stepTimeoutMs ?? STEP_TIMEOUT_MS,
         (signal) => tool.execute(args, {
+          agentId: wf.agentId,
           workflowId: wf.id,
           workflowRunId: runId,
           traceId,

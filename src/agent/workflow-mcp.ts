@@ -89,8 +89,8 @@ const SaveParams = Type.Object({
     kind: Type.Optional(Type.Union([Type.Literal('agent'), Type.Literal('llm'), Type.Literal('tool')], {
       description: 'agent(default)=full employee turn with tools (expensive, autonomous); llm=single model call, no tools (cheap/fast — use for rewrite/outline/summarize); tool=deterministic builtin, zero model cost.',
     })),
-    tool: Type.Optional(Type.String({ description: 'kind=tool only: one of knowledge_search / http_get / fulfillment_list_stock.' })),
-    args: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'kind=tool only: tool args; values support {{variable}} templates.' })),
+    tool: Type.Optional(Type.String({ description: 'kind=tool only: one of knowledge_search / http_get / read_file / fulfillment_list_stock.' })),
+    args: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'kind=tool only: tool args; values support {{variable}} templates. read_file uses { path (workspace-relative or in-workspace absolute), maxChars? }.' })),
     when: Type.Optional(Type.Object({
       var: Type.String({ description: 'Variable ref, e.g. "steps.check.output" or "inputs.topic".' }),
       op: Type.Union([Type.Literal('contains'), Type.Literal('not_contains'), Type.Literal('is_empty'), Type.Literal('not_empty')]),
