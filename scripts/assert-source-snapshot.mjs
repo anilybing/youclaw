@@ -8,7 +8,7 @@ const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 // [XJC] Resolve git to an absolute path once. A bare "git" passed to Bun.spawnSync
 // with a switched cwd (e.g. capturing the root repo from build-production.bat via a
 // cmd for /f child) can fail to resolve on Windows (uv_spawn ENOENT); an absolute
-// path is cwd-independent. build-usb.bat only captures youclaw itself so it never hit this.
+// path is cwd-independent. build-usb.bat only captures the desktop repo itself so it never hit this.
 const GIT_BIN = Bun.which('git') ?? 'git'
 
 function git(args, root = repoRoot) {
