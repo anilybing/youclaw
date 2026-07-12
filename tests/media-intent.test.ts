@@ -37,6 +37,17 @@ describe('plain-chat media intent routing', () => {
     expect(detectMediaIntent('生成一张场景图')).toBe('generate-image')
   })
 
+  test('recognizes conversational edit phrasings (name-then-verb, 抠图, 去水印)', () => {
+    expect(detectMediaIntent('把这张图的背景换一下')).toBe('edit-image')
+    expect(detectMediaIntent('帮我把图片背景换掉')).toBe('edit-image')
+    expect(detectMediaIntent('帮我抠图')).toBe('edit-image')
+    expect(detectMediaIntent('去掉图片水印')).toBe('edit-image')
+    expect(detectMediaIntent('调整一下照片颜色')).toBe('edit-image')
+    expect(detectMediaIntent('美化这张照片')).toBe('edit-image')
+    // Technical "optimize/handle" phrasings must not be misread as image editing.
+    expect(detectMediaIntent('优化图片加载速度')).toBeNull()
+  })
+
   test('does not route data charts or cost questions to image generation', () => {
     expect(detectMediaIntent('把这张数据做成图表')).toBeNull()
     expect(detectMediaIntent('生成图表')).toBeNull()

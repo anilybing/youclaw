@@ -39,7 +39,7 @@ const INTERROGATIVE = /[?？]\s*$|(?:吗|呢|嘛)\s*[?？]?\s*$|^(?:什么|为�
 const NEGATED_MEDIA_ACTION =
   /(?:不要|别|无需|不需要|禁止)[^，,。！？!?\n]{0,16}(?:生成|生图|画|绘制|制作|创建|修改|编辑|改图)|\b(?:do not|don't|dont|no need to)\s+(?:generate|create|draw|edit|make)\b/i
 const EDIT_IMAGE =
-  /(?:改图|图生图|重绘)|(?:修改|编辑|更换|替换|换成|改成|去掉|移除).{0,18}(?:图片|图像|照片|背景)|(?:图片|图像|照片).{0,20}(?:换成|改成|替换为|去掉|移除)|\b(?:edit|modify|retouch|replace).{0,20}(?:image|picture|photo|background)\b|\bremove the background\b/i
+  /(?:改图|图生图|重绘|抠图|去水印|去背景|加水印)|(?:修改|编辑|更换|替换|换成|改成|去掉|移除|调整|美化).{0,18}(?:图片|图像|照片|背景|水印|颜色|亮度|尺寸|主体|文字)|(?:图片|图像|照片|背景|水印).{0,20}(?:换成|改成|替换为|去掉|移除|换一下|换掉|调整|美化|抠出)|\b(?:edit|modify|retouch|replace|remove).{0,20}(?:image|picture|photo|background|watermark)\b|\bremove the background\b/i
 const GENERATE_VIDEO =
   /(?:生成|制作|创建|做)[^。！？!?\n]{0,36}(?:视频|短片|动画)|(?:文生视频|图生视频)|(?:图片|图像|照片).{0,18}(?:变成|改成|生成).{0,10}(?:视频|短片|动画)|\b(?:generate|create|make|turn).{0,36}(?:video|animation|clip)\b/i
 const GENERATE_IMAGE =

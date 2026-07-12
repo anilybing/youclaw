@@ -14,7 +14,7 @@
 // 产物统一落盘到 agent 工作区「媒体产出」目录（与办公/创作产出约定一致），
 // 渠道场景可经既有 sendMedia/[[attach]] 推送。红线：不硬编码任何厂商域名。
 
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
 import { fetchRemoteMediaToFile } from '../channel/media-fetch.ts'
 import { getPaths } from '../config/paths.ts'
@@ -95,17 +95,34 @@ function isVideoConfigured(cfg: MediaVideoConfig): boolean {
   )
 }
 
+/** 把 HTTP 状态码翻译成可操作的中文提示（空串表示无特定提示，仅报状态码） */
+function httpStatusHint(status: number): string {
+  if (status === 401 || status === 403) return 'API Key 无效或无权限，请到 设置 → 语音与媒体 检查密钥'
+  if (status === 402) return '账户余额不足，请充值后再试'
+  if (status === 429) return '请求过于频繁或额度不足，请稍后再试'
+  if (status === 404) return '接口地址或模型不存在，请到 设置 → 语音与媒体 检查接口地址与模型名'
+  if (status >= 500) return '服务商暂时不可用，请稍后再试'
+  return ''
+}
+
 async function providerErrorFromResponse(action: string, res: Response): Promise<MediaError> {
   let snippet = ''
   try {
     snippet = (await res.text()).slice(0, ERROR_BODY_SNIPPET_MAX).trim()
   } catch { /* 响应体不可读只报状态码 */ }
-  return new MediaError(MEDIA_PROVIDER_ERROR, `${action}失败（HTTP ${res.status}）${snippet ? `：${snippet}` : ''}`)
+  // 保留 HTTP 状态码与响应片段（便于排查），前面加可操作的中文提示
+  const hint = httpStatusHint(res.status)
+  const base = hint ? `${action}失败：${hint}（HTTP ${res.status}）` : `${action}失败（HTTP ${res.status}）`
+  return new MediaError(MEDIA_PROVIDER_ERROR, `${base}${snippet ? `：${snippet}` : ''}`)
 }
 
 function providerErrorFromNetwork(action: string, err: unknown): MediaError {
+  const name = err instanceof Error ? err.name : ''
+  if (name === 'TimeoutError' || name === 'AbortError') {
+    return new MediaError(MEDIA_PROVIDER_ERROR, `${action}请求超时，请检查网络后重试`)
+  }
   const detail = err instanceof Error ? err.message : String(err)
-  return new MediaError(MEDIA_PROVIDER_ERROR, `${action}请求失败：${detail}`)
+  return new MediaError(MEDIA_PROVIDER_ERROR, `${action}网络连接失败：${detail}`)
 }
 
 function timestampName(prefix: string, ext: string): string {
@@ -114,12 +131,34 @@ function timestampName(prefix: string, ext: string): string {
   return `${prefix}_${ts}_${rand}${ext}`
 }
 
+/** 媒体产出目录保留上限：超出后删除最旧产物，避免便携版磁盘被无限占用 */
+const MEDIA_OUTPUT_MAX_FILES = 200
+
+/** 保留最近 maxFiles 个产物，删除更旧的（尽力而为，任何异常都不影响生成主流程） */
+function pruneOutputDir(dir: string, maxFiles: number): void {
+  try {
+    const files = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const full = resolve(dir, entry.name)
+        try { return { full, mtime: statSync(full).mtimeMs } } catch { return null }
+      })
+      .filter((item): item is { full: string; mtime: number } => item !== null)
+    if (files.length <= maxFiles) return
+    files.sort((a, b) => a.mtime - b.mtime)
+    for (const item of files.slice(0, files.length - maxFiles)) {
+      try { rmSync(item.full, { force: true }) } catch { /* 尽力 */ }
+    }
+  } catch { /* 目录不可读则跳过清理 */ }
+}
+
 /** 产物目录：agent 工作区「媒体产出」；无 agentId 时落全局工作区 media-output */
 function outputDir(agentId?: string): string {
   const dir = agentId
     ? resolve(getPaths().agents, agentId, '媒体产出')
     : resolve(getPaths().workspace, 'media-output')
   mkdirSync(dir, { recursive: true })
+  pruneOutputDir(dir, MEDIA_OUTPUT_MAX_FILES)
   return dir
 }
 

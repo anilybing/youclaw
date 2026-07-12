@@ -219,6 +219,8 @@ describe('MediaService.generateImage', () => {
     expect((err as MediaError).code).toBe(MEDIA_PROVIDER_ERROR)
     expect((err as MediaError).message).toContain('429')
     expect((err as MediaError).message).toContain('quota exceeded')
+    // 友好提示：额度/频繁相关，同时保留状态码与响应片段
+    expect((err as MediaError).message).toContain('额度')
   })
 })
 
@@ -269,6 +271,8 @@ describe('MediaService dashscope 原生（阿里百炼 qwen-image / 万相）', 
     expect(err).toBeInstanceOf(MediaError)
     expect((err as MediaError).code).toBe(MEDIA_PROVIDER_ERROR)
     expect((err as MediaError).message).toContain('401')
+    // 友好提示：Key 相关，同时保留状态码
+    expect((err as MediaError).message).toContain('API Key')
   })
 })
 
