@@ -5,8 +5,14 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
+// [XJC] Resolve git to an absolute path once. A bare "git" passed to Bun.spawnSync
+// with a switched cwd (e.g. capturing the root repo from build-production.bat via a
+// cmd for /f child) can fail to resolve on Windows (uv_spawn ENOENT); an absolute
+// path is cwd-independent. build-usb.bat only captures youclaw itself so it never hit this.
+const GIT_BIN = Bun.which('git') ?? 'git'
+
 function git(args, root = repoRoot) {
-  const result = Bun.spawnSync(['git', ...args], {
+  const result = Bun.spawnSync([GIT_BIN, ...args], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -18,7 +24,7 @@ function git(args, root = repoRoot) {
 }
 
 export function captureCleanSourceSnapshot(root = repoRoot) {
-  const status = Bun.spawnSync(['git', 'status', '--porcelain'], {
+  const status = Bun.spawnSync([GIT_BIN, 'status', '--porcelain'], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -27,7 +33,7 @@ export function captureCleanSourceSnapshot(root = repoRoot) {
   if (status.stdout.toString().trim()) {
     throw new Error('Release source must be clean before the quality gate starts')
   }
-  const commit = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+  const commit = Bun.spawnSync([GIT_BIN, 'rev-parse', 'HEAD'], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -44,7 +50,7 @@ export function assertSourceSnapshot(expectedCommit, root = repoRoot) {
   if (actualCommit !== expectedCommit) {
     throw new Error(`Source commit changed during build: expected ${expectedCommit}, got ${actualCommit}`)
   }
-  const status = Bun.spawnSync(['git', 'status', '--porcelain'], {
+  const status = Bun.spawnSync([GIT_BIN, 'status', '--porcelain'], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
