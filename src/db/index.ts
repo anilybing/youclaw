@@ -394,6 +394,8 @@ export function initDatabase(): Database {
   // Migration: add delivery config columns
   try { _db.exec("ALTER TABLE scheduled_tasks ADD COLUMN delivery_mode TEXT DEFAULT 'none'") } catch {}
   try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN delivery_target TEXT') } catch {}
+  // [XJC] 工作流原生定时绑定：非空则本任务到点触发工作流运行（而非 agent 回合）
+  try { _db.exec('ALTER TABLE scheduled_tasks ADD COLUMN workflow_id TEXT') } catch {}
 
   // Migration: add delivery status column to run logs
   try { _db.exec('ALTER TABLE task_run_logs ADD COLUMN delivery_status TEXT') } catch {}
@@ -614,6 +616,7 @@ export interface ScheduledTask {
   last_result: string | null
   delivery_mode: string | null
   delivery_target: string | null
+  workflow_id: string | null
 }
 
 export interface TaskRunLog {
@@ -640,12 +643,13 @@ export function createTask(task: {
   timezone?: string
   deliveryMode?: string
   deliveryTarget?: string
+  workflowId?: string
 }): void {
   const db = getDatabase()
   db.run(
-    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at, name, description, timezone, delivery_mode, delivery_target)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [task.id, task.agentId, task.chatId, task.prompt, task.scheduleType, task.scheduleValue, task.nextRun, new Date().toISOString(), task.name ?? null, task.description ?? null, task.timezone ?? null, task.deliveryMode ?? 'none', task.deliveryTarget ?? null]
+    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at, name, description, timezone, delivery_mode, delivery_target, workflow_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [task.id, task.agentId, task.chatId, task.prompt, task.scheduleType, task.scheduleValue, task.nextRun, new Date().toISOString(), task.name ?? null, task.description ?? null, task.timezone ?? null, task.deliveryMode ?? 'none', task.deliveryTarget ?? null, task.workflowId ?? null]
   )
 }
 

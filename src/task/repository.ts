@@ -35,6 +35,7 @@ export interface InsertTaskRecord {
   timezone?: string
   deliveryMode?: string
   deliveryTarget?: string
+  workflowId?: string
 }
 
 export interface UpdateTaskRecord {
@@ -122,8 +123,8 @@ export function listTasksByName(agentId: string, chatId: string, name: string): 
 export function insertTaskRecord(task: InsertTaskRecord): void {
   const db = getDatabase()
   db.run(
-    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at, name, description, timezone, delivery_mode, delivery_target)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO scheduled_tasks (id, agent_id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at, name, description, timezone, delivery_mode, delivery_target, workflow_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.agentId,
@@ -138,6 +139,7 @@ export function insertTaskRecord(task: InsertTaskRecord): void {
       task.timezone ?? null,
       task.deliveryMode ?? 'none',
       task.deliveryTarget ?? null,
+      task.workflowId ?? null,
     ],
   )
 }

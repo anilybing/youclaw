@@ -36,6 +36,8 @@ export interface CreateScheduledTaskInput {
   timezone?: string | null
   deliveryMode?: DeliveryMode
   deliveryTarget?: string | null
+  /** [XJC] 非空则本任务到点触发该工作流运行（而非 agent 回合） */
+  workflowId?: string
 }
 
 export interface UpdateScheduledTaskInput {
@@ -247,6 +249,7 @@ export function createScheduledTask(input: CreateScheduledTaskInput): ScheduledT
     timezone: input.timezone ?? undefined,
     deliveryMode,
     deliveryTarget: deliveryTarget ?? undefined,
+    workflowId: input.workflowId,
   })
   return requireTask(id)
 }
@@ -354,6 +357,7 @@ export function cloneScheduledTaskById(id: string): ScheduledTask {
     timezone: existing.timezone,
     deliveryMode: (existing.delivery_mode as DeliveryMode | null) ?? undefined,
     deliveryTarget: existing.delivery_target,
+    workflowId: existing.workflow_id ?? undefined,
   })
 }
 

@@ -8,8 +8,9 @@ import {
   getScheduledTaskLogs,
   cloneScheduledTask,
   getAgents,
+  getWorkflows,
 } from '../api/client'
-import type { ScheduledTaskDTO, TaskRunLogDTO } from '../api/client'
+import type { ScheduledTaskDTO, TaskRunLogDTO, WorkflowDTO } from '../api/client'
 import { cn } from '../lib/utils'
 import { buildCronExpression, createDefaultCronDraft, parseCronExpression, type CronDraft, type CronMode } from '../lib/task-cron'
 import { INTERVAL_UNITS, buildIntervalScheduleValue, formatIntervalLabel, parseIntervalScheduleValue, type IntervalUnit } from '../lib/task-interval'
@@ -1044,6 +1045,10 @@ function TaskForm({
   const [description, setDescription] = useState(task?.description ?? '')
   const [agentId, setAgentId] = useState(task?.agent_id ?? agents[0]?.id ?? '')
   const [prompt, setPrompt] = useState(task?.prompt ?? '')
+  // [XJC] 任务类型：agent 回合（跑 prompt）或 workflow（到点触发工作流运行）
+  const [taskKind, setTaskKind] = useState<'agent' | 'workflow'>(task?.workflow_id ? 'workflow' : 'agent')
+  const [workflowId, setWorkflowId] = useState(task?.workflow_id ?? '')
+  const [workflows, setWorkflows] = useState<WorkflowDTO[]>([])
   const [scheduleType, setScheduleType] = useState<'cron' | 'interval' | 'once'>(initialScheduleType)
   const [scheduleValue, setScheduleValue] = useState(() => {
     if (!task) return ''
@@ -1074,6 +1079,15 @@ function TaskForm({
       setAgentId(agents[0].id)
     }
   }, [agentId, agents, isEdit])
+
+  // [XJC] 拉取工作流列表供「运行工作流」类型的定时任务选择
+  useEffect(() => {
+    let cancelled = false
+    getWorkflows()
+      .then((res) => { if (!cancelled) setWorkflows(res.workflows) })
+      .catch(() => { /* 工作流拉取失败时降级为仅 agent 类型 */ })
+    return () => { cancelled = true }
+  }, [])
 
   const applyOncePreset = (mode: Exclude<OnceMode, 'custom' | null>) => {
     const next =
@@ -1109,7 +1123,15 @@ function TaskForm({
     e.preventDefault()
     const rawScheduleValue = scheduleType === 'cron' ? cronScheduleValue : scheduleValue
 
-    if (!agentId || !prompt || !rawScheduleValue) {
+    if (!agentId || !rawScheduleValue) {
+      setError(t.tasks.allRequired)
+      return
+    }
+    if (taskKind === 'workflow' && !workflowId) {
+      setError(t.tasks.selectWorkflowRequired)
+      return
+    }
+    if (taskKind === 'agent' && !prompt) {
       setError(t.tasks.allRequired)
       return
     }
@@ -1156,16 +1178,19 @@ function TaskForm({
         })
       } else {
         const chatId = `task:${crypto.randomUUID().slice(0, 8)}`
+        const wfName = workflows.find((w) => w.id === workflowId)?.name ?? workflowId
+        const effectivePrompt = taskKind === 'workflow' ? `${t.tasks.workflowRunPrefix}${wfName}` : prompt
         await createScheduledTask({
           agentId,
           chatId,
-          prompt,
+          prompt: effectivePrompt,
           scheduleType,
           scheduleValue: finalValue,
           name: name || undefined,
           description: description || undefined,
           deliveryMode,
           deliveryTarget: deliveryMode === 'push' ? deliveryTarget.trim() : undefined,
+          workflowId: taskKind === 'workflow' ? workflowId : undefined,
         })
       }
       onSaved()
@@ -1227,18 +1252,59 @@ function TaskForm({
           </Select>
         </div>
 
-        {/* Prompt */}
+        {/* Task kind: agent turn vs run a workflow */}
         <div>
-          <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.prompt}</label>
-          <textarea
-            data-testid="task-input-prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
-            placeholder={t.tasks.promptPlaceholder}
-            className="w-full resize-none rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          />
+          <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.taskKind}</label>
+          <div className="flex gap-2">
+            {(['agent', 'workflow'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                data-testid={`task-kind-${k}`}
+                disabled={isEdit}
+                onClick={() => { setTaskKind(k); setError('') }}
+                className={cn(
+                  'px-3 py-1.5 text-xs rounded-md border transition-colors',
+                  taskKind === k ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-accent/40',
+                  isEdit && 'opacity-60 cursor-not-allowed',
+                )}
+              >
+                {k === 'agent' ? t.tasks.kindAgent : t.tasks.kindWorkflow}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {taskKind === 'workflow' ? (
+          /* Workflow selector */
+          <div>
+            <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.workflow}</label>
+            <Select value={workflowId} onValueChange={setWorkflowId} disabled={isEdit}>
+              <SelectTrigger data-testid="task-select-workflow" className="w-full">
+                <SelectValue placeholder={t.tasks.selectWorkflow} />
+              </SelectTrigger>
+              <SelectContent>
+                {workflows.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">{t.tasks.workflowHint}</p>
+          </div>
+        ) : (
+          /* Prompt */
+          <div>
+            <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.prompt}</label>
+            <textarea
+              data-testid="task-input-prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={3}
+              placeholder={t.tasks.promptPlaceholder}
+              className="w-full resize-none rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        )}
 
         {/* Schedule Type */}
         <div>

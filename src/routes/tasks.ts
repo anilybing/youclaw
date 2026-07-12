@@ -13,6 +13,7 @@ import {
   listScheduledTasks,
   updateScheduledTaskById,
 } from '../task/index.ts'
+import { getWorkflow } from '../workflow/store.ts'
 
 // ===== Zod input validation =====
 
@@ -27,6 +28,7 @@ const createTaskSchema = z.object({
   timezone: z.string().optional(),
   deliveryMode: z.enum(['push', 'none']).default('none').optional(),
   deliveryTarget: z.string().optional(),
+  workflowId: z.string().optional(),
 }).refine((data) => {
   // push mode requires deliveryTarget
   if (data.deliveryMode === 'push' && !data.deliveryTarget) return false
@@ -83,6 +85,11 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
       return c.json({ error: 'Agent not found' }, 404)
     }
 
+    // [XJC] 工作流定时任务：绑定的工作流必须存在
+    if (data.workflowId && !getWorkflow(data.workflowId)) {
+      return c.json({ error: 'Workflow not found' }, 404)
+    }
+
     try {
       const task = createScheduledTask({
         agentId: data.agentId,
@@ -95,6 +102,7 @@ export function createTasksRoutes(scheduler: Scheduler, agentManager: AgentManag
         timezone: data.timezone,
         deliveryMode: data.deliveryMode,
         deliveryTarget: data.deliveryTarget,
+        workflowId: data.workflowId,
       })
       return c.json(task, 201)
     } catch (err) {

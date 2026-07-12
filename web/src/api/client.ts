@@ -1185,6 +1185,7 @@ export interface ScheduledTaskDTO {
   last_result: string | null
   delivery_mode: string | null
   delivery_target: string | null
+  workflow_id: string | null
 }
 
 export interface TaskRunLogDTO {
@@ -1213,6 +1214,7 @@ export async function createScheduledTask(data: {
   timezone?: string
   deliveryMode?: 'push' | 'none'
   deliveryTarget?: string
+  workflowId?: string
 }) {
   return apiFetch<ScheduledTaskDTO>('/api/tasks', {
     method: 'POST',

@@ -26,6 +26,7 @@ import type { ScheduledTask } from '../db/index.ts'
 import type { AgentQueue } from '../agent/queue.ts'
 import type { AgentManager } from '../agent/manager.ts'
 import type { EventBus } from '../events/index.ts'
+import { startWorkflowRun } from '../workflow/runner.ts'
 
 // Auto-pause after N consecutive failures
 const MAX_CONSECUTIVE_FAILURES = 5
@@ -48,6 +49,8 @@ export class Scheduler {
     private agentQueue: AgentQueue,
     private agentManager: AgentManager,
     private eventBus: EventBus,
+    // [XJC] 工作流触发器：默认真实实现，测试可注入以隔离 workflow runtime。
+    private startWorkflow: typeof startWorkflowRun = startWorkflowRun,
   ) {}
 
   /** Start scheduling loop (check every 30 seconds) */
@@ -167,6 +170,24 @@ export class Scheduler {
     }
   }
 
+  /**
+   * [XJC] 产出任务结果：workflow_id 非空则触发工作流运行并取最终产出（outputs 末项，与前端「最终结果」一致），
+   * 否则跑一次 agent 回合。工作流未成功会抛错，交由调用方的失败处理（退避/日志/自动暂停）。
+   */
+  private async produceResult(task: ScheduledTask): Promise<string> {
+    if (task.workflow_id) {
+      const { done } = this.startWorkflow(task.workflow_id, {})
+      const final = await done
+      if (final.status !== 'success') {
+        throw new Error(final.error || `工作流运行未成功（状态：${final.status}）`)
+      }
+      const output = final.outputs.at(-1)
+      return output && output.trim() ? output : '(工作流无输出)'
+    }
+    const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt, { suppressOutbound: true })
+    return result ?? '(no output)'
+  }
+
   /** Execute a single task */
   async executeTask(task: ScheduledTask): Promise<void> {
     const logger = getLogger()
@@ -186,20 +207,21 @@ export class Scheduler {
     // running_since already set synchronously in tick(), no need to repeat
 
     try {
+      // [XJC] 结果产出：workflow_id 非空 → 触发工作流并取最终产出；否则跑 agent 回合。
       // suppressOutbound：调度器自己经 deliver() 向 delivery_target 投递（cleanText + 📎、尊重 delivery_mode）；
       // 若不抑制，runtime 的 complete 会被 MessageRouter 再向 task.chat_id 发一次（渠道会话时即双发/泄漏）。
-      const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt, { suppressOutbound: true })
+      const result = await this.produceResult(task)
       const durationMs = Date.now() - startMs
 
       // [XJC] 持久化字段（run-log result / task lastResult）与桌面会话落库口径一致：
       // 不存原始 [[attach:]] 标记，改存 cleanText + 每个附件一行 📎 <路径>。
-      const displayResult = this.toDisplayResult(result ?? '(no output)')
+      const displayResult = this.toDisplayResult(result)
 
       // Save execution result to messages table for Chat page visibility
-      this.saveTaskMessages(task, runAt, result ?? '(no output)')
+      this.saveTaskMessages(task, runAt, result)
 
       // Deliver to external channel (best-effort)
-      const deliveryStatus = await this.deliver(task, result ?? '(no output)')
+      const deliveryStatus = await this.deliver(task, result)
 
       insertTaskRunLog({
         taskId: task.id,
@@ -457,18 +479,19 @@ export class Scheduler {
     const runId = crypto.randomUUID().slice(0, 8)
 
     try {
+      // [XJC] 结果产出同 executeTask：workflow_id 非空触发工作流，否则 agent 回合。
       // suppressOutbound：手动运行同样由 deliver() 独占渠道投递，避免 runtime.complete 经路由重复发送。
-      const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt, { suppressOutbound: true })
+      const result = await this.produceResult(task)
       const durationMs = Date.now() - startMs
 
       // [XJC] run-log result 与桌面会话落库口径一致：清掉 [[attach:]] 标记、附件改 📎 行
-      const displayResult = this.toDisplayResult(result ?? '(no output)')
+      const displayResult = this.toDisplayResult(result)
 
       // Save execution result to messages table
-      this.saveTaskMessages(task, `${runId}-${runAt}`, result ?? '(no output)', 'manual', 'Manual Run')
+      this.saveTaskMessages(task, `${runId}-${runAt}`, result, 'manual', 'Manual Run')
 
       // Deliver to external channel
-      const deliveryStatus = await this.deliver(task, result ?? '(no output)')
+      const deliveryStatus = await this.deliver(task, result)
 
       // Record run log
       insertTaskRunLog({
@@ -480,7 +503,7 @@ export class Scheduler {
         deliveryStatus,
       })
 
-      return { status: 'success', result: result ?? undefined }
+      return { status: 'success', result }
     } catch (err) {
       const durationMs = Date.now() - startMs
       const error = err instanceof Error ? err.message : String(err)
