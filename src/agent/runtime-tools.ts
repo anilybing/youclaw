@@ -17,6 +17,7 @@ import type { MediaToolAuthorization } from './media-intent.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import type { BrowserManager, BrowserTarget } from '../browser/index.ts'
 import { createBrowserMcpServer, logBrowserToolRegistration } from '../browser/index.ts'
+import type { BrowserActionAuthorization } from '../browser/sensitive-guard.ts'
 import type { SecretsManager } from './secrets.ts'
 import { createExternalMcpToolRuntime } from './mcp-tools.ts'
 import { wrapToolsWithSqueeze } from './output-squeeze.ts'
@@ -59,6 +60,7 @@ export async function buildRuntimeCustomTools(params: {
   mediaAuthorization: MediaToolAuthorization
   mediaAbortSignal?: AbortSignal
   onMediaProgress?: (message: string) => void
+  browserAuthorization?: BrowserActionAuthorization
   browserProfileId?: string
   browserTarget?: BrowserTarget
   reservedToolNames?: string[]
@@ -112,6 +114,7 @@ export async function buildRuntimeCustomTools(params: {
       agentId: params.agentId,
       profileId: params.browserProfileId,
       target: params.browserTarget ?? 'host',
+      authorization: params.browserAuthorization,
     })
     customTools.push(...browserTools)
     logBrowserToolRegistration(params.browserProfileId, params.browserTarget ?? 'host')

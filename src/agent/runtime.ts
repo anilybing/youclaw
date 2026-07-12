@@ -20,6 +20,8 @@ import { abortRegistry } from './abort-registry.ts'
 import { getAuthToken } from '../routes/auth.ts'
 import { resolvePiModel } from './model-resolver.ts'
 import type { BrowserManager } from '../browser/index.ts'
+import { resolveBrowserTurnContext } from '../browser/sensitive-guard.ts'
+import { getChatBrowserState } from '../browser/store.ts'
 import type { SkillsLoader } from '../skills/loader.ts'
 import type { MemoryManager } from '../memory/index.ts'
 import { buildRecoveredConversationPrompt, resolveStoredSessionFile, type StoredSessionEntry } from './context-utils.ts'
@@ -521,6 +523,9 @@ export class AgentRuntime {
       // Advisory prompt context only; media tool execution remains authoritative.
     }
     const mediaTurnContext = resolveMediaTurnContext(chatId, prompt, mediaStatus)
+    // [XJC] 浏览器敏感写操作确定性授权：上一轮挂起 + 本轮确认 → 放行一次（详见 sensitive-guard.ts）
+    const browserActiveUrl = effectiveBrowserProfileId ? (getChatBrowserState(chatId)?.activePageUrl ?? null) : null
+    const browserTurn = resolveBrowserTurnContext(chatId, prompt, browserActiveUrl)
 
     const cwd = this.config.workspaceDir
     const model = resolvePiModel(modelConfig)
@@ -565,6 +570,7 @@ export class AgentRuntime {
       mediaAuthorization: mediaTurnContext.authorization,
       mediaAbortSignal: abortController.signal,
       onMediaProgress: (message: string) => this.emitStream(agentId, chatId, message, turnId),
+      browserAuthorization: browserTurn.authorization,
       browserProfileId: effectiveBrowserProfileId,
       browserTarget,
       reservedToolNames: tools.map((tool) => tool.name),

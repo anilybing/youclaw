@@ -16,6 +16,16 @@ import {
 } from '../security/pinned-http.ts'
 import type { BrowserManager } from './manager.ts'
 import { createBrowserActionRouter } from './router.ts'
+import { getChatBrowserState } from './store.ts'
+import {
+  armPendingConfirmation,
+  BROWSER_CONFIRMATION_REQUIRED,
+  classifyBrowserAction,
+  rememberSnapshot,
+  type BrowserActionAuthorization,
+  type BrowserGatedAction,
+  type SnapshotRefMeta,
+} from './sensitive-guard.ts'
 import type { BrowserTarget } from './types.ts'
 
 const BROWSER_ARTIFACT_ROOT_ENV = 'XJC_BROWSER_ARTIFACT_ROOT'
@@ -126,6 +136,7 @@ export function createBrowserMcpServer(params: {
   agentId: string
   profileId: string
   target: BrowserTarget
+  authorization?: BrowserActionAuthorization
 }): ToolDefinition[] {
   const { browserManager, chatId, agentId, profileId, target } = params
   const router = createBrowserActionRouter({
@@ -135,6 +146,23 @@ export function createBrowserMcpServer(params: {
     profileId,
     target,
   })
+
+  // [XJC] 敏感写操作确定性门禁：本回合最多放行一次「上一轮已确认」的敏感动作（详见 sensitive-guard.ts）
+  let sensitiveUsed = 0
+  const authorizeSensitive = (action: BrowserGatedAction): void => {
+    const activeUrl = getChatBrowserState(chatId)?.activePageUrl ?? null
+    const c = classifyBrowserAction(chatId, action, activeUrl)
+    if (!c.sensitive) return
+    const auth = params.authorization
+    const allowed = Boolean(auth?.allowSensitiveOnce)
+      && sensitiveUsed < 1
+      && (!auth?.boundSignature || auth.boundSignature === c.signature)
+    if (!allowed) {
+      armPendingConfirmation(chatId, c, activeUrl ?? '')
+      throw new Error(`${BROWSER_CONFIRMATION_REQUIRED}: 该敏感操作需要你确认：${c.summary}。回复“确认”继续，或“取消”放弃。`)
+    }
+    sensitiveUsed += 1
+  }
 
   return [
     createJsonTool(
@@ -174,7 +202,13 @@ export function createBrowserMcpServer(params: {
       'snapshot',
       'Capture a text snapshot of the current tab and assign refs to visible interactive elements.',
       Type.Object({}),
-      async () => router.snapshot(),
+      async () => {
+        const result = await router.snapshot()
+        const url = typeof result.url === 'string' ? result.url : ''
+        const refs = Array.isArray(result.refs) ? (result.refs as SnapshotRefMeta[]) : []
+        rememberSnapshot(chatId, url, refs)
+        return result
+      },
       (_args, message) => `Failed to capture snapshot: ${message}`,
     ),
     createJsonTool(
@@ -197,7 +231,10 @@ export function createBrowserMcpServer(params: {
         action: 'click' | 'type' | 'select' | 'check' | 'uncheck'
         text?: string
         option?: string
-      }) => router.act(args),
+      }) => {
+        authorizeSensitive({ kind: 'act', action: args.action, ref: args.ref, text: args.text })
+        return router.act(args)
+      },
       (args, message) => `Failed to act on ref ${args.ref}: ${message}`,
     ),
     createJsonTool(
@@ -221,7 +258,10 @@ export function createBrowserMcpServer(params: {
       Type.Object({
         selector: Type.String({ description: 'CSS selector for the element to click' }),
       }),
-      async (args: { selector: string }) => router.click(args.selector),
+      async (args: { selector: string }) => {
+        authorizeSensitive({ kind: 'click', selector: args.selector })
+        return router.click(args.selector)
+      },
       (args, message) => `Failed to click selector ${args.selector}: ${message}`,
     ),
     createJsonTool(
@@ -231,7 +271,10 @@ export function createBrowserMcpServer(params: {
         selector: Type.String({ description: 'CSS selector for the input element' }),
         text: Type.String({ description: 'Text to enter into the field' }),
       }),
-      async (args: { selector: string; text: string }) => router.type(args.selector, args.text),
+      async (args: { selector: string; text: string }) => {
+        authorizeSensitive({ kind: 'type', selector: args.selector, text: args.text })
+        return router.type(args.selector, args.text)
+      },
       (args, message) => `Failed to type into selector ${args.selector}: ${message}`,
     ),
     createJsonTool(
@@ -240,7 +283,10 @@ export function createBrowserMcpServer(params: {
       Type.Object({
         key: Type.String({ description: 'Key name accepted by Playwright, for example Enter or Meta+L' }),
       }),
-      async (args: { key: string }) => router.pressKey(args.key),
+      async (args: { key: string }) => {
+        authorizeSensitive({ kind: 'press_key', key: args.key })
+        return router.pressKey(args.key)
+      },
       (args, message) => `Failed to press key ${args.key}: ${message}`,
     ),
     createJsonTool(

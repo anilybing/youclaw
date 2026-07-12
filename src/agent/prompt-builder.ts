@@ -128,7 +128,8 @@ export class PromptBuilder {
         `Manual login is the default and recommended flow for sites that require authentication. Do NOT ask the user for credentials, passwords, 2FA codes, recovery codes, or session secrets. Ask the user to sign in manually in the browser profile instead.\n` +
         `Automated login attempts often trigger anti-bot or account-security defenses. If the site shows CAPTCHA, 2FA, device verification, suspicious-login prompts, or other security checks, stop automated login attempts and ask the user to take over manually.\n` +
         `For sensitive or high-impact actions, prepare the page and then ask the user to review, confirm, or complete the final step manually. This includes purchases, payments, transfers, account-security changes, password resets, OAuth consent, message sending, posting, publishing, deleting data, or submitting legal/financial forms.\n` +
-        `For strict sites such as social media posting or other anti-bot-sensitive flows, prefer manual user interaction for the final sensitive steps even if navigation succeeds.` +
+        `For strict sites such as social media posting or other anti-bot-sensitive flows, prefer manual user interaction for the final sensitive steps even if navigation succeeds.\n` +
+        `Sensitive browser write actions (purchase/pay/submit/publish/delete/account-security) are enforced by a runtime confirmation gate. If a tool call is blocked with BROWSER_CONFIRMATION_REQUIRED, do NOT blindly retry — restate the exact action to the user and ask them to reply "确认" to proceed or "取消" to cancel, then perform it once after they confirm.` +
         fallbackHint
       )
     }
