@@ -14,9 +14,9 @@ const appConfig = {
   supportEmail: 'support@xiaojuclaw.top',
 
   // ── Website（官网 /site/ 与文档教程页，禁止指向管理后台）──
-  websiteUrl: 'https://www.xiaojuclaw.top',
-  siteBase: 'https://www.xiaojuclaw.top/site/',
-  docsBase: 'https://www.xiaojuclaw.top/site/tutorials.html',
+  websiteUrl: 'https://xiaoju.ncqianxi.cn',
+  siteBase: 'https://xiaoju.ncqianxi.cn/site/',
+  docsBase: 'https://xiaoju.ncqianxi.cn/site/tutorials.html',
 
   // ── Server Defaults ──
   defaultPort: 62601,

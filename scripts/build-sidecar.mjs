@@ -115,8 +115,8 @@ function generateBuildConstants() {
 
   // [key, legacy alias in .env.production (URL keys only), default]
   const injectionKeys = [
-    ['XiaoJuClaw_WEBSITE_URL', 'YOUCLAW_WEBSITE_URL', 'https://www.xiaojuclaw.top'],
-    ['XiaoJuClaw_API_URL', 'YOUCLAW_API_URL', 'https://www.xiaojuclaw.top'],
+    ['XiaoJuClaw_WEBSITE_URL', 'YOUCLAW_WEBSITE_URL', 'https://xiaoju.ncqianxi.cn'],
+    ['XiaoJuClaw_API_URL', 'YOUCLAW_API_URL', 'https://xiaoju.ncqianxi.cn'],
     ['XiaoJuClaw_BUILTIN_API_URL', null, ''],
     ['XiaoJuClaw_BUILTIN_AUTH_TOKEN', null, ''],
   ]

@@ -25,7 +25,7 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 
 use super::{current_exe_dir, is_portable_install, resolve_portable_data_dir, OFFLINE_BUILD};
 
-const DEFAULT_UPDATE_BASE: &str = "https://www.xiaojuclaw.top";
+const DEFAULT_UPDATE_BASE: &str = "https://xiaoju.ncqianxi.cn";
 const DEVICE_ID_PREFIX: &str = "xjc-install-";
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 const MAX_TELEMETRY_EVENTS: usize = 200;
