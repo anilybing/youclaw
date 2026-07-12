@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { upsertChat } from '../db/index.ts'
+import { autoRegisterDeliverable } from '../business/deliverables.ts'
 import { getLogger } from '../logger/index.ts'
 import { abortRegistry } from '../agent/abort-registry.ts'
 import { getWorkflowNodeTool } from './nodes.ts'
@@ -547,6 +548,16 @@ async function executeRunLoop(
     const completed = getRun(runId)!
     syncWorkflowTraceActiveDuration(traceId, completed.usage.activeDurationMs)
     finishAgentOpsTrace(traceId, 'success')
+    // [XJC] 工作流最终成功 → 自动登记一条交付物（report），喂给交付物台账与周经营复盘（best-effort，不阻断）
+    autoRegisterDeliverable({
+      title: `工作流：${wf.name}`,
+      type: 'report',
+      sourceKind: 'workflow',
+      sourceId: runId,
+      agentId: wf.agentId,
+      chatId,
+      summary: outputs.filter((output) => output !== SKIP_MARKER).at(-1)?.slice(0, 500) ?? null,
+    })
     getLogger().info({ workflowId: wf.id, runId, steps: wf.steps.length, category: 'workflow' }, 'Workflow run finished')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

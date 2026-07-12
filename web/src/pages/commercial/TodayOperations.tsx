@@ -2,12 +2,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  createDeliverable,
+  deleteDeliverable,
+  getDeliverables,
   getTodayBusinessDashboard,
+  getWeeklyBusinessReview,
   runWorkflow,
   TODAY_BUSINESS_BRIEF_WORKFLOW_ID,
   updateBusinessProfile,
+  updateDeliverableStatus,
   type BusinessProfileDTO,
+  type DeliverableDTO,
+  type DeliverableStatus,
   type TodayBusinessSnapshotDTO,
+  type WeeklyBusinessReviewDTO,
 } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,6 +41,11 @@ import {
   Sparkles,
   Target,
   Workflow,
+  Package,
+  CalendarRange,
+  Check,
+  X,
+  Trash2,
 } from 'lucide-react'
 
 interface ProfileDraft {
@@ -84,12 +97,21 @@ export function TodayOperations() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [runningBrief, setRunningBrief] = useState(false)
+  const [deliverables, setDeliverables] = useState<DeliverableDTO[]>([])
+  const [newDeliverableTitle, setNewDeliverableTitle] = useState('')
+  const [addingDeliverable, setAddingDeliverable] = useState(false)
+  const [review, setReview] = useState<WeeklyBusinessReviewDTO | null>(null)
+  const [reviewBrief, setReviewBrief] = useState('')
+  const [showBrief, setShowBrief] = useState(false)
 
   const loadDashboard = useCallback(async (preserveDraft = false) => {
     setLoadError(null)
     try {
       const next = await getTodayBusinessDashboard()
       setSnapshot(next)
+      // best-effort：交付物与周复盘失败不阻断今日页
+      void getDeliverables({ limit: 20 }).then((r) => setDeliverables(r.deliverables)).catch(() => {})
+      void getWeeklyBusinessReview().then((r) => { setReview(r.review); setReviewBrief(r.brief) }).catch(() => {})
       if (!preserveDraft) {
         setDraft(profileToDraft(next.profile))
         setEditing(next.profile.completeness < 100)
@@ -153,6 +175,62 @@ export function TodayOperations() {
     }
   }
 
+  const refreshDeliverables = useCallback(async () => {
+    try {
+      const result = await getDeliverables({ limit: 20 })
+      setDeliverables(result.deliverables)
+    } catch {
+      // 静默：交付物刷新失败不阻断经营页
+    }
+  }, [])
+
+  async function handleAddDeliverable() {
+    const title = newDeliverableTitle.trim()
+    if (!title || addingDeliverable) return
+    setAddingDeliverable(true)
+    try {
+      await createDeliverable({ title, type: 'other' })
+      setNewDeliverableTitle('')
+      await refreshDeliverables()
+      notify.success(t.deliverables.added)
+    } catch (error) {
+      notify.error(formatApiError(error, t.deliverables.addFailed).title)
+    } finally {
+      setAddingDeliverable(false)
+    }
+  }
+
+  async function handleSetDeliverableStatus(id: string, status: DeliverableStatus) {
+    setDeliverables((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)))
+    try {
+      await updateDeliverableStatus(id, status)
+    } catch (error) {
+      notify.error(formatApiError(error, t.deliverables.updateFailed).title)
+      await refreshDeliverables()
+    }
+  }
+
+  async function handleDeleteDeliverable(id: string) {
+    const previous = deliverables
+    setDeliverables((current) => current.filter((item) => item.id !== id))
+    try {
+      await deleteDeliverable(id)
+    } catch (error) {
+      setDeliverables(previous)
+      notify.error(formatApiError(error, t.deliverables.deleteFailed).title)
+    }
+  }
+
+  async function handleRefreshReview() {
+    try {
+      const result = await getWeeklyBusinessReview()
+      setReview(result.review)
+      setReviewBrief(result.brief)
+    } catch (error) {
+      notify.error(formatApiError(error, t.weeklyReview.loadFailed).title)
+    }
+  }
+
   if (loading) {
     return (
       <div
@@ -188,6 +266,20 @@ export function TodayOperations() {
 
   const { profile, automation } = snapshot
   const topActions = snapshot.candidateActions.slice(0, 3)
+  const deliverableTypeLabels: Record<DeliverableDTO['type'], string> = {
+    report: t.deliverables.typeReport,
+    image: t.deliverables.typeImage,
+    video: t.deliverables.typeVideo,
+    document: t.deliverables.typeDocument,
+    notes: t.deliverables.typeNotes,
+    other: t.deliverables.typeOther,
+  }
+  const deliverableStatusLabels: Record<DeliverableStatus, string> = {
+    draft: t.deliverables.statusDraft,
+    adopted: t.deliverables.statusAdopted,
+    revised: t.deliverables.statusRevised,
+    discarded: t.deliverables.statusDiscarded,
+  }
 
   return (
     <div className="flex-1 overflow-auto" data-testid="today-operations-page">
@@ -510,6 +602,114 @@ export function TodayOperations() {
                   </ul>
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="deliverables-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-primary" />
+              {t.deliverables.title}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t.deliverables.subtitle}</p>
+            <div className="flex gap-2">
+              <Input
+                value={newDeliverableTitle}
+                onChange={(event) => setNewDeliverableTitle(event.target.value)}
+                placeholder={t.deliverables.addPlaceholder}
+                maxLength={200}
+                onKeyDown={(event) => { if (event.key === 'Enter') void handleAddDeliverable() }}
+              />
+              <Button onClick={handleAddDeliverable} disabled={addingDeliverable || !newDeliverableTitle.trim()}>
+                {addingDeliverable ? <Loader2 className="h-4 w-4 animate-spin" /> : t.deliverables.add}
+              </Button>
+            </div>
+            {deliverables.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">{t.deliverables.empty}</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-auto">
+                {deliverables.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2 rounded-lg border p-2 text-sm" data-testid="deliverable-row">
+                    <Badge variant="secondary" className="shrink-0">{deliverableTypeLabels[item.type]}</Badge>
+                    <span className="min-w-0 flex-1 truncate" title={item.summary ?? item.title}>{item.title}</span>
+                    <Badge
+                      variant={item.status === 'adopted' ? 'default' : item.status === 'discarded' ? 'secondary' : 'outline'}
+                      className="shrink-0"
+                    >
+                      {deliverableStatusLabels[item.status]}
+                    </Badge>
+                    {item.status !== 'adopted' && (
+                      <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" title={t.deliverables.adopt} onClick={() => void handleSetDeliverableStatus(item.id, 'adopted')}>
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {item.status !== 'revised' && (
+                      <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" title={t.deliverables.revise} onClick={() => void handleSetDeliverableStatus(item.id, 'revised')}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {item.status !== 'discarded' && (
+                      <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" title={t.deliverables.discard} onClick={() => void handleSetDeliverableStatus(item.id, 'discarded')}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-destructive" title={t.deliverables.delete} onClick={() => void handleDeleteDeliverable(item.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="weekly-review-card">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <CalendarRange className="h-5 w-5 text-primary" />
+                {t.weeklyReview.title}
+              </span>
+              <Button variant="ghost" size="sm" onClick={handleRefreshReview}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t.todayOperations.refresh}
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {review ? (
+              <>
+                <p className="text-sm text-muted-foreground">{review.weekStartDate} ~ {review.weekEndDate}</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-lg bg-muted/50 p-3 text-center">
+                    <div className="text-xl font-bold">{review.deliverables.total}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.deliverables}</div>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3 text-center">
+                    <div className="text-xl font-bold">{review.deliverables.adoptionRate}%</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.adoptionRate}</div>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3 text-center">
+                    <div className="text-xl font-bold">{review.workflows.success}/{review.workflows.total}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.workflows}</div>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3 text-center">
+                    <div className="text-xl font-bold">${review.aiUsage.costUsd.toFixed(2)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.cost}</div>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setShowBrief((value) => !value)}>
+                  {showBrief ? t.weeklyReview.hideFull : t.weeklyReview.viewFull}
+                </Button>
+                {showBrief && (
+                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-xs font-sans" data-testid="weekly-review-brief">{reviewBrief}</pre>
+                )}
+              </>
+            ) : (
+              <p className="py-4 text-center text-sm text-muted-foreground">{t.weeklyReview.empty}</p>
             )}
           </CardContent>
         </Card>

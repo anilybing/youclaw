@@ -7,6 +7,7 @@ import {
   type BusinessProfile,
   type BusinessProfileField,
 } from './profile.ts'
+import { countDeliverablesInRange, type DeliverableStatusCounts } from './deliverables.ts'
 
 export interface BusinessEvidence {
   id: string
@@ -454,5 +455,146 @@ export function renderTodayBusinessBrief(snapshot: TodayBusinessSnapshot, rankin
     `- 尚未接入：${snapshot.dataCoverage.unavailable.join('、')}`,
     '- 本简报不会推测未接入的营收、订单、毛利或转化数据。',
   )
+  return lines.join('\n')
+}
+
+// ── 周经营复盘（Weekly Business Review）─────────────────────────────────────
+// 事实型：只聚合本地结构化状态（交付物、工作流、定时任务、AI 用量），确定性生成建议，不 LLM、不推测营收。
+
+export interface WeeklyBusinessReview {
+  schemaVersion: 1
+  generatedAt: string
+  weekStartDate: string
+  weekEndDate: string
+  timeZone: string
+  businessName: string
+  currentGoals: string[]
+  completeness: number
+  deliverables: DeliverableStatusCounts & { adoptionRate: number }
+  workflows: { total: number; success: number; failed: number }
+  automations: { executions: number; success: number; failed: number }
+  aiUsage: { modelCalls: number; totalTokens: number; costUsd: number; toolCalls: number }
+  dataCoverage: { available: string[]; unavailable: string[] }
+}
+
+/** 本地经营周范围：本周一 00:00 到下周一 00:00（半开区间，经营时区）。 */
+export function resolveBusinessWeekRange(now: Date, timeZone: string): {
+  weekStartDate: string
+  weekEndDate: string
+  startIso: string
+  endIso: string
+} {
+  const local = getZonedDateParts(now, timeZone)
+  const localMidday = new Date(Date.UTC(local.year, local.month - 1, local.day, 12, 0, 0))
+  const daysFromMonday = (localMidday.getUTCDay() + 6) % 7
+  const monday = new Date(Date.UTC(local.year, local.month - 1, local.day - daysFromMonday))
+  const sunday = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 6))
+  const nextMonday = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 7))
+  const start = zonedDateTimeToUtc(
+    { year: monday.getUTCFullYear(), month: monday.getUTCMonth() + 1, day: monday.getUTCDate(), hour: 0, minute: 0, second: 0 },
+    timeZone,
+  )
+  const end = zonedDateTimeToUtc(
+    { year: nextMonday.getUTCFullYear(), month: nextMonday.getUTCMonth() + 1, day: nextMonday.getUTCDate(), hour: 0, minute: 0, second: 0 },
+    timeZone,
+  )
+  const fmt = (d: Date) => `${String(d.getUTCFullYear()).padStart(4, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  return { weekStartDate: fmt(monday), weekEndDate: fmt(sunday), startIso: start.toISOString(), endIso: end.toISOString() }
+}
+
+export function getWeeklyBusinessReview(options: { now?: Date } = {}): WeeklyBusinessReview {
+  const now = options.now ?? new Date()
+  const profile = getBusinessProfile()
+  const completion = getBusinessProfileCompletion(profile)
+  const range = resolveBusinessWeekRange(now, profile.timeZone)
+  const db = getDatabase()
+
+  const workflowRow = db.query(`
+    SELECT COUNT(*) AS total,
+      SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+    FROM workflow_runs WHERE started_at >= ? AND started_at < ?
+  `).get(range.startIso, range.endIso) as Record<string, unknown>
+  const taskRow = db.query(`
+    SELECT COUNT(*) AS executions,
+      SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success,
+      SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS failed
+    FROM task_run_logs WHERE run_at >= ? AND run_at < ?
+  `).get(range.startIso, range.endIso) as Record<string, unknown>
+  const usageRow = db.query(`
+    SELECT SUM(model_calls) AS model_calls, SUM(total_tokens) AS total_tokens,
+      SUM(cost_usd) AS cost_usd, SUM(tool_calls) AS tool_calls
+    FROM agentops_traces WHERE started_at >= ? AND started_at < ?
+  `).get(range.startIso, range.endIso) as Record<string, unknown>
+  const counts = countDeliverablesInRange(range.startIso, range.endIso)
+  const decided = counts.adopted + counts.revised
+  const denom = counts.total - counts.discarded
+  const adoptionRate = denom > 0 ? Math.round((decided / denom) * 100) : 0
+
+  return {
+    schemaVersion: 1,
+    generatedAt: now.toISOString(),
+    weekStartDate: range.weekStartDate,
+    weekEndDate: range.weekEndDate,
+    timeZone: profile.timeZone,
+    businessName: profile.businessName,
+    currentGoals: profile.currentGoals,
+    completeness: completion.completeness,
+    deliverables: { ...counts, adoptionRate },
+    workflows: { total: asNumber(workflowRow.total), success: asNumber(workflowRow.success), failed: asNumber(workflowRow.failed) },
+    automations: { executions: asNumber(taskRow.executions), success: asNumber(taskRow.success), failed: asNumber(taskRow.failed) },
+    aiUsage: {
+      modelCalls: asNumber(usageRow.model_calls),
+      totalTokens: asNumber(usageRow.total_tokens),
+      costUsd: asNumber(usageRow.cost_usd),
+      toolCalls: asNumber(usageRow.tool_calls),
+    },
+    dataCoverage: {
+      available: ['本周交付物与采用状态', '工作流运行结果', '定时任务执行结果', 'AI 调用与费用'],
+      unavailable: ['真实营收', '平台订单', '毛利与现金余额', '线索与成交'],
+    },
+  }
+}
+
+export function renderWeeklyBusinessReview(review: WeeklyBusinessReview): string {
+  const d = review.deliverables
+  const suggestions: string[] = []
+  if (d.draft > 0) suggestions.push(`有 ${d.draft} 个交付物待你确认「采用/修改/废弃」，先把本周产出定性。`)
+  if (review.workflows.failed > 0) suggestions.push(`本周 ${review.workflows.failed} 条工作流失败，排查输入或续跑。`)
+  if (review.automations.failed > 0) suggestions.push(`定时任务有 ${review.automations.failed} 次失败执行，确认是否需要修正。`)
+  if (d.total === 0) suggestions.push('本周还没有登记交付物，跑一个工作流或手动登记一次成果，形成可复盘的产出。')
+  if (review.completeness < 100) suggestions.push('补齐经营画像，让下周的经营建议更贴合真实业务。')
+  if (suggestions.length === 0) suggestions.push('本周产出与执行状态健康，围绕当前目标安排下周第一个可交付动作。')
+
+  const lines = [
+    '# 本周经营复盘',
+    '',
+    `> ${review.businessName || '尚未命名的业务'} · ${review.weekStartDate} ~ ${review.weekEndDate} · 数据截至 ${review.generatedAt}`,
+    '',
+    '## 交付物',
+    '',
+    `- 本周产出 ${d.total} 个：已采用 ${d.adopted} · 已修改 ${d.revised} · 已废弃 ${d.discarded} · 待处理 ${d.draft}`,
+    `- 采用率 ${d.adoptionRate}%（已采用+已修改 ÷ 未废弃）`,
+    '',
+    '## AI 执行',
+    '',
+    `- 工作流：成功 ${review.workflows.success} · 失败 ${review.workflows.failed}（共 ${review.workflows.total}）`,
+    `- 定时任务执行：${review.automations.executions} 次（成功 ${review.automations.success} · 失败 ${review.automations.failed}）`,
+    `- AI 使用：模型调用 ${review.aiUsage.modelCalls} · Token ${review.aiUsage.totalTokens} · 工具调用 ${review.aiUsage.toolCalls} · 已知费用 $${review.aiUsage.costUsd.toFixed(4)}`,
+    '',
+    '## 经营目标',
+    '',
+    ...(review.currentGoals.length > 0 ? review.currentGoals.map((goal) => `- ${goal}`) : ['- （尚未设定经营目标）']),
+    '',
+    '## 下周建议',
+    '',
+    ...suggestions.map((item, index) => `${index + 1}. ${item}`),
+    '',
+    '## 数据边界',
+    '',
+    `- 已覆盖：${review.dataCoverage.available.join('、')}`,
+    `- 尚未接入：${review.dataCoverage.unavailable.join('、')}`,
+    '- 本复盘为事实汇总，不推测未接入的营收、订单、毛利或转化。',
+  ]
   return lines.join('\n')
 }

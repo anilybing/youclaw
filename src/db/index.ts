@@ -316,6 +316,23 @@ CREATE TABLE IF NOT EXISTS agentops_spans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agentops_spans_trace ON agentops_spans(trace_id, started_at, id);
+
+CREATE TABLE IF NOT EXISTS deliverables (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  type TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_id TEXT,
+  agent_id TEXT,
+  chat_id TEXT,
+  file_path TEXT,
+  summary TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deliverables_status_created ON deliverables(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deliverables_created ON deliverables(created_at DESC);
 `
 
 // bun:sqlite query result type helpers

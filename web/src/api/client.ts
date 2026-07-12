@@ -2336,6 +2336,69 @@ export async function getTodayBusinessDashboard() {
   return apiFetch<TodayBusinessSnapshotDTO>('/api/business/dashboard/today')
 }
 
+export interface DeliverableDTO {
+  id: string
+  title: string
+  type: 'report' | 'image' | 'video' | 'document' | 'notes' | 'other'
+  source_kind: 'workflow' | 'media' | 'task' | 'manual'
+  source_id: string | null
+  agent_id: string | null
+  chat_id: string | null
+  file_path: string | null
+  summary: string | null
+  status: 'draft' | 'adopted' | 'revised' | 'discarded'
+  created_at: string
+  updated_at: string
+}
+
+export type DeliverableStatus = DeliverableDTO['status']
+
+export async function getDeliverables(params: { status?: DeliverableStatus; limit?: number } = {}) {
+  const query = new URLSearchParams()
+  if (params.status) query.set('status', params.status)
+  if (params.limit) query.set('limit', String(params.limit))
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return apiFetch<{ deliverables: DeliverableDTO[] }>(`/api/business/deliverables${suffix}`)
+}
+
+export async function createDeliverable(input: { title: string; type?: DeliverableDTO['type']; summary?: string }) {
+  return apiFetch<DeliverableDTO>('/api/business/deliverables', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateDeliverableStatus(id: string, status: DeliverableStatus) {
+  return apiFetch<DeliverableDTO>(`/api/business/deliverables/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
+}
+
+export async function deleteDeliverable(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/business/deliverables/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export interface WeeklyBusinessReviewDTO {
+  schemaVersion: 1
+  generatedAt: string
+  weekStartDate: string
+  weekEndDate: string
+  timeZone: string
+  businessName: string
+  currentGoals: string[]
+  completeness: number
+  deliverables: { total: number; draft: number; adopted: number; revised: number; discarded: number; adoptionRate: number }
+  workflows: { total: number; success: number; failed: number }
+  automations: { executions: number; success: number; failed: number }
+  aiUsage: { modelCalls: number; totalTokens: number; costUsd: number; toolCalls: number }
+  dataCoverage: { available: string[]; unavailable: string[] }
+}
+
+export async function getWeeklyBusinessReview() {
+  return apiFetch<{ review: WeeklyBusinessReviewDTO; brief: string }>('/api/business/review/weekly')
+}
+
 export type TelemetryEventType = 'app_start' | 'skill_run' | 'error'
 
 /** 遥测上报（失败静默，绝不影响业务流；payload 禁止含对话与文件内容） */
