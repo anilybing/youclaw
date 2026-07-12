@@ -19,7 +19,7 @@ import {
   type WorkflowStep,
   type WorkflowBudgets,
 } from '../workflow/store.ts'
-import { startWorkflowRun, resumeWorkflowRun } from '../workflow/runner.ts'
+import { startWorkflowRun, resumeWorkflowRun, approveWorkflowRun, rejectWorkflowRun } from '../workflow/runner.ts'
 import { getLogger } from '../logger/index.ts'
 
 function handleError(err: unknown, fallback: string): { status: 400 | 404 | 500; body: { error: string; errorCode?: string } } {
@@ -104,6 +104,30 @@ export function createWorkflowsRoutes() {
       return c.json({ run })
     } catch (err) {
       const { status, body } = handleError(err, '续跑失败')
+      return c.json(body, status)
+    }
+  })
+
+  // [XJC] 人工审批：批准 → 从 approval 的下一步续跑
+  app.post('/workflow-runs/:runId/approve', (c) => {
+    try {
+      const { run } = approveWorkflowRun(c.req.param('runId'))
+      return c.json({ run })
+    } catch (err) {
+      const { status, body } = handleError(err, '批准失败')
+      return c.json(body, status)
+    }
+  })
+
+  // [XJC] 人工审批：拒绝 → 终止本次运行（可重新运行）
+  app.post('/workflow-runs/:runId/reject', async (c) => {
+    try {
+      const payload = await c.req.json().catch(() => ({}))
+      const reason = typeof payload?.reason === 'string' ? payload.reason : undefined
+      const run = rejectWorkflowRun(c.req.param('runId'), reason)
+      return c.json({ run })
+    } catch (err) {
+      const { status, body } = handleError(err, '拒绝失败')
       return c.json(body, status)
     }
   })

@@ -38,10 +38,11 @@ export interface WorkflowStepWhen {
 }
 
 /**
- * 步骤三种节点类型（对标扣子异构节点，成本/确定性分层）：
+ * 步骤四种节点类型（对标扣子异构节点，成本/确定性分层）：
  * - agent（默认）：完整员工回合（带全部工具，自主性最高、最贵）
  * - llm：单次模型直调（无工具循环，便宜快速确定，适合改写/大纲/总结类）
  * - tool：确定性内置工具（零模型消耗，见 nodes.ts 白名单）
+ * - approval：人工审批闸口——跑到此步暂停（awaiting_approval），等用户在 UI 批准后续跑、拒绝则终止
  */
 /** 循环执行（对标扣子"循环/批处理节点"的列表遍历模式） */
 export interface WorkflowStepForEach {
@@ -57,7 +58,7 @@ export interface WorkflowStep {
   title: string
   /** agent/llm 节点：提示词模板；tool 节点可留空 */
   prompt: string
-  kind?: 'agent' | 'llm' | 'tool'
+  kind?: 'agent' | 'llm' | 'tool' | 'approval'
   /** kind=tool 时必填：nodes.ts 注册表内的工具名 */
   tool?: string
   /** kind=tool 时的参数模板（值支持 {{变量}} 引用） */
@@ -90,7 +91,7 @@ export interface Workflow {
 export interface WorkflowRun {
   id: string
   workflowId: string
-  status: 'running' | 'success' | 'failed'
+  status: 'running' | 'success' | 'failed' | 'awaiting_approval'
   currentStep: number
   inputs: Record<string, string>
   outputs: string[]
@@ -288,7 +289,7 @@ export function validateWorkflowDraft(input: {
   const agentId = input.agentId.trim()
   if (!agentId) throw new WorkflowError(WORKFLOW_INVALID, '需要执行员工 agentId')
 
-  const KINDS = new Set(['agent', 'llm', 'tool'])
+  const KINDS = new Set(['agent', 'llm', 'tool', 'approval'])
   const WHEN_OPS = new Set(['contains', 'not_contains', 'is_empty', 'not_empty'])
   const stepIds = new Set<string>()
   const steps: WorkflowStep[] = (input.steps ?? []).map((s, i) => {
@@ -317,7 +318,7 @@ export function validateWorkflowDraft(input: {
     if (!INPUT_KEY_RE.test(s.id!)) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步 id「${s.id}」不合法（小写字母开头，字母/数字/下划线）`)
     if (stepIds.has(s.id!)) throw new WorkflowError(WORKFLOW_INVALID, `步骤 id「${s.id}」重复`)
     stepIds.add(s.id!)
-    if (!KINDS.has(s.kind!)) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步 kind「${s.kind}」不合法（agent/llm/tool）`)
+    if (!KINDS.has(s.kind!)) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步 kind「${s.kind}」不合法（agent/llm/tool/approval）`)
     if (s.kind === 'tool') {
       if (!s.tool) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步是 tool 节点但缺 tool 名`)
     } else {
@@ -501,7 +502,7 @@ export function listRuns(workflowId: string, limit = 20): WorkflowRun[] {
 
 export function hasRunningRun(workflowId: string): boolean {
   const row = getDatabase()
-    .query("SELECT 1 FROM workflow_runs WHERE workflow_id = ? AND status = 'running' LIMIT 1")
+    .query("SELECT 1 FROM workflow_runs WHERE workflow_id = ? AND status IN ('running', 'awaiting_approval') LIMIT 1")
     .get(workflowId) as { 1: number } | null
   return Boolean(row)
 }
@@ -619,6 +620,40 @@ export function reopenRun(runId: string): void {
          active_started_at = ?, finished_at = NULL
      WHERE id = ? AND status = 'failed'`,
     [at, runId],
+  )
+}
+
+/** [XJC] 人工审批闸口：running → awaiting_approval（记录当前 approval 步，停止计时；进度/产出保留） */
+export function pauseRunForApproval(runId: string, stepIndex: number): void {
+  checkpointRunActivity(runId)
+  getDatabase().run(
+    `UPDATE workflow_runs
+     SET status = 'awaiting_approval', current_step = ?, active_started_at = NULL
+     WHERE id = ? AND status = 'running'`,
+    [stepIndex, runId],
+  )
+}
+
+/** [XJC] 人工批准：awaiting_approval → running（重置计时起点；进度/产出保留，由调用方推进到下一步） */
+export function reopenApprovedRun(runId: string): void {
+  getDatabase().run(
+    `UPDATE workflow_runs
+     SET status = 'running', error = NULL, error_code = NULL, stop_reason = NULL,
+         active_started_at = ?, finished_at = NULL
+     WHERE id = ? AND status = 'awaiting_approval'`,
+    [nowIso(), runId],
+  )
+}
+
+/** [XJC] 人工拒绝：awaiting_approval → failed（记录拒绝原因，终止本次运行） */
+export function rejectRun(runId: string, reason: string): void {
+  checkpointRunActivity(runId)
+  getDatabase().run(
+    `UPDATE workflow_runs
+     SET status = 'failed', error = ?, error_code = 'WORKFLOW_REJECTED',
+         stop_reason = 'rejected', active_started_at = NULL, finished_at = ?
+     WHERE id = ? AND status = 'awaiting_approval'`,
+    [reason, nowIso(), runId],
   )
 }
 

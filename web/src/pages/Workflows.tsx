@@ -11,6 +11,8 @@ import {
   RefreshCw,
   RotateCcw,
   Loader2,
+  Check,
+  X,
   ChevronDown,
   ChevronRight,
   AlertTriangle,
@@ -32,6 +34,8 @@ import {
   getWorkflowRuns,
   getWorkflowRunDetail,
   resumeWorkflowRunById,
+  approveWorkflowRunById,
+  rejectWorkflowRunById,
   type WorkflowDTO,
   type WorkflowRunDTO,
 } from '../api/client'
@@ -74,7 +78,7 @@ function resolveWorkflowCollectionViewState(
 }
 
 function hasRunningWorkflowRuns(runs: WorkflowRunDTO[]): boolean {
-  return runs.some((run) => run.status === 'running')
+  return runs.some((run) => run.status === 'running' || run.status === 'awaiting_approval')
 }
 
 function canDeleteWorkflow(workflow: Pick<WorkflowDTO, 'source'>): boolean {
@@ -233,6 +237,7 @@ export function Workflows() {
   const [outputRun, setOutputRun] = useState<WorkflowRunDTO | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<WorkflowDTO | null>(null)
   const [resumingId, setResumingId] = useState<string | null>(null)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
   const focusedRunRef = useRef('')
 
   const loadWorkflows = useCallback(async () => {
@@ -368,6 +373,50 @@ export function Workflows() {
     }
   }
 
+  const handleApprove = async (run: WorkflowRunDTO) => {
+    if (approvingId) return
+    setApprovingId(run.id)
+    try {
+      const { run: approvedRun } = await approveWorkflowRunById(run.id)
+      toast.success(t.workflows.approved)
+      setRunsByWf((prev) => ({
+        ...prev,
+        [run.workflowId]: [
+          approvedRun,
+          ...(prev[run.workflowId] ?? []).filter((item) => item.id !== approvedRun.id),
+        ],
+      }))
+      setRunLoadStateByWf((prev) => ({ ...prev, [run.workflowId]: 'ready' }))
+      void loadRuns(run.workflowId, false)
+    } catch (err) {
+      toast.error(formatApiErrorMessage(err, t.workflows.approveFailed))
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  const handleReject = async (run: WorkflowRunDTO) => {
+    if (approvingId) return
+    setApprovingId(run.id)
+    try {
+      const { run: rejectedRun } = await rejectWorkflowRunById(run.id)
+      toast.success(t.workflows.rejected)
+      setRunsByWf((prev) => ({
+        ...prev,
+        [run.workflowId]: [
+          rejectedRun,
+          ...(prev[run.workflowId] ?? []).filter((item) => item.id !== rejectedRun.id),
+        ],
+      }))
+      setRunLoadStateByWf((prev) => ({ ...prev, [run.workflowId]: 'ready' }))
+      void loadRuns(run.workflowId, false)
+    } catch (err) {
+      toast.error(formatApiErrorMessage(err, t.workflows.rejectFailed))
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
   const handleCopyFinal = async () => {
     const finalOutput = outputRun?.outputs.at(-1)
     if (!finalOutput) return
@@ -397,6 +446,9 @@ export function Workflows() {
     }
     if (run.status === 'success') {
       return <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">{t.workflows.statusSuccess}</span>
+    }
+    if (run.status === 'awaiting_approval') {
+      return <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">{t.workflows.statusAwaitingApproval} {Math.min(run.currentStep + 1, total)}/{total}</span>
     }
     return <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">{t.workflows.statusFailed} {Math.min(run.currentStep + 1, total)}/{total}</span>
   }
@@ -555,6 +607,14 @@ export function Workflows() {
                                   )}
                                 </span>
                               )}
+                              {run.status === 'awaiting_approval' && wf.steps.length > 0 && (
+                                <span
+                                  className="max-w-48 truncate font-medium text-amber-600 dark:text-amber-400"
+                                  title={wf.steps[Math.min(run.currentStep, wf.steps.length - 1)]?.prompt}
+                                >
+                                  {wf.steps[Math.min(run.currentStep, wf.steps.length - 1)]?.title ?? '-'}
+                                </span>
+                              )}
                               <span className="text-muted-foreground">{formatDate(run.startedAt)}</span>
                               {run.error && <span className="min-w-0 flex-1 truncate text-destructive" title={run.error}>{run.error}</span>}
                               {!run.error && <span className="flex-1" />}
@@ -572,6 +632,26 @@ export function Workflows() {
                                   {resumingId === run.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
                                   {t.workflows.resume}
                                 </Button>
+                              )}
+                              {run.status === 'awaiting_approval' && (
+                                <>
+                                  <Button
+                                    size="sm" variant="default" className="h-6 gap-1 px-2 text-xs"
+                                    disabled={approvingId === run.id}
+                                    onClick={() => void handleApprove(run)}
+                                  >
+                                    {approvingId === run.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                                    {t.workflows.approve}
+                                  </Button>
+                                  <Button
+                                    size="sm" variant="outline" className="h-6 gap-1 px-2 text-xs"
+                                    disabled={approvingId === run.id}
+                                    onClick={() => void handleReject(run)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                    {t.workflows.reject}
+                                  </Button>
+                                </>
                               )}
                             </div>
                           ))}

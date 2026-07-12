@@ -86,8 +86,8 @@ const SaveParams = Type.Object({
     id: Type.Optional(Type.String({ description: 'Step ref id (lowercase_snake, default step1..stepN) for {{steps.<id>.output}} references.' })),
     title: Type.String(),
     prompt: Type.String({ description: 'Instruction template. Variables: {{inputs.key}} and {{steps.<id>.output}} (any earlier step, not just the previous one). If no steps.* ref is used, the previous output is auto-injected.' }),
-    kind: Type.Optional(Type.Union([Type.Literal('agent'), Type.Literal('llm'), Type.Literal('tool')], {
-      description: 'agent(default)=full employee turn with tools (expensive, autonomous); llm=single model call, no tools (cheap/fast — use for rewrite/outline/summarize); tool=deterministic builtin, zero model cost.',
+    kind: Type.Optional(Type.Union([Type.Literal('agent'), Type.Literal('llm'), Type.Literal('tool'), Type.Literal('approval')], {
+      description: 'agent(default)=full employee turn with tools (expensive, autonomous); llm=single model call, no tools (cheap/fast — use for rewrite/outline/summarize); tool=deterministic builtin, zero model cost; approval=human gate: the run pauses (awaiting_approval) until the user approves in the UI (put the approval question in prompt).',
     })),
     tool: Type.Optional(Type.String({ description: 'kind=tool only: one of knowledge_search / http_get / read_file / fulfillment_list_stock.' })),
     args: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'kind=tool only: tool args; values support {{variable}} templates. read_file uses { path (workspace-relative or in-workspace absolute), maxChars? }.' })),

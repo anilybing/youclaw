@@ -2191,7 +2191,7 @@ export interface WorkflowDTO {
 export interface WorkflowRunDTO {
   id: string
   workflowId: string
-  status: 'running' | 'success' | 'failed'
+  status: 'running' | 'success' | 'failed' | 'awaiting_approval'
   currentStep: number
   inputs: Record<string, string>
   outputs: string[]
@@ -2231,6 +2231,17 @@ export async function getWorkflowRunDetail(runId: string) {
 
 export async function resumeWorkflowRunById(runId: string) {
   return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflow-runs/${encodeURIComponent(runId)}/resume`, { method: 'POST' })
+}
+
+export async function approveWorkflowRunById(runId: string) {
+  return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflow-runs/${encodeURIComponent(runId)}/approve`, { method: 'POST' })
+}
+
+export async function rejectWorkflowRunById(runId: string, reason?: string) {
+  return apiFetch<{ run: WorkflowRunDTO }>(`/api/workflow-runs/${encodeURIComponent(runId)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
 }
 
 // ── 一人公司经营画像与今日驾驶舱 ───────────────────────────────────────

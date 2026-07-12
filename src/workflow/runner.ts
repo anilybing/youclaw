@@ -37,7 +37,10 @@ import {
   getRunForEachCheckpoint,
   getWorkflow,
   hasRunningRun,
+  pauseRunForApproval,
+  reopenApprovedRun,
   reopenRun,
+  rejectRun,
   setRunTraceId,
   updateRunProgress,
   WorkflowError,
@@ -467,6 +470,16 @@ async function executeRunLoop(
         continue
       }
 
+      // [XJC] 人工审批闸口：跑到 approval 步就暂停等用户批准（不 push output，outputs 与 index 对齐）。
+      // finally 会释放运行锁；批准走 approveWorkflowRun 从下一步续跑，拒绝走 rejectWorkflowRun 置 failed。
+      if (step.kind === 'approval') {
+        if (activeCheckpoint) throw new WorkflowError(WORKFLOW_INVALID, 'approval 步不支持 forEach 检查点')
+        pauseRunForApproval(runId, index)
+        syncWorkflowTraceActiveDuration(traceId, getRun(runId)!.usage.activeDurationMs)
+        getLogger().info({ workflowId: wf.id, runId, stepIndex: index, category: 'workflow' }, 'Workflow run paused for human approval')
+        return getRun(runId)!
+      }
+
       let output: string
       if (step.forEach) {
         const list = parseForEachList(resolveVarRef(step.forEach.var, vars), step.forEach.maxItems ?? FOREACH_DEFAULT_CAP)
@@ -653,4 +666,68 @@ export function resumeWorkflowRun(runId: string): { run: WorkflowRun; done: Prom
 
   const done = executeRunLoop(d, wf, run.id, traceId, run.chatId, vars, outputs, startIndex, forEachCheckpoint)
   return { run: getRun(run.id)!, done }
+}
+
+/**
+ * [XJC] 人工批准审批节点：awaiting_approval → 从 approval 的下一步续跑。
+ * approval 步记为「已批准」产出（供后续步骤引用），已完成步骤产出复用不重跑。
+ */
+export function approveWorkflowRun(runId: string): { run: WorkflowRun; done: Promise<WorkflowRun> } {
+  const d = deps
+  if (!d) throw new WorkflowError(WORKFLOW_INVALID, '工作流运行时未装配')
+  const run = getRun(runId)
+  if (!run) throw new WorkflowError(WORKFLOW_NOT_FOUND, `运行「${runId}」不存在`)
+  if (run.status !== 'awaiting_approval') {
+    throw new WorkflowError(WORKFLOW_INVALID, `只有待审批的运行可以批准（当前状态：${run.status}）`)
+  }
+  const wf = getWorkflow(run.workflowId)
+  if (!wf) throw new WorkflowError(WORKFLOW_NOT_FOUND, `工作流「${run.workflowId}」已被删除`)
+  if (!d.hasEmployee(wf.agentId)) throw new WorkflowError(WORKFLOW_INVALID, `执行员工「${wf.agentId}」不存在`)
+  if (wf.updatedAt > run.startedAt) {
+    throw new WorkflowError(WORKFLOW_INVALID, '工作流定义在该次运行之后被修改过，步骤可能已对不上；请重新运行')
+  }
+
+  const approvalIndex = run.currentStep
+  const approvalStep = wf.steps[approvalIndex]
+  const outputs = run.outputs.slice(0, approvalIndex)
+  const vars: RenderVars = { inputs: { ...run.inputs }, steps: {} }
+  for (let i = 0; i < approvalIndex; i++) {
+    if (outputs[i] !== SKIP_MARKER) vars.steps[wf.steps[i]?.id ?? `step${i + 1}`] = outputs[i]!
+  }
+  const approvalOutput = `✅ 已批准：${approvalStep?.title ?? '审批'}`
+  outputs.push(approvalOutput)
+  vars.steps[approvalStep?.id ?? `step${approvalIndex + 1}`] = approvalOutput
+
+  const traceId = run.traceId ?? randomUUID()
+  if (!run.traceId) {
+    setRunTraceId(run.id, traceId)
+    startAgentOpsTrace({
+      id: traceId, kind: 'workflow', status: 'running', agentId: wf.agentId, chatId: run.chatId,
+      workflowId: wf.id, workflowRunId: run.id, coverage: 'partial',
+      coverageNotes: ['legacy_run_before_tracing'], startedAt: run.startedAt,
+    })
+  } else {
+    markAgentOpsTraceRunning(traceId)
+  }
+
+  reopenApprovedRun(run.id)
+  runningWorkflows.add(wf.id)
+  getLogger().info({ workflowId: wf.id, runId: run.id, approvedStep: approvalIndex, category: 'workflow' }, 'Workflow approval granted, resuming')
+  const done = executeRunLoop(d, wf, run.id, traceId, run.chatId, vars, outputs, approvalIndex + 1, null)
+  return { run: getRun(run.id)!, done }
+}
+
+/** [XJC] 人工拒绝审批节点：awaiting_approval → failed（终止本次运行，用户可重新运行）。 */
+export function rejectWorkflowRun(runId: string, reason?: string): WorkflowRun {
+  const run = getRun(runId)
+  if (!run) throw new WorkflowError(WORKFLOW_NOT_FOUND, `运行「${runId}」不存在`)
+  if (run.status !== 'awaiting_approval') {
+    throw new WorkflowError(WORKFLOW_INVALID, `只有待审批的运行可以拒绝（当前状态：${run.status}）`)
+  }
+  rejectRun(run.id, reason?.trim() || '用户拒绝了审批')
+  if (run.traceId) {
+    finishAgentOpsTrace(run.traceId, 'failed', { errorCode: 'WORKFLOW_REJECTED', stopReason: 'rejected' })
+  }
+  getLogger().info({ runId: run.id, category: 'workflow' }, 'Workflow approval rejected')
+  return getRun(run.id)!
 }
