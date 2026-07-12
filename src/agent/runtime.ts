@@ -563,6 +563,8 @@ export class AgentRuntime {
         ?.map((attachment) => attachment.filePath)
         .filter((filePath): filePath is string => typeof filePath === 'string' && filePath.length > 0),
       mediaAuthorization: mediaTurnContext.authorization,
+      mediaAbortSignal: abortController.signal,
+      onMediaProgress: (message: string) => this.emitStream(agentId, chatId, message, turnId),
       browserProfileId: effectiveBrowserProfileId,
       browserTarget,
       reservedToolNames: tools.map((tool) => tool.name),

@@ -47,6 +47,10 @@ export function createMediaTools(params: {
   workspaceDir: string
   attachmentPaths?: string[]
   authorization: MediaToolAuthorization
+  /** 视频轮询期间的取消信号（用户点停止时中断长时间轮询） */
+  videoSignal?: AbortSignal
+  /** 视频轮询进度回调（runtime 用它把「生成中」提示推给前端） */
+  onVideoProgress?: (message: string) => void
 }): ToolDefinition[] {
   const service = getMediaService()
   const agentId = params.agentId
@@ -136,7 +140,17 @@ export function createMediaTools(params: {
         try {
           const safePath = args.imagePath ? assertEditableImagePath(args.imagePath, inputScope) : undefined
           authorizeVideoCall()
-          const result = await service.generateVideo(args.prompt, agentId, safePath)
+          let lastProgressAt = 0
+          const result = await service.generateVideo(args.prompt, agentId, safePath, {
+            signal: params.videoSignal,
+            onProgress: ({ elapsedMs, status }) => {
+              if (!params.onVideoProgress) return
+              const now = Date.now()
+              if (now - lastProgressAt < 15_000) return // 节流：最多每 15 秒提示一次
+              lastProgressAt = now
+              params.onVideoProgress(`🎬 视频生成中…（已 ${Math.round(elapsedMs / 1000)} 秒，状态 ${status}）\n`)
+            },
+          })
           return ok(JSON.stringify({ saved: result.filePath, note: '视频已生成并保存到「媒体产出」。' }, null, 2))
         } catch (err) {
           rethrow(err, '视频生成失败')

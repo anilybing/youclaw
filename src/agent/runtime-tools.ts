@@ -57,6 +57,8 @@ export async function buildRuntimeCustomTools(params: {
   workspaceDir: string
   documentAttachmentPaths?: string[]
   mediaAuthorization: MediaToolAuthorization
+  mediaAbortSignal?: AbortSignal
+  onMediaProgress?: (message: string) => void
   browserProfileId?: string
   browserTarget?: BrowserTarget
   reservedToolNames?: string[]
@@ -83,6 +85,8 @@ export async function buildRuntimeCustomTools(params: {
       workspaceDir: params.workspaceDir,
       attachmentPaths: params.documentAttachmentPaths,
       authorization: params.mediaAuthorization,
+      videoSignal: params.mediaAbortSignal,
+      onVideoProgress: params.onMediaProgress,
     }),
     // [XJC] 记忆自管理（学习强化）：确定性「记住/回忆」，用户显式教学不再靠 agent 自觉写文件
     ...(params.memoryManager ? createMemoryTools({ agentId: params.agentId, memoryManager: params.memoryManager }) : []),

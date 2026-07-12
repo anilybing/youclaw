@@ -320,6 +320,25 @@ describe('MediaService.generateVideo', () => {
     writeMediaSettings({})
     await expect(service.generateVideo('x', AGENT)).rejects.toMatchObject({ code: MEDIA_NOT_CONFIGURED })
   })
+
+  test('轮询期间上报进度 onProgress（供 UI 显示生成中）', async () => {
+    configuredAll()
+    videoPollsUntilSucceed = 2
+    const progresses: Array<{ elapsedMs: number; status: string }> = []
+    await service.generateVideo('x', AGENT, undefined, { onProgress: (info) => progresses.push(info) })
+    expect(progresses.length).toBeGreaterThanOrEqual(1)
+    expect(progresses[0]!.status).toBe('InProgress')
+  }, 60_000)
+
+  test('已取消的 signal 立即中断且不发提交请求', async () => {
+    configuredAll()
+    const ac = new AbortController()
+    ac.abort()
+    const err = await service.generateVideo('x', AGENT, undefined, { signal: ac.signal }).catch((e) => e as MediaError)
+    expect(err).toBeInstanceOf(MediaError)
+    expect((err as MediaError).message).toContain('取消')
+    expect(requests.some((r) => r.pathname === '/v1/video/submit')).toBe(false)
+  })
 })
 
 describe('assertEditableImagePath 输入安全', () => {

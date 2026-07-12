@@ -222,6 +222,12 @@ export interface MediaServiceOptions {
   artifactFetchFn?: typeof fetch
 }
 
+/** 视频生成可选项：取消信号（轮询时检查）与轮询进度回调（供 UI 显示「生成中」） */
+export interface VideoGenerateOptions {
+  signal?: AbortSignal
+  onProgress?: (info: { elapsedMs: number; status: string }) => void
+}
+
 export class MediaService {
   private readonly artifactFetchFn?: typeof fetch
 
@@ -377,11 +383,15 @@ export class MediaService {
   }
 
   /** 视频生成：submit → 轮询 status → 结果 URL 立即下载落盘（URL 短时效） */
-  async generateVideo(prompt: string, agentId?: string, imagePath?: string): Promise<MediaFileResult> {
+  async generateVideo(prompt: string, agentId?: string, imagePath?: string, options?: VideoGenerateOptions): Promise<MediaFileResult> {
     const cfg = videoConfig()
     if (!isVideoConfigured(cfg)) {
       throw new MediaError(MEDIA_NOT_CONFIGURED, '视频生成未配置，请到 设置 → 语音与媒体 填写服务信息')
     }
+    const throwIfCancelled = () => {
+      if (options?.signal?.aborted) throw new MediaError(MEDIA_PROVIDER_ERROR, '视频生成已取消')
+    }
+    throwIfCancelled()
 
     const payload: Record<string, unknown> = { model: cfg.model, prompt }
     if (imagePath) {
@@ -416,10 +426,12 @@ export class MediaService {
     if (!requestId) throw new MediaError(MEDIA_PROVIDER_ERROR, '视频生成提交返回格式异常（缺少 requestId）')
 
     // 2) poll
-    const deadline = Date.now() + VIDEO_POLL_MAX_MS
+    const startedAt = Date.now()
+    const deadline = startedAt + VIDEO_POLL_MAX_MS
     let videoUrl = ''
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, VIDEO_POLL_INTERVAL_MS))
+      throwIfCancelled()
       let statusRes: Response
       try {
         statusRes = await fetch(endpointUrl(cfg.baseUrl, '/video/status'), {
@@ -445,7 +457,8 @@ export class MediaService {
       if (status === 'failed' || status === 'fail') {
         throw new MediaError(MEDIA_PROVIDER_ERROR, `视频生成失败：${statusBody?.reason ?? '供应商未给出原因'}`)
       }
-      // InQueue / InProgress → 继续轮询
+      // InQueue / InProgress → 上报进度后继续轮询
+      options?.onProgress?.({ elapsedMs: Date.now() - startedAt, status: statusBody?.status ?? 'InProgress' })
     }
     if (!videoUrl) {
       throw new MediaError(MEDIA_PROVIDER_ERROR, '视频生成超时或未返回结果 URL（上限 10 分钟）')
