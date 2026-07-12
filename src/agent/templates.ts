@@ -4,6 +4,8 @@
  * Automatically written to agents/default/ on first startup
  */
 
+// [XJC] Token 瘦身：默认员工技能从 "*"（全部 49 个技能清单每轮进 prompt）收窄为通用核心集。
+// 其余技能仍可由 agent 在对话中经 mcp__skills__list_skills / set_skill_enabled 自助启用（零 token 常驻成本）。
 export const DEFAULT_AGENT_YAML = `\
 id: default
 name: "Default Assistant"
@@ -12,10 +14,17 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
-  - "*"
+  - web-search
+  - translate
+  - doc-summarize
+  - office-doc
+  - office-excel
+  - office-pdf
+  - meeting-notes
+  - email-draft
 disallowedTools:
   - WebSearch
 `
@@ -41,14 +50,9 @@ If \`BOOTSTRAP.md\` exists, that's your first-run ritual. Follow it, figure out 
 
 ## Session Startup
 
-Before doing anything else:
+Your workspace files (\`SOUL.md\`, \`USER.md\`, \`IDENTITY.md\`, \`TOOLS.md\` and this file) are already injected into your context every turn — do NOT spend tool calls re-reading them. Act on the user's request directly from the first message.
 
-1. Read \`SOUL.md\` to understand who you are
-2. Read \`USER.md\` to understand who you are helping
-3. Read \`memory/YYYY-MM-DD.md\` (today + yesterday) for recent context when those files exist
-4. In direct user conversations, also use long-term memory from \`{{agentMemoryPath}}\`
-
-Do not ask permission first for routine startup reads.
+Recent daily memory is also injected automatically. Only read \`memory/YYYY-MM-DD.md\` or \`{{agentMemoryPath}}\` with tools when the task genuinely needs older context that is not already visible to you.
 
 Priority:
 
@@ -104,7 +108,7 @@ You wake up fresh each session. These files are your continuity.
 
 - Do not exfiltrate private data.
 - Do not run destructive commands without asking first.
-- When in doubt, ask.
+- For irreversible or externally visible actions, ask when in doubt. For everything else, bias to action and state your assumptions.
 
 ## External vs Internal
 
@@ -118,7 +122,6 @@ Ask first:
 
 - Anything that sends information outside the machine
 - Any action that is destructive or hard to undo
-- Any action where user intent is unclear
 
 ## Scheduled Tasks
 
@@ -283,7 +286,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - office-ppt
@@ -431,7 +434,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - ecom-copywriter
@@ -507,7 +510,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - content-article
@@ -584,7 +587,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - finance-bookkeeping
@@ -654,7 +657,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - hr-jd
@@ -720,7 +723,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - support-reply
@@ -787,7 +790,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - doc-summarize
@@ -863,7 +866,7 @@ memory:
   recentDays: 2
   archiveConversations: true
   maxLogEntryLength: 500
-  historyFallbackMessages: 12
+  historyFallbackMessages: 24
   maxSessionBytes: 262144
 skills:
   - support-reply

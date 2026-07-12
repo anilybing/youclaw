@@ -104,7 +104,7 @@ export const AgentConfigSchema = z.object({
     maxContextChars: z.number().default(10000),
     archiveConversations: z.boolean().default(true),
     maxLogEntryLength: z.number().default(500),
-    historyFallbackMessages: z.number().default(12),
+    historyFallbackMessages: z.number().default(24),
     maxSessionBytes: z.number().default(262144),
   }).optional(),
   skills: z.array(z.string()).optional(),

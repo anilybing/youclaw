@@ -239,7 +239,7 @@ export class AgentManager {
             name,
             memory: {
               enabled: true, recentDays: 2, archiveConversations: true,
-              maxLogEntryLength: 500, historyFallbackMessages: 12, maxSessionBytes: 262144,
+              maxLogEntryLength: 500, historyFallbackMessages: 24, maxSessionBytes: 262144,
             },
           }
           if (model) yamlObj.model = model

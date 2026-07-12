@@ -81,6 +81,12 @@ export function resolvePiModel(config: ModelConfig): Model<Api> {
 
   // Manual construction for custom/unknown models
   const api = resolveApi(manualProvider)
+  // [XJC] 不在注册表的模型此前一律 reasoning:false——GLM-5.x 等混合推理模型的思考模式
+  // 从未被启用，跑在"快答模式"，智力大打折扣。按已知家族启用思考并配好各家兼容参数。
+  // 保险丝：个别第三方代理若不接受思考参数，XJC_MANUAL_REASONING=off 一键回旧行为。
+  const reasoningProfile = process.env.XJC_MANUAL_REASONING === 'off'
+    ? { reasoning: false, maxTokens: 8192 } satisfies ManualReasoningProfile
+    : resolveManualReasoningProfile(manualProvider, config.modelId, config.baseUrl)
 
   return {
     id: config.modelId,
@@ -88,12 +94,69 @@ export function resolvePiModel(config: ModelConfig): Model<Api> {
     api,
     provider: manualProvider,
     baseUrl: config.baseUrl || resolveDefaultBaseUrl(manualProvider),
-    reasoning: false,
+    reasoning: reasoningProfile.reasoning,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 200000,
-    maxTokens: 8192,
+    maxTokens: reasoningProfile.maxTokens,
+    ...(reasoningProfile.compat ? { compat: reasoningProfile.compat } : {}),
   } as Model<Api>
+}
+
+interface ManualReasoningProfile {
+  reasoning: boolean
+  maxTokens: number
+  compat?: Record<string, unknown>
+}
+
+/**
+ * [XJC] 已知推理模型家族的手动构造画像。
+ * - glm-4.6+/glm-5.x（智谱混合推理）：thinkingFormat 'zai' → 请求带 enable_thinking；
+ *   聚合源（硅基流动等）常用 `org/model` 形式（如 zai-org/GLM-5.2），按末段裸名匹配家族。
+ * - qwen3/qwq（阿里）：enable_thinking（'qwen' 格式）。
+ * - deepseek-r*（推理模型天然思考，无需参数）：只标 reasoning 以正确解析思考流，
+ *   并禁发 OpenAI 风格 reasoning_effort（DeepSeek 端点不接受）。
+ * 输出预算：只在各家官方端点放大到 16384；第三方聚合源保守维持 8192，
+ * 避免超过其 max_tokens 上限被 400 拒绝（用户实测硅基流动 8192 可正常完成思考+正文）。
+ * 未知模型保持原行为（reasoning:false, 8192）。
+ */
+export function resolveManualReasoningProfile(provider: string, modelId: string, baseUrl = ''): ManualReasoningProfile {
+  const id = modelId.toLowerCase()
+  const bare = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id
+  const url = baseUrl.toLowerCase()
+
+  if (provider === 'glm' || provider === 'zai' || provider === 'zai-org' || /^glm-/.test(bare)) {
+    const isReasoningGlm = /^glm-(?:4\.[6-9]|[5-9])/.test(bare)
+    const officialEndpoint = !url || url.includes('bigmodel.cn') || url.includes('api.z.ai')
+    return {
+      reasoning: isReasoningGlm,
+      maxTokens: isReasoningGlm && officialEndpoint ? 16384 : 8192,
+      compat: {
+        thinkingFormat: 'zai',
+        maxTokensField: 'max_tokens',
+      },
+    }
+  }
+
+  if (/qwen3|qwq/.test(bare)) {
+    const officialEndpoint = !url || url.includes('dashscope.aliyuncs.com')
+    return {
+      reasoning: true,
+      maxTokens: officialEndpoint ? 16384 : 8192,
+      compat: { thinkingFormat: 'qwen' },
+    }
+  }
+
+  if (/deepseek-r|deepseek-reasoner/.test(bare)) {
+    const officialEndpoint = !url || url.includes('api.deepseek.com')
+    return {
+      reasoning: true,
+      maxTokens: officialEndpoint ? 16384 : 8192,
+      compat: { supportsReasoningEffort: false },
+    }
+  }
+
+  return { reasoning: false, maxTokens: 8192 }
 }
 
 /**

@@ -66,6 +66,8 @@ const YOUCLAW_ALLOW: Array<{ file: RegExp; pattern?: RegExp; reason: string }> =
   { file: /^scripts\/build-sidecar\.mjs$/, pattern: /YOUCLAW_/, reason: 'legacy 环境变量别名兼容（仅 .env.production 解析）' },
   { file: /^src\/config\/env\.ts$/, pattern: /YOUCLAW_/, reason: 'legacy 环境变量别名映射' },
   { file: /^src\/config\/paths\.ts$/, pattern: /youclaw/i, reason: 'legacy 数据目录迁移常量' },
+  { file: /^scripts\/make-usb-payload\.ps1$/, pattern: /com\.youclaw\.app/i, reason: 'Tauri 数据目录标识（pytools 载荷自动探测路径）' },
+  { file: /^scripts\/setup-local-intelligence\.mjs$/, pattern: /com\.youclaw\.app/i, reason: 'Tauri 数据目录标识（安装目标回退路径）' },
   { file: /^\.github\//, reason: 'CI 工作流（仓库名引用）' },
   { file: /^e2e\//, reason: '端到端测试夹具' },
   { file: /^tests\//, pattern: /youclaw/i, reason: '测试夹具中的 legacy 路径断言' },

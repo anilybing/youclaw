@@ -118,8 +118,8 @@ describe('PromptBuilder channel context', () => {
       },
     )
 
-    expect(prompt).toContain('## Skills (mandatory)')
-    expect(prompt).toContain('Before replying: scan <available_skills> <description> entries.')
+    expect(prompt).toContain('## Skills (on-demand)')
+    expect(prompt).toContain('For ordinary requests, answer directly without reading any SKILL.md.')
     expect(prompt).toContain('call-me-dad')
     expect(prompt).toContain('<available_skills>')
     expect(prompt).toContain('<memory>')
@@ -172,9 +172,12 @@ describe('PromptBuilder channel context', () => {
     expect(prompt).toContain('Tool execution enforces per-turn authorization and call limits')
     expect(prompt).toContain('Never call skill list/discovery/install tools')
     expect(prompt).toContain('do not claim that an image skill is missing')
-    expect(prompt).toContain('This rule does NOT apply to built-in runtime tools')
     expect(prompt).toContain('<runtime_media_instruction>authorized test turn</runtime_media_instruction>')
     expect(prompt).not.toContain('## Image Understanding Rule')
+    // 工具规则按需注入：本轮未挂载 skills/document/task 工具时，对应规则不再占 token
+    expect(prompt).not.toContain('## Skill Self-Service Rule')
+    expect(prompt).not.toContain('## Document Handling Rule')
+    expect(prompt).not.toContain('## Scheduled Task Rule')
   })
 
   test('only injects image understanding policy when the VLM tool is actually available', () => {
@@ -213,6 +216,84 @@ describe('PromptBuilder channel context', () => {
 
     expect(prompt).not.toContain('## Built-in Media Generation Rule')
     expect(prompt).not.toContain('mcp__media__generate_image')
+  })
+})
+
+describe('PromptBuilder cache-prefix ordering & conditional rules', () => {
+  test('volatile memory context and media turn instruction are placed after static rules', () => {
+    const builder = new PromptBuilder(null, null)
+    const prompt = builder.build(
+      resolve(import.meta.dir, '..'),
+      { workspaceDir: resolve(import.meta.dir, '..') } as AgentConfig,
+      {
+        agentId: 'default',
+        chatId: 'web:chat-order',
+        skillsPrompt: '<available_skills><skill><name>x</name></skill></available_skills>',
+        memoryContext: '<memory>\nvolatile retrieved hit\n</memory>',
+        mediaTurnInstruction: '<runtime_media_instruction>turn-scoped</runtime_media_instruction>',
+        availableToolNames: [
+          'read',
+          'mcp__document__search_document',
+          'mcp__task__list_tasks',
+          'mcp__skills__list_skills',
+        ],
+      },
+    )
+
+    const memoryIdx = prompt.indexOf('<memory>')
+    const mediaTurnIdx = prompt.indexOf('<runtime_media_instruction>')
+    const skillsIdx = prompt.indexOf('## Skills (on-demand)')
+    const documentRuleIdx = prompt.indexOf('## Document Handling Rule')
+    const taskRuleIdx = prompt.indexOf('## Scheduled Task Rule')
+    const skillRuleIdx = prompt.indexOf('## Skill Self-Service Rule')
+    const currentContextIdx = prompt.indexOf('## Current Context')
+
+    expect(memoryIdx).toBeGreaterThan(-1)
+    expect(mediaTurnIdx).toBeGreaterThan(-1)
+    for (const staticIdx of [skillsIdx, documentRuleIdx, taskRuleIdx, skillRuleIdx, currentContextIdx]) {
+      expect(staticIdx).toBeGreaterThan(-1)
+      expect(memoryIdx).toBeGreaterThan(staticIdx)
+      expect(mediaTurnIdx).toBeGreaterThan(staticIdx)
+    }
+    expect(mediaTurnIdx).toBeGreaterThan(memoryIdx)
+  })
+
+  test('injected-files notice and action-first principles are present with workspace docs', () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), 'XiaoJuClaw-principles-'))
+    try {
+      writeFileSync(resolve(workspaceDir, 'SOUL.md'), '# Soul\n先确认需求要点（一次问全），再动手\n')
+      writeFileSync(resolve(workspaceDir, 'AGENTS.md'), '# Agents\n## Session Startup\nRead SOUL.md first\n')
+
+      const builder = new PromptBuilder(null, null)
+      const prompt = builder.build(workspaceDir, { workspaceDir } as AgentConfig, {
+        agentId: 'a-principles',
+        chatId: 'web:chat-principles',
+      })
+
+      expect(prompt).toContain('Never use Read/tools to re-open these injected files')
+      expect(prompt).toContain('## Operating Principles (行动优先)')
+      expect(prompt).toContain('信息足够就直接动手')
+      expect(prompt).toContain('不可逆/破坏性操作')
+    } finally {
+      clearAllBootstrapSnapshots()
+      rmSync(workspaceDir, { recursive: true, force: true })
+    }
+  })
+
+  test('tool rules stay fully injected when availableToolNames is not provided (legacy paths)', () => {
+    const builder = new PromptBuilder(null, null)
+    const prompt = builder.build(
+      resolve(import.meta.dir, '..'),
+      { workspaceDir: resolve(import.meta.dir, '..') } as AgentConfig,
+      {
+        agentId: 'default',
+        chatId: 'web:chat-legacy',
+      },
+    )
+
+    expect(prompt).toContain('## Document Handling Rule')
+    expect(prompt).toContain('## Scheduled Task Rule')
+    expect(prompt).toContain('## Skill Self-Service Rule')
   })
 })
 

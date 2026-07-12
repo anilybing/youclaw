@@ -208,4 +208,85 @@ describe('portable release layout gate', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stderr.toString()).toContain('destructive user-data command')
   })
+
+  // [XJC] pytools（语义记忆 + 本地 OCR）可选载荷门禁
+  function addPytools(root: string, options?: { skipModel?: boolean; skipManifestEntry?: boolean; skipSite?: boolean }) {
+    const pytools = resolve(root, 'XiaoJuClawRuntime', 'tools', 'win-x64', 'pytools')
+    mkdirSync(resolve(pytools, 'site-packages'), { recursive: true })
+    if (!options?.skipSite) {
+      writeFileSync(resolve(pytools, 'site-packages', 'marker.py'), '# dep')
+    }
+    writeFileSync(resolve(pytools, 'pytools.json'), JSON.stringify({ schemaVersion: 1, ocr: true, embedding: true }))
+    if (!options?.skipModel) {
+      const modelDir = resolve(pytools, 'models', 'bge-small-zh-v1.5')
+      mkdirSync(modelDir, { recursive: true })
+      writeFileSync(resolve(modelDir, 'model.onnx'), Buffer.alloc(2 * 1024 * 1024))
+      writeFileSync(resolve(modelDir, 'tokenizer.json'), Buffer.alloc(20 * 1024))
+    }
+    if (!options?.skipManifestEntry) {
+      const manifestPath = resolve(root, 'XiaoJuClawRuntime', 'tools', 'manifest.json')
+      writeFileSync(manifestPath, JSON.stringify({
+        schemaVersion: 1,
+        platform: 'win-x64',
+        tools: [
+          ...REQUIRED_TOOLS.map((tool) => ({ name: tool.name, version: '1.0.0', dir: tool.dir })),
+          { name: 'pytools', version: '2026-07-13', dir: 'win-x64/pytools' },
+        ],
+      }))
+    }
+    return pytools
+  }
+
+  test('accepts a package without the optional pytools payload', () => {
+    const result = verify(makeLayout())
+    expect(result.exitCode).toBe(0)
+  })
+
+  test('accepts a complete pytools payload registered in the manifest', () => {
+    const root = makeLayout()
+    addPytools(root)
+
+    const result = verify(root)
+
+    expect(result.exitCode).toBe(0)
+  })
+
+  test('rejects a pytools payload with a truncated embedding model', () => {
+    const root = makeLayout()
+    const pytools = addPytools(root)
+    writeFileSync(resolve(pytools, 'models', 'bge-small-zh-v1.5', 'model.onnx'), Buffer.alloc(1024))
+
+    const result = verify(root)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain('embedding model missing or truncated')
+  })
+
+  test('rejects a shipped pytools payload that is not registered in the tools manifest', () => {
+    const root = makeLayout()
+    addPytools(root, { skipManifestEntry: true })
+
+    const result = verify(root)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain('not registered in tools manifest')
+  })
+
+  test('rejects a manifest that registers pytools without the payload directory', () => {
+    const root = makeLayout()
+    const manifestPath = resolve(root, 'XiaoJuClawRuntime', 'tools', 'manifest.json')
+    writeFileSync(manifestPath, JSON.stringify({
+      schemaVersion: 1,
+      platform: 'win-x64',
+      tools: [
+        ...REQUIRED_TOOLS.map((tool) => ({ name: tool.name, version: '1.0.0', dir: tool.dir })),
+        { name: 'pytools', version: '2026-07-13', dir: 'win-x64/pytools' },
+      ],
+    }))
+
+    const result = verify(root)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain('payload directory is missing')
+  })
 })

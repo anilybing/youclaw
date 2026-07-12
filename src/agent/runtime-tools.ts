@@ -11,6 +11,7 @@ import { createMemoryTools } from './memory-mcp.ts'
 import { createPlanTools } from './plan-mcp.ts'
 import { createEmployeeTools } from './employee-mcp.ts'
 import { createVoiceTools } from './voice-mcp.ts'
+import { createOcrTools } from './ocr-mcp.ts'
 import { createFulfillmentTools } from './fulfillment-mcp.ts'
 import { createWorkflowTools } from './workflow-mcp.ts'
 import type { MediaToolAuthorization } from './media-intent.ts'
@@ -98,6 +99,8 @@ export async function buildRuntimeCustomTools(params: {
     ...createEmployeeTools(),
     // [XJC] 录音转写（丰富性强化）：会议录音/语音备忘 → 文本，接 meeting-notes 成纪要
     ...createVoiceTools(),
+    // [XJC] 本地 OCR（本地智能 C 轮）：发票/截图/扫描件离线识字，图片不出本机；未安装不挂载
+    ...createOcrTools(),
     // [XJC] 虚拟商品发货（闲鱼客服员工）：卡密库存 + 原子幂等发货。
     // 默认关闭、仅闲鱼客服员工挂载——deliver 会把真实卡密带进对话上下文，
     // 若全员工可用，接了渠道的员工（微信/TG 面向陌生人）一句注入话术就能套走卡密。

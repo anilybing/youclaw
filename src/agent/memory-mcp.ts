@@ -9,6 +9,7 @@ import { Type } from '@mariozechner/pi-ai'
 import type { ToolDefinition } from '@mariozechner/pi-coding-agent'
 import type { MemoryManager } from '../memory/index.ts'
 import { getLogger } from '../logger/index.ts'
+import { mergeMemoryHits, searchSemanticMemory } from '../memory/semantic.ts'
 
 const GLOBAL_AGENT_ID = '_global'
 const RECALL_LIMIT_MAX = 8
@@ -89,7 +90,11 @@ export function createMemoryTools(params: { agentId: string; memoryManager: Memo
         if (!query) throw new Error('recall 需要提供 query（检索关键词）')
         const limit = clampLimit(args.limit)
         try {
-          const hits = memoryManager.recallMemory(agentId, query, limit)
+          const ftsHits = memoryManager.recallMemory(agentId, query, limit)
+          // [XJC] 语义补充（本地智能 B 轮）：词面找不到的近义记忆由本地向量检索补齐；
+          // 未安装 embedding 能力时恒为空数组，行为与纯 FTS 一致。
+          const semanticHits = await searchSemanticMemory(agentId, query, limit)
+          const hits = mergeMemoryHits(ftsHits, semanticHits, limit)
           if (hits.length === 0) {
             return ok(JSON.stringify({ query, hits: [], note: '长期记忆中没有相关内容（可能尚未记录）。' }, null, 2))
           }

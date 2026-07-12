@@ -8,11 +8,18 @@
 #   powershell -File scripts\make-usb-payload.ps1 -Target E:\ -IncludeNode
 #   powershell -File scripts\make-usb-payload.ps1 -DryRun          # print plan only
 #   powershell -File scripts\make-usb-payload.ps1 -Only uv         # single tool (debug)
+#   powershell -File scripts\make-usb-payload.ps1 -Only pytools    # local-intelligence only (debug)
+#   powershell -File scripts\make-usb-payload.ps1 -PytoolsSource D:\staging\pytools
+#   powershell -File scripts\make-usb-payload.ps1 -SkipPytools     # ship without semantic memory / local OCR
 #
 # Notes:
 #   - Downloads are cached in -CacheDir (default .\tool-cache), re-runs are cheap.
 #   - Versions follow app.config.ts (keep in sync manually when bumping there).
 #   - Only win-x64 payload is supported for now (T-E5 scope).
+#   - pytools (semantic memory + local OCR) is an OPTIONAL payload: auto-detected from
+#     %APPDATA%\com.youclaw.app\pytools (built by scripts\setup-local-intelligence.mjs).
+#     Missing -> warn and ship without it; explicit -PytoolsSource failing validation -> error.
+#     Bundled wheels must be cp312 to match the embedded Python 3.12 (validated).
 
 param(
   [string]$Target = ".\usb-payload",
@@ -20,7 +27,14 @@ param(
   [string]$CacheDir = ".\tool-cache",
   [switch]$IncludeNode,
   [switch]$DryRun,
-  [string]$Only = ""
+  [string]$Only = "",
+  # Optional local-intelligence payload (semantic memory + local OCR).
+  # Default: auto-detect the operator machine's installed pytools directory
+  # (%APPDATA%\com.youclaw.app\pytools, produced by setup-local-intelligence.mjs).
+  # Missing source is a WARN+skip (optional capability); an explicit -PytoolsSource
+  # that fails validation is an ERROR.
+  [string]$PytoolsSource = "",
+  [switch]$SkipPytools
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,19 +76,105 @@ if ($IncludeNode) {
     kind = "zip"; stripRoot = $true
   }
 }
-if ($Only) {
+$onlyPytools = ($Only -eq "pytools")
+if ($Only -and -not $onlyPytools) {
   $tools = @($tools | Where-Object { $_.name -eq $Only })
   if ($tools.Count -eq 0) { Write-Host "[ERROR] Unknown tool: $Only" -ForegroundColor Red; exit 1 }
 }
+if ($onlyPytools) { $tools = @() }
 
 $toolsRoot = Join-Path (Join-Path $Target "XiaoJuClawRuntime") "tools"
 $platformRoot = Join-Path $toolsRoot $Platform
+
+# ---- Local-intelligence payload (pytools: semantic memory + local OCR) -------
+# Expected python ABI tag for bundled wheels (python 3.12.x -> cp312).
+$expectedCpTag = "cp312"
+
+function Resolve-PytoolsSource {
+  if ($SkipPytools) { return $null }
+  if ($PytoolsSource) { return (Resolve-Path $PytoolsSource -ErrorAction SilentlyContinue) }
+  if ($env:APPDATA) {
+    $candidate = Join-Path $env:APPDATA "com.youclaw.app\pytools"
+    if (Test-Path (Join-Path $candidate "pytools.json")) { return $candidate }
+  }
+  return $null
+}
+
+function Test-PytoolsSource([string]$src) {
+  $problems = @()
+  $manifestPath = Join-Path $src "pytools.json"
+  if (-not (Test-Path $manifestPath)) {
+    return ,@("missing pytools.json (run scripts\setup-local-intelligence.mjs first)")
+  }
+  try {
+    $raw = (Get-Content $manifestPath -Raw) -replace "^\xEF\xBB\xBF", ""
+    $meta = $raw | ConvertFrom-Json
+  } catch {
+    return ,@("unreadable pytools.json: $($_.Exception.Message)")
+  }
+  if ($meta.schemaVersion -ne 1) { $problems += "pytools.json schemaVersion must be 1" }
+  $site = Join-Path $src "site-packages"
+  if (-not (Test-Path $site) -or (@(Get-ChildItem $site -ErrorAction SilentlyContinue).Count -eq 0)) {
+    $problems += "site-packages missing or empty"
+  }
+  if ($meta.embedding -eq $true) {
+    $model = Join-Path $src "models\bge-small-zh-v1.5\model.onnx"
+    $tokenizer = Join-Path $src "models\bge-small-zh-v1.5\tokenizer.json"
+    if (-not (Test-Path $model) -or (Get-Item $model).Length -lt 1MB) { $problems += "embedding model.onnx missing or truncated" }
+    if (-not (Test-Path $tokenizer) -or (Get-Item $tokenizer).Length -lt 10KB) { $problems += "embedding tokenizer.json missing or truncated" }
+  }
+  # ABI guard: bundled wheels must be loadable by the bundled embedded python (3.12).
+  # Compatible: py*-none-any (pure python), cp3XX-abi3 with XX <= 12 (stable ABI is
+  # forward compatible), or exactly cp312-cp312. Incompatible: cp3XX-cp3XX with XX != 12,
+  # or abi3 built against a NEWER python than 3.12.
+  $expectedCpMinor = [int]($expectedCpTag -replace "^cp3", "")
+  if (Test-Path $site) {
+    $wheelFiles = Get-ChildItem $site -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue |
+      ForEach-Object { Join-Path $_.FullName "WHEEL" } | Where-Object { Test-Path $_ }
+    foreach ($wheel in $wheelFiles) {
+      $tagLines = @(Select-String -Path $wheel -Pattern "^Tag:\s*(\S+)" -ErrorAction SilentlyContinue)
+      if ($tagLines.Count -eq 0) { continue }
+      $anyCompatible = $false
+      $seenTags = @()
+      foreach ($line in $tagLines) {
+        $tag = $line.Matches[0].Groups[1].Value
+        $seenTags += $tag
+        $parts = $tag -split "-"
+        if ($parts.Count -lt 2) { continue }
+        $pyTag = $parts[0]; $abiTag = $parts[1]
+        if ($abiTag -eq "none") { $anyCompatible = $true; break }               # pure python
+        if ($pyTag -match "^cp3(\d+)$") {
+          $minor = [int]$Matches[1]
+          if ($abiTag -eq "abi3" -and $minor -le $expectedCpMinor) { $anyCompatible = $true; break }
+          if ($abiTag -eq $expectedCpTag -and $pyTag -eq $expectedCpTag) { $anyCompatible = $true; break }
+        }
+      }
+      if (-not $anyCompatible) {
+        $problems += ("wheel ABI mismatch: {0} tags [{1}] not loadable by bundled Python 3.{2} (re-run setup with Python 3.{2})" -f (Split-Path (Split-Path $wheel) -Leaf), ($seenTags -join ", "), $expectedCpMinor)
+      }
+    }
+  }
+  return ,$problems
+}
+
+$pytoolsSrc = Resolve-PytoolsSource
+if ($PytoolsSource -and -not $pytoolsSrc) {
+  Write-Host "[ERROR] -PytoolsSource path not found: $PytoolsSource" -ForegroundColor Red
+  exit 1
+}
 
 Write-Host "== XiaoJuClaw USB payload builder =="
 Write-Host "   Platform : $Platform"
 Write-Host "   Target   : $toolsRoot"
 Write-Host "   Cache    : $CacheDir"
 foreach ($t in $tools) { Write-Host ("   - {0} {1}" -f $t.name, $t.version) }
+if ($SkipPytools) {
+  Write-Host "   - pytools: skipped (-SkipPytools)"
+} elseif ($pytoolsSrc) {
+  Write-Host ("   - pytools: {0}" -f $pytoolsSrc)
+} else {
+  Write-Host "   - pytools: not found (optional; run setup-local-intelligence.mjs to enable semantic memory + local OCR)" -ForegroundColor Yellow
+}
 if ($DryRun) { Write-Host "[dry-run] no downloads performed."; exit 0 }
 
 New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
@@ -137,6 +237,41 @@ foreach ($t in $tools) {
   }
 }
 
+# ---- Local-intelligence payload copy (optional) ------------------------------
+$pytoolsCopied = $false
+if (-not $SkipPytools -and $pytoolsSrc) {
+  $problems = Test-PytoolsSource $pytoolsSrc
+  if ($problems.Count -gt 0) {
+    Write-Host "[ERROR] pytools source failed validation:" -ForegroundColor Red
+    $problems | ForEach-Object { Write-Host "        $_" -ForegroundColor Red }
+    if ($PytoolsSource) { exit 1 }   # explicit source must be valid
+    Write-Host "        (auto-detected source rejected; shipping without pytools)" -ForegroundColor Yellow
+  } else {
+    $pytoolsDest = Join-Path $platformRoot "pytools"
+    if (Test-Path $pytoolsDest) { Remove-Item -Recurse -Force $pytoolsDest }
+    Write-Host ("[install] pytools -> {0}" -f $pytoolsDest)
+    # robocopy: exclude __pycache__ (regenerated at runtime) and runtime-materialized scripts/
+    # (the app re-materializes them from its embedded sources, keeping script/binary in lockstep).
+    & robocopy $pytoolsSrc $pytoolsDest /E /NFL /NDL /NJH /NJS /NP /XD __pycache__ scripts | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+      Write-Host "[ERROR] robocopy failed copying pytools (exit $LASTEXITCODE)" -ForegroundColor Red
+      exit 1
+    }
+    $global:LASTEXITCODE = 0
+    try {
+      $rawMeta = (Get-Content (Join-Path $pytoolsSrc "pytools.json") -Raw) -replace "^\xEF\xBB\xBF", ""
+      $pytoolsMeta = $rawMeta | ConvertFrom-Json
+      $pytoolsVersion = if ($pytoolsMeta.installedAt) { [string]$pytoolsMeta.installedAt } else { "unversioned" }
+    } catch { $pytoolsVersion = "unversioned" }
+    $manifestTools += [ordered]@{
+      name = "pytools"
+      version = $pytoolsVersion
+      dir = "$Platform/pytools"
+    }
+    $pytoolsCopied = $true
+  }
+}
+
 $manifest = [ordered]@{
   schemaVersion = 1
   platform = $Platform
@@ -144,6 +279,18 @@ $manifest = [ordered]@{
   createdAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 }
 $manifestPath = Join-Path $toolsRoot "manifest.json"
+# -Only debug mode must not clobber entries from a previous full run: merge by name.
+if ($Only -and (Test-Path $manifestPath)) {
+  try {
+    $existingRaw = (Get-Content $manifestPath -Raw) -replace "^\xEF\xBB\xBF", ""
+    $existing = $existingRaw | ConvertFrom-Json
+    if ($existing.tools) {
+      $newNames = @($manifestTools | ForEach-Object { $_.name })
+      $kept = @($existing.tools | Where-Object { $newNames -notcontains $_.name })
+      $manifest.tools = @($kept) + @($manifestTools)
+    }
+  } catch { <# unreadable old manifest: overwrite with fresh one #> }
+}
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
 Write-Host "[ok] manifest written: $manifestPath"
 
@@ -155,6 +302,7 @@ $checks = @(
   @{ tool = "uv";     file = "uv.exe" }
 )
 if ($IncludeNode) { $checks += @{ tool = "node"; file = "node.exe" } }
+if ($pytoolsCopied) { $checks += @{ tool = "pytools"; file = "pytools.json" } }
 $failed = 0
 foreach ($c in $checks) {
   if ($Only -and $c.tool -ne $Only) { continue }

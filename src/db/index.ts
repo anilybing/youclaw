@@ -173,6 +173,30 @@ CREATE TABLE IF NOT EXISTS chat_plans (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS memory_semantic_chunks (
+  agent_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  chunk_ord INTEGER NOT NULL,
+  file_type TEXT NOT NULL,
+  content TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  vector BLOB NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (agent_id, file_path, chunk_ord)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_semantic_agent ON memory_semantic_chunks(agent_id);
+
+CREATE TABLE IF NOT EXISTS tool_experience (
+  agent_id TEXT NOT NULL,
+  intent_category TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  failure_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (agent_id, intent_category, tool_name)
+);
+
 CREATE TABLE IF NOT EXISTS fulfillment_skus (
   id TEXT PRIMARY KEY,
   agent_id TEXT,

@@ -123,12 +123,14 @@ export function verifyPortableLayout(rootArg) {
   }
 
   const toolsManifestPath = resolve(runtimeDir, 'tools', 'manifest.json')
+  let toolsManifest = null
   if (existsSync(toolsManifestPath)) {
     try {
       const manifest = JSON.parse(readFileSync(toolsManifestPath, 'utf8').replace(/^\uFEFF/, ''))
       if (manifest.schemaVersion !== 1 || manifest.platform !== 'win-x64' || !Array.isArray(manifest.tools)) {
         errors.push(`invalid portable tools manifest: ${toolsManifestPath}`)
       } else {
+        toolsManifest = manifest
         for (const required of REQUIRED_PORTABLE_TOOLS) {
           const entry = manifest.tools.find((tool) => tool?.name === required.name)
           if (!entry || entry.dir !== required.dir || typeof entry.version !== 'string' || !entry.version.trim()) {
@@ -139,6 +141,50 @@ export function verifyPortableLayout(rootArg) {
     } catch (error) {
       errors.push(`unreadable portable tools manifest: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  // [XJC] pytools (semantic memory + local OCR) is an OPTIONAL payload:
+  // absent -> fine; present -> must be structurally complete and consistent with
+  // both its own capability manifest and the tools manifest (a half-shipped
+  // pytools directory silently downgrades to "not installed" at runtime, which
+  // would waste ~300MB of USB space while delivering nothing).
+  const pytoolsDir = resolve(runtimeDir, 'tools', 'win-x64', 'pytools')
+  if (existsSync(pytoolsDir)) {
+    const pytoolsManifestPath = resolve(pytoolsDir, 'pytools.json')
+    if (!existsSync(pytoolsManifestPath)) {
+      errors.push(`pytools payload is missing pytools.json: ${pytoolsDir}`)
+    } else {
+      try {
+        const meta = JSON.parse(readFileSync(pytoolsManifestPath, 'utf8').replace(/^\uFEFF/, ''))
+        if (meta.schemaVersion !== 1) {
+          errors.push(`invalid pytools manifest schemaVersion: ${pytoolsManifestPath}`)
+        }
+        const sitePackages = resolve(pytoolsDir, 'site-packages')
+        if (!existsSync(sitePackages) || !statSync(sitePackages).isDirectory()) {
+          errors.push(`pytools payload is missing site-packages: ${pytoolsDir}`)
+        }
+        if (meta.embedding === true) {
+          const model = resolve(pytoolsDir, 'models', 'bge-small-zh-v1.5', 'model.onnx')
+          const tokenizer = resolve(pytoolsDir, 'models', 'bge-small-zh-v1.5', 'tokenizer.json')
+          if (!existsSync(model) || statSync(model).size < 1024 * 1024) {
+            errors.push(`pytools embedding model missing or truncated: ${model}`)
+          }
+          if (!existsSync(tokenizer) || statSync(tokenizer).size < 10 * 1024) {
+            errors.push(`pytools embedding tokenizer missing or truncated: ${tokenizer}`)
+          }
+        }
+      } catch (error) {
+        errors.push(`unreadable pytools manifest: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (toolsManifest) {
+      const entry = toolsManifest.tools.find((tool) => tool?.name === 'pytools')
+      if (!entry || entry.dir !== 'win-x64/pytools') {
+        errors.push(`pytools payload shipped but not registered in tools manifest: ${toolsManifestPath}`)
+      }
+    }
+  } else if (toolsManifest && toolsManifest.tools.some((tool) => tool?.name === 'pytools')) {
+    errors.push(`tools manifest registers pytools but the payload directory is missing: ${pytoolsDir}`)
   }
 
   const migratorPath = resolve(root, 'Migrate-Legacy-Layout.bat')

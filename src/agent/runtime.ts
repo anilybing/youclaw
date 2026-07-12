@@ -8,7 +8,7 @@ import { resolve } from 'node:path'
 import { getPaths } from '../config/index.ts'
 import { getLogger } from '../logger/index.ts'
 import { writeModelInvocationLog } from '../logger/model-invocation.ts'
-import { deleteSession, getMessages, getSessionEntry, saveSession } from '../db/index.ts'
+import { getMessages, getSessionEntry, saveSession } from '../db/index.ts'
 import type { EventBus } from '../events/index.ts'
 import { ErrorCode } from '../events/types.ts'
 import type { AgentToolUse } from '../events/types.ts'
@@ -32,6 +32,9 @@ import { buildRuntimeCustomTools, filterConfiguredTools } from './runtime-tools.
 import { createSubagentTool } from './subagent-mcp.ts'
 import { AgentCompiler } from './compiler.ts'
 import { resolveMediaTurnContext } from './media-intent.ts'
+import { routeIntent, filterToolsByPolicy, POLICY_ANCHOR_TOOL } from './intent-router.ts'
+import { buildExperienceBlock, recordToolOutcome } from './experience-store.ts'
+import { buildSemanticMemoryBlock } from '../memory/semantic.ts'
 import { getEvolutionService } from '../evolution/service.ts'
 import { buildLessonsBlock } from '../feedback/lessons.ts'
 import { buildPlanBlock } from '../plans/store.ts'
@@ -85,6 +88,18 @@ type RuntimeAttachment = {
 
 function buildAbortedSessionResult(fullText: string, sessionId: string) {
   return { fullText, sessionId, aborted: true }
+}
+
+// [XJC] 思考档位解析：默认 medium（pi 会按模型能力自动钳制，不支持思考的模型恒为 off）；
+// XJC_THINKING_LEVEL 可覆盖（off/minimal/low/medium/high），非法值回退 medium。
+const VALID_THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high'])
+
+export function resolveThinkingLevel(): 'off' | 'minimal' | 'low' | 'medium' | 'high' {
+  const raw = process.env.XJC_THINKING_LEVEL?.trim().toLowerCase()
+  if (raw && VALID_THINKING_LEVELS.has(raw)) {
+    return raw as 'off' | 'minimal' | 'low' | 'medium' | 'high'
+  }
+  return 'medium'
 }
 
 // [XJC] T-A3 视觉:附件图片转 base64 进多模态
@@ -324,10 +339,14 @@ export class AgentRuntime {
       toolUse = collectedToolUse
       mediaAttachments = collectedMediaAttachments
 
-      if (aborted) {
-        if (params.executionState) params.executionState.status = 'cancelled'
-        deleteSession(agentId, chatId)
-      } else if (sessionId) {
+      if (aborted && params.executionState) {
+        params.executionState.status = 'cancelled'
+      }
+      // [XJC] 取消不再删会话（上下文连续性修复）：pi 回放时会自动跳过 aborted/error 的
+      // 助手消息并为孤儿工具调用补合成结果（pi-ai transform-messages 第二遍），续用被中止的
+      // 会话是框架支持的安全行为。此前一次取消就 deleteSession，整段对话上下文被扔掉，
+      // 之后只回灌少量历史文本——用户体感"取消一次就失忆"。
+      if (sessionId) {
         clearBootstrapSnapshotOnSessionRollover({
           cacheKey: `${agentId}:${chatId}`,
           previousSessionId: existingSession?.sessionId ?? null,
@@ -542,11 +561,28 @@ export class AgentRuntime {
 
     const sessionsDir = resolve(getPaths().data, 'sessions', agentId)
     mkdirSync(sessionsDir, { recursive: true })
-    const existingSessionFile = resolveStoredSessionFile(sessionsDir, existingSession)
+    let existingSessionFile = resolveStoredSessionFile(sessionsDir, existingSession)
 
-    const sessionManager = existingSessionFile && existsSync(existingSessionFile)
-      ? SessionManager.open(existingSessionFile, sessionsDir)
-      : SessionManager.create(cwd, sessionsDir)
+    // [XJC] 会话文件损坏防御：open 失败（如进程被杀导致尾行截断）不再让整轮报错，
+    // 回退新建会话 + recovered prompt 补历史，对话降级可用。
+    let sessionManager: SessionManager
+    if (existingSessionFile && existsSync(existingSessionFile)) {
+      try {
+        sessionManager = SessionManager.open(existingSessionFile, sessionsDir)
+      } catch (err) {
+        logger.warn({
+          agentId,
+          chatId,
+          sessionFile: existingSessionFile,
+          error: err instanceof Error ? err.message : String(err),
+          category: 'agent',
+        }, 'Failed to open stored session, falling back to a fresh session')
+        existingSessionFile = null
+        sessionManager = SessionManager.create(cwd, sessionsDir)
+      }
+    } else {
+      sessionManager = SessionManager.create(cwd, sessionsDir)
+    }
 
     // [XJC] 自主强化：补挂原生 Grep/Find/Ls 只读检索工具（此前只有 Read/Bash/Edit/Write，
     // 检索全靠 Bash 绕行；office 子代理白名单里的 grep/find/ls 也自此真实可用）
@@ -603,7 +639,60 @@ export class AgentRuntime {
     } catch (err) {
       getLogger().warn({ agentId, error: err instanceof Error ? err.message : String(err), category: 'subagent' }, 'Failed to mount delegate tool')
     }
-    const availableToolNames = [...tools, ...effectiveCustomTools].map((tool) => tool.name)
+    // [XJC] 分级意图路由：按意图裁剪本轮工具集（保守——仅高置信安全类别裁剪，其余回退全量）。
+    const attachmentsKind = !attachments || attachments.length === 0
+      ? 'none'
+      : attachments.every((attachment) => attachment.mediaType.startsWith('image/'))
+        ? 'images-only'
+        : 'mixed'
+    const routing = await routeIntent(
+      {
+        text: prompt,
+        attachmentsKind,
+        mediaIntent: mediaTurnContext.intent,
+      },
+      {
+        enabled: process.env.XJC_INTENT_ROUTING !== 'off',
+        lightClassifier: process.env.XJC_INTENT_LIGHT_CLASSIFIER !== 'off',
+        agentModel: this.config.hasExplicitModel ? this.config.model : undefined,
+        signal: abortController.signal,
+        agentId,
+      },
+    )
+    let gatedTools = tools
+    let gatedCustomTools = effectiveCustomTools
+    if (routing.toolPolicy !== 'full') {
+      const nextTools = filterToolsByPolicy(tools, routing.toolPolicy)
+      const nextCustomTools = filterToolsByPolicy(effectiveCustomTools, routing.toolPolicy)
+      // 窄档位安全兜底：裁剪后锚点工具必须还在（员工没挂对应能力时放弃裁剪，避免裁成残废工具集）。
+      const anchor = POLICY_ANCHOR_TOOL[routing.toolPolicy]
+      const anchorOk = !anchor || [...nextTools, ...nextCustomTools].some((tool) => tool.name.startsWith(anchor))
+      if (anchorOk) {
+        gatedTools = nextTools
+        gatedCustomTools = nextCustomTools
+      }
+    }
+    const availableToolNames = [...gatedTools, ...gatedCustomTools].map((tool) => tool.name)
+    // [XJC] 本地经验闭环（零 token）：按（员工×意图类别）注入近期工具成败统计；无显著信号不注入。
+    const experienceEnabled = process.env.XJC_LOCAL_EXPERIENCE !== 'off'
+    try {
+      if (experienceEnabled) {
+        const experienceBlock = buildExperienceBlock(agentId, routing.category)
+        if (experienceBlock) {
+          memoryContext = memoryContext ? `${memoryContext}\n\n${experienceBlock}` : experienceBlock
+        }
+      }
+    } catch { /* 经验注入失败不影响对话 */ }
+    // [XJC] 语义记忆命中（本地智能 B 轮）：本地向量检索补充词面检索找不到的近义历史记忆。
+    // 带 1.5s 总预算（首次 worker 冷启动会错过本轮，后台就绪后续轮生效）；lean 档跳过。
+    try {
+      if (routing.promptTier === 'full' && this.config.memory?.enabled !== false) {
+        const semanticBlock = await buildSemanticMemoryBlock(agentId, prompt, { existingContext: memoryContext })
+        if (semanticBlock) {
+          memoryContext = memoryContext ? `${memoryContext}\n\n${semanticBlock}` : semanticBlock
+        }
+      }
+    } catch { /* 语义注入失败不影响对话 */ }
     const requiredMediaTool = mediaTurnContext.intent === 'generate-image'
       ? 'mcp__media__generate_image'
       : mediaTurnContext.intent === 'edit-image'
@@ -630,6 +719,7 @@ export class AgentRuntime {
         mediaStatus,
         mediaTurnInstruction,
         availableToolNames,
+        promptTier: routing.promptTier,
         browserProfile: resolvedBrowserProfile
           ? {
               id: resolvedBrowserProfile.id,
@@ -749,16 +839,25 @@ export class AgentRuntime {
       isResume: !!existingSessionFile,
       sessionFile: existingSessionFile ?? sessionManager.getSessionFile(),
       browserProfileId: effectiveBrowserProfileId,
+      intentCategory: routing.category,
+      intentSource: routing.source,
+      toolPolicy: routing.toolPolicy,
+      promptTier: routing.promptTier,
+      toolCountFull: tools.length + effectiveCustomTools.length,
+      toolCountGated: gatedTools.length + gatedCustomTools.length,
       category: 'agent',
     }, 'Creating agent session')
 
     const queryStartTime = Date.now()
     try {
+      // [XJC] 思考档位：显式传入避免被旧会话记录的 off 钳死（GLM 等曾以 reasoning:false
+      // 解析，老会话把 thinkingLevel 持久化成了 off；不支持思考的模型 pi 会自动钳回 off）。
       const { session } = await createAgentSession({
         cwd,
         model,
-        tools,
-        customTools: effectiveCustomTools,
+        thinkingLevel: resolveThinkingLevel(),
+        tools: gatedTools,
+        customTools: gatedCustomTools,
         resourceLoader,
         authStorage,
         sessionManager,
@@ -774,6 +873,13 @@ export class AgentRuntime {
         this.handleSessionEvent(event, agentId, chatId, (text) => {
           fullText += text
         }, compactionSummaries, toolUse, turnId, browserDisabled, browserDisabledNotice, agentOps, mediaAttachments)
+
+        // [XJC] 本地经验闭环采集：按（员工×意图类别×工具）累计成败，供后续轮次注入经验提示。
+        if (experienceEnabled && event.type === 'tool_execution_end') {
+          try {
+            recordToolOutcome(agentId, routing.category, event.toolName, !event.isError)
+          } catch { /* 统计失败不影响对话 */ }
+        }
 
         if (event.type === 'turn_end') {
           const current = pendingModelCalls.shift()
@@ -1154,7 +1260,7 @@ export class AgentRuntime {
   }
 
   private buildRecoveredPrompt(chatId: string, prompt: string): string {
-    const limit = this.config.memory?.historyFallbackMessages ?? 12
+    const limit = this.config.memory?.historyFallbackMessages ?? 24
     if (limit <= 0) return prompt
 
     const messages = getMessages(chatId, limit + 4).reverse().map((message) => ({

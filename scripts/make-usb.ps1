@@ -39,7 +39,10 @@ param(
   [string]$ReleaseRoot,
   [string]$CacheDir,
   [string]$OutputPathFile,
-  [switch]$IncludeNode
+  [switch]$IncludeNode,
+  # Local-intelligence payload (semantic memory + local OCR); see make-usb-payload.ps1.
+  [string]$PytoolsSource,
+  [switch]$SkipPytools
 )
 
 $ErrorActionPreference = "Stop"
@@ -206,6 +209,8 @@ $payloadArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',
   (Join-Path $here 'make-usb-payload.ps1'),
   '-Target', $portableDir, '-CacheDir', $CacheDir)
 if ($IncludeNode) { $payloadArgs += '-IncludeNode' }
+if ($PytoolsSource) { $payloadArgs += @('-PytoolsSource', $PytoolsSource) }
+if ($SkipPytools) { $payloadArgs += '-SkipPytools' }
 & powershell @payloadArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] make-usb-payload.ps1 failed" -ForegroundColor Red; exit 1 }
 
