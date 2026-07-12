@@ -73,11 +73,23 @@ function Invoke-Step {
     Push-Location $WorkDir
     try {
       # Native tools (e.g. bun via the npm PowerShell shim) print their "$ <script>"
-      # command echo to stderr. With "2>&1" PowerShell 5.1 wraps each stderr line as a
-      # red NativeCommandError that looks like a failure even when the tool exits 0.
-      # Stringify the merged stream so the log stays readable; pass/fail is decided
-      # solely by the exit code captured below.
-      & $FilePath @ArgumentList 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+      # command echo and per-file diagnostics to stderr. With "2>&1" PowerShell 5.1
+      # wraps each stderr line as an ErrorRecord. Casting some of those to [string]
+      # yields the exception type name instead of the text, so blank/framing stderr
+      # lines flood the log as noisy "System.Management.Automation.RemoteException"
+      # lines. Print the real stderr text and drop those empty type-name lines. Pass/
+      # fail is still decided solely by the exit code captured below.
+      & $FilePath @ArgumentList 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+          $text = $_.Exception.Message
+          if ([string]::IsNullOrEmpty($text)) { $text = $_.ToString() }
+          if (-not [string]::IsNullOrEmpty($text) -and $text -ne "System.Management.Automation.RemoteException") {
+            Write-Host $text
+          }
+        } else {
+          Write-Host ([string]$_)
+        }
+      }
       $code = $LASTEXITCODE
       if ($null -eq $code) { $code = 1 }
     } finally {
