@@ -100,7 +100,7 @@ const SaveParams = Type.Object({
       var: Type.String({ description: 'List source ref, e.g. "steps.topic_pick.output". Parsed as JSON string-array, else split by lines.' }),
       maxItems: Type.Optional(Type.Number({ description: 'Iteration cap, default 5, hard max 20 (each item is one execution — cost!).' })),
     }, { description: 'Run this step once per list item. Use {{item}} and {{item_index}} in the prompt/args. Output = concatenated per-item results.' })),
-  }), { description: '1-10 sequential steps. Keep steps single-purpose; prefer llm/tool kinds over agent when tools/autonomy are not needed (cheaper, more deterministic).' }),
+  }), { description: '1-12 sequential steps. Keep steps single-purpose; prefer llm/tool kinds over agent when tools/autonomy are not needed (cheaper, more deterministic).' }),
   budgets: Type.Optional(BudgetParams),
 })
 

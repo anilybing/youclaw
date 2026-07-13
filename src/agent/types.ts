@@ -33,6 +33,8 @@ export interface ProcessParams {
     errorCode?: string
   }
   requestedSkills?: string[]
+  /** Per-turn override: use provider account credentials with a remote model id. */
+  modelOverride?: { providerAccountId: string; modelId: string }
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
   // [XJC] 调度器发起的运行置真：runtime 仍 emit complete（供落库/前端），

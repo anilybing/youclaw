@@ -96,7 +96,7 @@ describe('workflow store', () => {
 
   test('内置种子：只种一次、删除不复活', () => {
     const db = getDatabase()
-    db.run("DELETE FROM kv_state WHERE key IN ('workflow_builtin_seeded_v1', 'workflow_builtin_seeded_v2', 'workflow_builtin_seeded_v3')")
+    db.run("DELETE FROM kv_state WHERE key IN ('workflow_builtin_seeded_v1', 'workflow_builtin_seeded_v2', 'workflow_builtin_seeded_v3', 'workflow_builtin_seeded_v4')")
     db.run("DELETE FROM workflows WHERE source = 'builtin'")
 
     expect(seedBuiltinWorkflows()).toBe(BUILTIN_WORKFLOWS.length)
@@ -136,6 +136,16 @@ describe('workflow store', () => {
     expect(seedBuiltinWorkflows()).toBe(1)
     expect(getWorkflow('xjc-today-business-brief-v1')).not.toBeNull()
     expect(getWorkflow('content-pipeline')).toBeNull()
+
+    // 模拟已有 v3 用户升级：v4 只补 AI 漫剧流水线。
+    db.run("DELETE FROM kv_state WHERE key = 'workflow_builtin_seeded_v4'")
+    db.run("DELETE FROM workflows WHERE id = 'anime-drama-studio-v1'")
+    expect(seedBuiltinWorkflows()).toBe(1)
+    const animeDrama = getWorkflow('anime-drama-studio-v1')
+    expect(animeDrama?.agentId).toBe('content-creator')
+    expect(animeDrama?.steps.some((step) => step.kind === 'approval')).toBe(true)
+    expect(getWorkflow('content-pipeline')).toBeNull()
+
     expect(() => deleteWorkflow('xjc-today-business-brief-v1')).toThrow(/不可删除/)
     expect(() => saveWorkflow({
       id: 'xjc-today-business-brief-v1',

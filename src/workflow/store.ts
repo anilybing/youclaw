@@ -15,11 +15,13 @@ import {
   type AgentOpsUsage,
   type ToolEffectClass,
 } from '../agentops/types.ts'
+import { ANIME_DRAMA_WORKFLOW_ID, buildAnimeDramaWorkflowDefinition } from './anime-drama'
 
 export const WORKFLOW_INVALID = 'WORKFLOW_INVALID'
 export const WORKFLOW_NOT_FOUND = 'WORKFLOW_NOT_FOUND'
 export const WORKFLOW_BUILTIN_PROTECTED = 'WORKFLOW_BUILTIN_PROTECTED'
 export const TODAY_BUSINESS_BRIEF_WORKFLOW_ID = 'xjc-today-business-brief-v1'
+export { ANIME_DRAMA_WORKFLOW_ID }
 
 const PROTECTED_BUILTIN_WORKFLOW_IDS = new Set([TODAY_BUSINESS_BRIEF_WORKFLOW_ID])
 
@@ -132,7 +134,7 @@ export const FOREACH_DEFAULT_CAP = 5
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/
 const INPUT_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/
-const MAX_STEPS = 10
+const MAX_STEPS = 12
 const MAX_INPUTS = 8
 const MAX_PROMPT = 4000
 const MAX_NAME = 100
@@ -672,8 +674,10 @@ export function rejectRun(runId: string, reason: string): void {
 const SEED_FLAG_V1 = 'workflow_builtin_seeded_v1'
 const SEED_FLAG_V2 = 'workflow_builtin_seeded_v2'
 const SEED_FLAG_V3 = 'workflow_builtin_seeded_v3'
+const SEED_FLAG_V4 = 'workflow_builtin_seeded_v4'
 const V2_WORKFLOW_IDS = new Set(['competitor-page-analysis'])
 const V3_WORKFLOW_IDS = new Set([TODAY_BUSINESS_BRIEF_WORKFLOW_ID])
+const V4_WORKFLOW_IDS = new Set([ANIME_DRAMA_WORKFLOW_ID])
 
 export const BUILTIN_WORKFLOWS: Array<Parameters<typeof saveWorkflow>[0]> = [
   {
@@ -822,6 +826,7 @@ export const BUILTIN_WORKFLOWS: Array<Parameters<typeof saveWorkflow>[0]> = [
     ],
     source: 'builtin',
   },
+  buildAnimeDramaWorkflowDefinition(),
 ]
 
 /** 分版本增量种入内置流水线；升级只增加新版本流程，不恢复旧版本中被用户删除的流程。 */
@@ -831,10 +836,13 @@ export function seedBuiltinWorkflows(): number {
   const phases = [
     {
       key: SEED_FLAG_V1,
-      workflows: BUILTIN_WORKFLOWS.filter((wf) => !V2_WORKFLOW_IDS.has(wf.id!) && !V3_WORKFLOW_IDS.has(wf.id!)),
+      workflows: BUILTIN_WORKFLOWS.filter(
+        (wf) => !V2_WORKFLOW_IDS.has(wf.id!) && !V3_WORKFLOW_IDS.has(wf.id!) && !V4_WORKFLOW_IDS.has(wf.id!),
+      ),
     },
     { key: SEED_FLAG_V2, workflows: BUILTIN_WORKFLOWS.filter((wf) => V2_WORKFLOW_IDS.has(wf.id!)) },
     { key: SEED_FLAG_V3, workflows: BUILTIN_WORKFLOWS.filter((wf) => V3_WORKFLOW_IDS.has(wf.id!)) },
+    { key: SEED_FLAG_V4, workflows: BUILTIN_WORKFLOWS.filter((wf) => V4_WORKFLOW_IDS.has(wf.id!)) },
   ]
   for (const phase of phases) {
     const flag = db.query("SELECT value FROM kv_state WHERE key = ?").get(phase.key) as { value: string } | null

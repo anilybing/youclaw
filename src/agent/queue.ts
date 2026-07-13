@@ -21,6 +21,7 @@ interface QueueItem {
   ownsTrace: boolean
   activeStartedAt?: number
   requestedSkills?: string[]
+  modelOverride?: { providerAccountId: string; modelId: string }
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
   suppressOutbound?: boolean
@@ -33,6 +34,7 @@ export interface EnqueueOptions {
   turnId?: string
   agentOps?: AgentOpsTraceContext
   requestedSkills?: string[]
+  modelOverride?: { providerAccountId: string; modelId: string }
   browserProfileId?: string | null
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
   // [XJC] 调度器发起的运行置真 → runtime emit 的 complete 带此标志 → 路由跳过渠道出站
@@ -127,6 +129,7 @@ export class AgentQueue {
         agentOps,
         ownsTrace,
         requestedSkills: options?.requestedSkills,
+        modelOverride: options?.modelOverride,
         browserProfileId: options?.browserProfileId,
         attachments: options?.attachments,
         suppressOutbound: options?.suppressOutbound,
@@ -308,6 +311,7 @@ export class AgentQueue {
         agentOps: item.agentOps,
         executionState,
         requestedSkills: item.requestedSkills,
+        modelOverride: item.modelOverride,
         browserProfileId: item.browserProfileId,
         attachments: item.attachments,
         suppressOutbound: item.suppressOutbound,

@@ -37,6 +37,7 @@ export function useChatActions(selectedAgentId: string) {
     async (
       prompt: string,
       attachments?: Attachment[],
+      modelOverride?: { providerAccountId: string; modelId: string } | null,
     ) => {
       const store = useChatStore.getState()
       const currentChatId = store.activeChatId
@@ -44,10 +45,15 @@ export function useChatActions(selectedAgentId: string) {
       const existingChat = currentChatId ? store.chats[currentChatId] : null
       const effectiveAgentId = existingChat?.boundAgentId ?? selectedAgentId
       const messageId = crypto.randomUUID()
+      const effectiveOverride = modelOverride === undefined
+        ? (existingChat?.modelOverride ?? null)
+        : modelOverride
 
-      // Initialize chat entry in store
       store.initChat(effectiveChatId)
       store.setChatAgent(effectiveChatId, effectiveAgentId)
+      if (effectiveOverride) {
+        store.setChatModelOverride(effectiveChatId, effectiveOverride)
+      }
       store.setActiveChatId(effectiveChatId)
 
       // Reset SSE error flag for this send
@@ -75,6 +81,7 @@ export function useChatActions(selectedAgentId: string) {
           undefined,
           attachments,
           messageId,
+          effectiveOverride ?? undefined,
         )
       } catch (err) {
         // Check if SSE already handled error

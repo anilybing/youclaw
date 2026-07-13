@@ -34,6 +34,7 @@ import {
   Brain,
   BriefcaseBusiness,
   CalendarClock,
+  Clapperboard,
   LogIn,
   LogOut,
   Mail,
@@ -142,6 +143,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     { to: "/cron", icon: CalendarClock, label: t.nav.tasks },
     // [XJC] 工作流（扣子对标）：列表/运行/历史/失败续跑
     { to: "/workflows", icon: Workflow, label: t.nav.workflows },
+    { to: "/studio/anime-drama", icon: Clapperboard, label: t.nav.animeDramaStudio },
     { to: "/skills", icon: Puzzle, label: t.nav.skills },
     // [XJC] 模板中心暂时隐藏：积分变现方向未定，且与「数字员工」功能重叠。
     // 恢复方法：取消下一行注释，并把 `Sparkles` 加回上面的 lucide-react 导入。

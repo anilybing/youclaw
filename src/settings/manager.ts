@@ -10,6 +10,7 @@ import {
   SettingsSchema,
   type Settings,
   type CustomModel,
+  type CustomProviderAccount,
 } from './schema.ts'
 
 // Key in kv_state table
@@ -63,6 +64,7 @@ export function updateSettings(partial: Partial<Settings>): Settings {
   // Deep merge
   const merged: Settings = {
     activeModel: partial.activeModel ?? current.activeModel,
+    customProviders: partial.customProviders ?? current.customProviders,
     customModels: partial.customModels ?? current.customModels,
     defaultRegistrySource: hasDefaultRegistrySource ? partial.defaultRegistrySource : current.defaultRegistrySource,
     registrySources: {
@@ -140,11 +142,12 @@ export function getActiveModelConfig(): { apiKey: string; baseUrl: string; model
   if (settings.activeModel.provider === ActiveModelProvider.Custom && settings.activeModel.id) {
     const model = storedSettings.customModels.find((m: CustomModel) => m.id === settings.activeModel.id)
     if (model) {
+      const creds = resolveCustomModelCredentials(model, storedSettings)
       return {
-        apiKey: resolveCustomModelApiKey(model),
-        baseUrl: model.baseUrl,
+        apiKey: creds.apiKey,
+        baseUrl: creds.baseUrl,
         modelId: model.modelId,
-        provider: model.provider,
+        provider: creds.provider,
       }
     }
   }
@@ -189,29 +192,103 @@ function customModelSecretKey(modelId: string): string {
   return `custom_model_${modelId}_api_key`
 }
 
+function customProviderSecretKey(providerId: string): string {
+  return `custom_provider_${providerId}_api_key`
+}
+
 function isSecretRef(value: string): boolean {
   return value.startsWith(CUSTOM_MODEL_SECRET_PREFIX)
 }
 
-function secretRef(modelId: string): string {
+function secretRefForModel(modelId: string): string {
   return `${CUSTOM_MODEL_SECRET_PREFIX}${customModelSecretKey(modelId)}`
 }
 
-export function resolveCustomModelApiKey(model: CustomModel): string {
-  if (!isSecretRef(model.apiKey)) return model.apiKey
-  const key = model.apiKey.slice(CUSTOM_MODEL_SECRET_PREFIX.length)
+function secretRefForProvider(providerId: string): string {
+  return `${CUSTOM_MODEL_SECRET_PREFIX}${customProviderSecretKey(providerId)}`
+}
+
+function readSecretValue(refOrPlain: string): string {
+  if (!isSecretRef(refOrPlain)) return refOrPlain
+  const key = refOrPlain.slice(CUSTOM_MODEL_SECRET_PREFIX.length)
   return readSecrets()[key] || ''
+}
+
+export function resolveProviderAccountApiKey(account: CustomProviderAccount): string {
+  return readSecretValue(account.apiKey)
+}
+
+/**
+ * Resolve the effective credentials for a custom model.
+ * Prefer the linked provider account (one key → many models); fall back to legacy per-model key.
+ */
+export function resolveCustomModelCredentials(
+  model: CustomModel,
+  settings?: Settings,
+): { apiKey: string; baseUrl: string; provider: CustomModel['provider'] } {
+  const stored = settings ?? getStoredSettings()
+  if (model.providerAccountId) {
+    const account = stored.customProviders.find((item) => item.id === model.providerAccountId)
+    if (account) {
+      return {
+        apiKey: resolveProviderAccountApiKey(account),
+        baseUrl: account.baseUrl || model.baseUrl,
+        provider: account.provider || model.provider,
+      }
+    }
+  }
+  return {
+    apiKey: readSecretValue(model.apiKey),
+    baseUrl: model.baseUrl,
+    provider: model.provider,
+  }
+}
+
+export function resolveCustomModelApiKey(model: CustomModel): string {
+  return resolveCustomModelCredentials(model).apiKey
 }
 
 function prepareSettingsForStorage(settings: Settings, current: Settings): Settings {
   const secrets = readSecrets()
+  const currentProvidersById = new Map(current.customProviders.map((account) => [account.id, account]))
+  const nextProviderIds = new Set(settings.customProviders.map((account) => account.id))
+  const customProviders = settings.customProviders.map((account) => {
+    const apiKey = account.apiKey.trim()
+    if (apiKey && !isSecretRef(apiKey)) {
+      secrets[customProviderSecretKey(account.id)] = apiKey
+      return { ...account, apiKey: secretRefForProvider(account.id) }
+    }
+
+    const currentAccount = currentProvidersById.get(account.id)
+    if (apiKey && isSecretRef(apiKey)) {
+      return account
+    }
+    if (!apiKey && currentAccount?.apiKey && isSecretRef(currentAccount.apiKey)) {
+      return { ...account, apiKey: currentAccount.apiKey }
+    }
+
+    return account
+  })
+
   const currentById = new Map(current.customModels.map((model) => [model.id, model]))
   const nextIds = new Set(settings.customModels.map((model) => model.id))
   const customModels = settings.customModels.map((model) => {
+    // Models linked to a provider account should not keep a separate secret.
+    if (model.providerAccountId) {
+      delete secrets[customModelSecretKey(model.id)]
+      const linked = customProviders.find((account) => account.id === model.providerAccountId)
+      return {
+        ...model,
+        provider: linked?.provider ?? model.provider,
+        baseUrl: linked?.baseUrl ?? model.baseUrl,
+        apiKey: '',
+      }
+    }
+
     const apiKey = model.apiKey.trim()
     if (apiKey && !isSecretRef(apiKey)) {
       secrets[customModelSecretKey(model.id)] = apiKey
-      return { ...model, apiKey: secretRef(model.id) }
+      return { ...model, apiKey: secretRefForModel(model.id) }
     }
 
     const currentModel = currentById.get(model.id)
@@ -226,19 +303,33 @@ function prepareSettingsForStorage(settings: Settings, current: Settings): Setti
   })
 
   for (const key of Object.keys(secrets)) {
-    if (!key.startsWith('custom_model_') || !key.endsWith('_api_key')) continue
-    const modelId = key.slice('custom_model_'.length, -'_api_key'.length)
-    if (!nextIds.has(modelId)) {
-      delete secrets[key]
+    if (key.startsWith('custom_model_') && key.endsWith('_api_key')) {
+      const modelId = key.slice('custom_model_'.length, -'_api_key'.length)
+      // Drop secrets for deleted models, and for models that now use a provider account.
+      const linked = customModels.find((model) => model.id === modelId)
+      if (!linked || linked.providerAccountId || !nextIds.has(modelId)) {
+        delete secrets[key]
+      }
+      continue
+    }
+    if (key.startsWith('custom_provider_') && key.endsWith('_api_key')) {
+      const providerId = key.slice('custom_provider_'.length, -'_api_key'.length)
+      if (!nextProviderIds.has(providerId)) {
+        delete secrets[key]
+      }
     }
   }
   writeSecrets(secrets)
-  return { ...settings, customModels }
+  return { ...settings, customProviders, customModels }
 }
 
 function redactSettings(settings: Settings): Settings {
   return {
     ...settings,
+    customProviders: settings.customProviders.map((account) => ({
+      ...account,
+      apiKey: isSecretRef(account.apiKey) ? '' : account.apiKey,
+    })),
     customModels: settings.customModels.map((model) => ({
       ...model,
       apiKey: isSecretRef(model.apiKey) ? '' : model.apiKey,
@@ -247,10 +338,116 @@ function redactSettings(settings: Settings): Settings {
 }
 
 function normalizeSettings(settings: Settings): Settings {
-  return {
+  // Infer provider from modelId/baseUrl BEFORE migrating into provider accounts,
+  // so legacy rows like MiniMax-on-anthropic become the right account type.
+  const preNormalized: Settings = {
     ...settings,
     customModels: settings.customModels.map(normalizeCustomModel),
+    customProviders: settings.customProviders.map(normalizeProviderAccount),
   }
+  const migrated = migrateLegacyModelsToProviders(preNormalized)
+  return {
+    ...migrated,
+    customProviders: migrated.customProviders.map(normalizeProviderAccount),
+    customModels: migrated.customModels.map((model) => {
+      const normalized = normalizeCustomModel(model)
+      const account = migrated.customProviders.find((item) => item.id === normalized.providerAccountId)
+      if (!account) return normalized
+      return {
+        ...normalized,
+        provider: account.provider,
+        baseUrl: account.baseUrl || normalized.baseUrl,
+      }
+    }),
+  }
+}
+
+/**
+ * Auto-migrate legacy "one model = one key" rows into provider accounts.
+ * Groups by (provider, baseUrl, resolved apiKey fingerprint).
+ */
+function migrateLegacyModelsToProviders(settings: Settings): Settings {
+  const providers = [...settings.customProviders]
+  const models = settings.customModels.map((model) => ({ ...model }))
+  let changed = false
+
+  const findOrCreateAccount = (
+    provider: CustomModel['provider'],
+    baseUrl: string,
+    apiKey: string,
+    preferredName: string,
+  ): string => {
+    const existing = providers.find((account) => {
+      const accountKey = readSecretValue(account.apiKey)
+      return (
+        account.provider === provider
+        && account.baseUrl.trim().toLowerCase() === baseUrl.trim().toLowerCase()
+        && accountKey === apiKey
+      )
+    })
+    if (existing) return existing.id
+
+    const byEndpoint = providers.find((account) => (
+      account.provider === provider
+      && account.baseUrl.trim().toLowerCase() === baseUrl.trim().toLowerCase()
+      && (!readSecretValue(account.apiKey) || readSecretValue(account.apiKey) === apiKey)
+    ))
+    if (byEndpoint) {
+      if (apiKey && !readSecretValue(byEndpoint.apiKey)) {
+        byEndpoint.apiKey = apiKey
+        changed = true
+      }
+      return byEndpoint.id
+    }
+
+    const id = crypto.randomUUID()
+    providers.push({
+      id,
+      name: preferredName || provider,
+      provider,
+      baseUrl,
+      apiKey,
+    })
+    changed = true
+    return id
+  }
+
+  for (const model of models) {
+    if (model.providerAccountId) {
+      const linked = providers.find((account) => account.id === model.providerAccountId)
+      if (linked) continue
+      // Broken link — clear and rebuild from remaining credentials / endpoint.
+      model.providerAccountId = undefined
+      changed = true
+    }
+
+    const legacyKey = readSecretValue(model.apiKey)
+    // Still attach even when key is empty (e.g. local Ollama) as long as we have an endpoint or provider type.
+    const accountId = findOrCreateAccount(
+      model.provider,
+      model.baseUrl,
+      legacyKey,
+      model.name || model.provider,
+    )
+    model.providerAccountId = accountId
+    model.apiKey = ''
+    changed = true
+  }
+
+  if (!changed && providers.length === settings.customProviders.length) {
+    return settings
+  }
+  return { ...settings, customProviders: providers, customModels: models }
+}
+
+function normalizeProviderAccount(account: CustomProviderAccount): CustomProviderAccount {
+  const inferred = inferCustomModelProvider({
+    provider: account.provider,
+    baseUrl: account.baseUrl,
+    modelId: '',
+  })
+  if (inferred === account.provider) return account
+  return { ...account, provider: inferred }
 }
 
 function normalizeCustomModel(model: CustomModel): CustomModel {
@@ -265,7 +462,7 @@ function normalizeCustomModel(model: CustomModel): CustomModel {
   }
 }
 
-function inferCustomModelProvider(model: CustomModel): CustomModel['provider'] {
+function inferCustomModelProvider(model: Pick<CustomModel, 'provider' | 'modelId' | 'baseUrl'>): CustomModel['provider'] {
   const modelId = model.modelId.trim()
   const lowerModelId = modelId.toLowerCase()
   const lowerBaseUrl = model.baseUrl.trim().toLowerCase()

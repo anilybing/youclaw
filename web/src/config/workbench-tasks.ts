@@ -408,6 +408,52 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
 
   // ─── 内容创作能力包（绑定创作助理，纯 prompt 技能零配置）───────────────
   {
+    id: 'anime-drama-studio',
+    icon: '🎬',
+    title: { zh: 'AI 漫剧工作室', en: 'AI anime drama studio' },
+    desc: {
+      zh: '标准产线：剧本→锁形象→分镜→视频提示→成片清单',
+      en: 'Pipeline: script → lock assets → storyboard → video prompts → assembly',
+    },
+    agentId: CONTENT_AGENT_ID,
+    category: 'content',
+    workflowId: 'anime-drama-studio-v1',
+    promptTemplate: {
+      zh: '启动 AI 漫剧产线。梗概：{{premise}}。画风：{{style}}。时长：{{episode_mins}} 分钟。画幅：{{aspect}}。',
+      en: 'Start the anime drama pipeline. Premise: {{premise}}. Style: {{style}}. Minutes: {{episode_mins}}. Aspect: {{aspect}}.',
+    },
+    fields: [
+      {
+        key: 'premise',
+        kind: 'textarea',
+        required: true,
+        label: { zh: '故事梗概', en: 'Premise' },
+        placeholder: { zh: '一句话或一段大纲', en: 'One-liner or short outline' },
+      },
+      {
+        key: 'style',
+        kind: 'text',
+        required: false,
+        label: { zh: '画风（可选）', en: 'Style (optional)' },
+        placeholder: { zh: '日漫 / 国风 / Q 版', en: 'Anime / Chinese fantasy / chibi' },
+      },
+      {
+        key: 'episode_mins',
+        kind: 'text',
+        required: false,
+        label: { zh: '时长分钟（可选）', en: 'Minutes (optional)' },
+        placeholder: { zh: '默认 1', en: 'Default 1' },
+      },
+      {
+        key: 'aspect',
+        kind: 'text',
+        required: false,
+        label: { zh: '画幅（可选）', en: 'Aspect (optional)' },
+        placeholder: { zh: '默认 9:16', en: 'Default 9:16' },
+      },
+    ],
+  },
+  {
     id: 'content-article',
     icon: '✒️',
     title: { zh: '写公众号/知乎长文', en: 'Long-form article' },

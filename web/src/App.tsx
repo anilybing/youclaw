@@ -8,6 +8,7 @@ import { Memory } from './pages/Memory'
 import { Knowledge } from './pages/Knowledge'
 import { Fulfillment } from './pages/Fulfillment'
 import { Workflows } from './pages/Workflows'
+import { AnimeDramaStudio } from './pages/studio/AnimeDramaStudio'
 import { Tasks } from './pages/Tasks'
 import { Logs } from './pages/Logs'
 import { UserGuide } from './pages/UserGuide'
@@ -364,6 +365,7 @@ export default function App() {
           <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/fulfillment" element={<Fulfillment />} />
           <Route path="/workflows" element={<Workflows />} />
+          <Route path="/studio/anime-drama" element={<AnimeDramaStudio />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/activation" element={<Activation />} />

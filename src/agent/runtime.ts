@@ -304,6 +304,7 @@ export class AgentRuntime {
 
       const resolvedModel = resolveRuntimeModelConfig({
         agentModel: this.config.hasExplicitModel ? this.config.model : undefined,
+        modelOverride: params.modelOverride,
       })
       const modelConfig = resolvedModel.config
       if (!modelConfig) {

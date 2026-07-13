@@ -17,7 +17,7 @@ export interface ChatContextType {
   pendingToolUse: ToolUseItem[]
   documentStatuses: Record<string, { filename: string; status: 'parsing' | 'parsed' | 'failed'; error?: string }>
   chatStatus: 'submitted' | 'streaming' | 'ready' | 'error'
-  send: (prompt: string, attachments?: Attachment[]) => Promise<void>
+  send: (prompt: string, attachments?: Attachment[], modelOverride?: { providerAccountId: string; modelId: string } | null) => Promise<void>
   loadChat: (chatId: string, agentId?: string) => Promise<void>
   newChat: () => void
   stop: () => void
@@ -35,6 +35,10 @@ export interface ChatContextType {
   setAgentId: (id: string) => void
   agents: Agent[]
   refreshAgents: () => void
+
+  /** Current chat (or draft) model override from provider remote list. */
+  modelOverride: { providerAccountId: string; modelId: string } | null
+  setModelOverride: (override: { providerAccountId: string; modelId: string } | null) => void
 
   browserProfiles: BrowserProfileDTO[]
   refreshBrowserProfiles: () => void

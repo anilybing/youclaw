@@ -43,11 +43,23 @@ export const CustomModelProviderSchema = z.enum([
   'custom',
 ])
 
+/** 供应商账户：一套 baseUrl + apiKey，可挂多个模型。 */
+export const CustomProviderAccountSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  provider: CustomModelProviderSchema.default('custom'),
+  apiKey: z.string().default(''),
+  baseUrl: z.string().default(''),
+})
+
 export const CustomModelSchema = z.object({
   id: z.string(),
   name: z.string(),
   provider: CustomModelProviderSchema.default('anthropic'),
-  apiKey: z.string(),
+  /** 引用 customProviders 中的账户；有值时优先用账户的 apiKey/baseUrl。 */
+  providerAccountId: z.string().optional(),
+  /** 遗留字段：无 providerAccountId 时仍可用；有账户引用时可为空。 */
+  apiKey: z.string().default(''),
   baseUrl: z.string().default(''),
   modelId: z.string(),
 })
@@ -156,6 +168,8 @@ export const MediaSettingsSchema = z.object({
 
 export const SettingsSchema = z.object({
   activeModel: ActiveModelSchema,
+  /** 供应商账户（一 Key 多模型） */
+  customProviders: z.array(CustomProviderAccountSchema).default([]),
   customModels: z.array(CustomModelSchema).default([]),
   defaultRegistrySource: RegistrySourceSettingSchema.optional(),
   registrySources: z.object({
@@ -174,7 +188,9 @@ export const SettingsSchema = z.object({
 
 export type Settings = z.infer<typeof SettingsSchema>
 export type ActiveModel = z.infer<typeof ActiveModelSchema>
+export type CustomProviderAccount = z.infer<typeof CustomProviderAccountSchema>
 export type CustomModel = z.infer<typeof CustomModelSchema>
+export type CustomModelProvider = z.infer<typeof CustomModelProviderSchema>
 export type VoiceSettings = z.infer<typeof VoiceSettingsSchema>
 export type VoiceAsrConfig = z.infer<typeof VoiceAsrConfigSchema>
 export type VoiceTtsConfig = z.infer<typeof VoiceTtsConfigSchema>

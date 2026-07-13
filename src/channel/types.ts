@@ -14,6 +14,8 @@ export interface InboundMessage {
   agentId?: string        // target agent (Web API scenario)
   tags?: string[]         // routing tags from web frontend
   requestedSkills?: string[]  // explicitly requested skills
+  /** Per-turn model pick from provider remote list (chat model switcher). */
+  modelOverride?: { providerAccountId: string; modelId: string }
   browserProfileId?: string | null   // null explicitly disables browser for this message
   attachments?: Array<{ filename: string; mediaType: string; filePath: string }>
   /** Internal execution metadata; never accepted from public HTTP bodies. */

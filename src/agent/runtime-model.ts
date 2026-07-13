@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { getPaths } from '../config/index.ts'
 import { getEnv } from '../config/env.ts'
-import { resolveCustomModelApiKey, getStoredSettings } from '../settings/manager.ts'
+import { resolveCustomModelCredentials, resolveProviderAccountApiKey, getStoredSettings } from '../settings/manager.ts'
 import { ActiveModelProvider, type CustomModel } from '../settings/schema.ts'
 
 export interface RuntimeModelConfig {
@@ -13,6 +13,11 @@ export interface RuntimeModelConfig {
   modelId: string
   provider: string
   source: 'builtin' | 'custom'
+}
+
+export interface RuntimeModelOverride {
+  providerAccountId: string
+  modelId: string
 }
 
 export interface RuntimeModelResolution {
@@ -124,12 +129,13 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
     if (settings.activeModel.provider === ActiveModelProvider.Custom && settings.activeModel.id) {
       const active = models.find((model) => model.id === settings.activeModel.id)
       if (active) {
+        const creds = resolveCustomModelCredentials(active, settings)
         return {
           config: {
-            apiKey: resolveCustomModelApiKey(active),
-            baseUrl: active.baseUrl,
+            apiKey: creds.apiKey,
+            baseUrl: creds.baseUrl,
             modelId: active.modelId,
-            provider: active.provider,
+            provider: creds.provider,
             source: 'custom',
           },
         }
@@ -152,12 +158,13 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
   })
 
   if (exactMatch) {
+    const creds = resolveCustomModelCredentials(exactMatch, settings)
     return {
       config: {
-        apiKey: resolveCustomModelApiKey(exactMatch),
-        baseUrl: exactMatch.baseUrl,
+        apiKey: creds.apiKey,
+        baseUrl: creds.baseUrl,
         modelId: exactMatch.modelId,
-        provider: exactMatch.provider,
+        provider: creds.provider,
         source: 'custom',
       },
     }
@@ -167,12 +174,13 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
     const sameModelId = models.filter((model) => model.modelId.trim() === parsed.modelId)
     if (sameModelId.length === 1) {
       const match = sameModelId[0]!
+      const creds = resolveCustomModelCredentials(match, settings)
       return {
         config: {
-          apiKey: resolveCustomModelApiKey(match),
-          baseUrl: match.baseUrl,
+          apiKey: creds.apiKey,
+          baseUrl: creds.baseUrl,
           modelId: match.modelId,
-          provider: match.provider,
+          provider: creds.provider,
           source: 'custom',
         },
       }
@@ -187,7 +195,36 @@ function resolveCustomRuntimeModel(explicitModelId?: string): RuntimeModelResolu
 
 export function resolveRuntimeModelConfig(params?: {
   agentModel?: string | null
+  modelOverride?: RuntimeModelOverride | null
 }): RuntimeModelResolution {
+  const override = params?.modelOverride
+  if (override?.providerAccountId?.trim() && override.modelId?.trim()) {
+    const settings = getStoredSettings()
+    const account = settings.customProviders.find((item) => item.id === override.providerAccountId)
+    if (!account) {
+      return {
+        config: null,
+        error: 'Selected provider account was not found. Pick another model in the chat selector.',
+      }
+    }
+    const apiKey = resolveProviderAccountApiKey(account)
+    if (!apiKey && account.provider !== 'ollama') {
+      return {
+        config: null,
+        error: 'Selected provider account has no API key configured.',
+      }
+    }
+    return {
+      config: {
+        apiKey,
+        baseUrl: account.baseUrl,
+        modelId: override.modelId.trim(),
+        provider: account.provider,
+        source: 'custom',
+      },
+    }
+  }
+
   const settings = getStoredSettings()
   const explicitAgentModel = normalizeAgentModelOverride(params?.agentModel)
 

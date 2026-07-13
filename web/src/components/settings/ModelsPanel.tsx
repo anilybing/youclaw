@@ -1,5 +1,5 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
@@ -15,8 +15,11 @@ import {
   ActiveModelProvider,
   getSettings,
   updateSettings as apiUpdateSettings,
+  listProviderRemoteModels,
   type SettingsDTO,
   type CustomModelDTO,
+  type CustomProviderAccountDTO,
+  type RemoteModelInfoDTO,
 } from "@/api/client"
 import { useAppRuntimeStore } from "@/stores/app"
 
@@ -30,7 +33,6 @@ const BUILTIN_MODELS = [
 ] as const
 
 // [XJC] 暂时隐藏「云服务·按积分计费」的内置模型：默认引导用户使用自定义 API（自带 Key）。
-// 恢复云积分计费模式时改回 true 即可（其余逻辑均以此常量为开关）。
 const CLOUD_BILLING_ENABLED = false
 
 const CUSTOM_MODEL_DOCS_URL = getOfficialDocsUrl('custom-models')
@@ -164,35 +166,59 @@ export function ModelsPanel() {
   const { cloudEnabled } = useAppRuntimeStore()
   const [builtinModel, setBuiltinModel] = useState("XiaoJuClaw-pro")
   const [builtinModelId, setBuiltinModelId] = useState<string | null>(null)
+  const [customProviders, setCustomProviders] = useState<CustomProviderAccountDTO[]>([])
   const [customModels, setCustomModels] = useState<CustomModelDTO[]>([])
   const [activeModel, setActiveModel] = useState<ActiveModel>({ provider: ActiveModelProvider.Builtin })
-  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // Provider dialog
+  const [providerDialogOpen, setProviderDialogOpen] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<CustomProviderAccountDTO | null>(null)
+  const [formProviderName, setFormProviderName] = useState("")
+  const [formProviderType, setFormProviderType] = useState<CustomModelDTO['provider']>("siliconflow")
+  const formProviderTypeRef = useRef<CustomModelDTO['provider']>("siliconflow")
+  const [formProviderApiKey, setFormProviderApiKey] = useState("")
+  const [formProviderBaseUrl, setFormProviderBaseUrl] = useState(CUSTOM_MODEL_PROVIDER_META.siliconflow.defaultBaseUrl)
+
+  // Model dialog
+  const [modelDialogOpen, setModelDialogOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<CustomModelDTO | null>(null)
-  // Form fields
   const [formName, setFormName] = useState("")
   const [formModelId, setFormModelId] = useState("")
-  const [formApiKey, setFormApiKey] = useState("")
-  const [formBaseUrl, setFormBaseUrl] = useState("")
-  const [formProvider, setFormProvider] = useState<CustomModelDTO['provider']>("anthropic")
-  const formProviderRef = useRef<CustomModelDTO['provider']>("anthropic")
-  // Delete confirmation
-  const [deleteModelId, setDeleteModelId] = useState<string | null>(null)
-  // Form validation errors (shown only after field is touched)
-  const [touched, setTouched] = useState<Record<string, boolean>>({})
-  const isBuiltinActive = activeModel.provider === ActiveModelProvider.Builtin
-  // 是否展示内置(云积分)模型：需云端启用 且 未关闭云积分计费开关
-  const showBuiltin = cloudEnabled && CLOUD_BILLING_ENABLED
-  const currentProviderMeta = CUSTOM_MODEL_PROVIDER_META[formProvider]
+  const [formAccountId, setFormAccountId] = useState("")
+  const [remoteModels, setRemoteModels] = useState<RemoteModelInfoDTO[]>([])
+  const [remoteLoading, setRemoteLoading] = useState(false)
 
-  // Load from backend API
+  const [deleteModelId, setDeleteModelId] = useState<string | null>(null)
+  const [deleteProviderId, setDeleteProviderId] = useState<string | null>(null)
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+
+  const isBuiltinActive = activeModel.provider === ActiveModelProvider.Builtin
+  const showBuiltin = cloudEnabled && CLOUD_BILLING_ENABLED
+  const currentProviderMeta = CUSTOM_MODEL_PROVIDER_META[
+    customProviders.find((p) => p.id === formAccountId)?.provider
+    ?? editingModel?.provider
+    ?? 'custom'
+  ]
+
+  const modelsByProvider = useMemo(() => {
+    const map = new Map<string, CustomModelDTO[]>()
+    for (const model of customModels) {
+      const key = model.providerAccountId || `__legacy__:${model.id}`
+      const list = map.get(key) ?? []
+      list.push(model)
+      map.set(key, list)
+    }
+    return map
+  }, [customModels])
+
   useEffect(() => {
     getSettings().then((settings) => {
       setActiveModel(settings.activeModel)
+      setCustomProviders(settings.customProviders ?? [])
       setCustomModels(settings.customModels)
       if (settings.builtinModelId) {
         setBuiltinModelId(settings.builtinModelId)
       }
-      // 云积分计费隐藏时：若当前落在内置(积分)且已有自定义模型，默认切到自定义 API
       if (!CLOUD_BILLING_ENABLED && settings.activeModel.provider === ActiveModelProvider.Builtin) {
         const [first] = settings.customModels
         if (first) {
@@ -206,14 +232,13 @@ export function ModelsPanel() {
     }).catch(console.error)
   }, [])
 
-  // Save to backend and sync modelReady
   const saveSettings = useCallback(async (partial: Partial<SettingsDTO>) => {
     try {
       const updated = await apiUpdateSettings(partial)
       setActiveModel(updated.activeModel)
+      setCustomProviders(updated.customProviders ?? [])
       setCustomModels(updated.customModels)
 
-      // Sync modelReady to global store
       const { provider, id } = updated.activeModel
       if (provider === ActiveModelProvider.Builtin) {
         useAppRuntimeStore.setState({ modelReady: cloudEnabled })
@@ -228,7 +253,6 @@ export function ModelsPanel() {
     }
   }, [cloudEnabled])
 
-  // Switch active provider
   const handleSetActiveProvider = async (provider: ActiveModelProvider) => {
     let newActive: ActiveModel
     if (provider === ActiveModelProvider.Builtin) {
@@ -242,7 +266,6 @@ export function ModelsPanel() {
     await saveSettings({ activeModel: newActive })
   }
 
-  // Select built-in model and switch provider
   const handleSelectBuiltin = async (id: string) => {
     setBuiltinModel(id)
     const newActive: ActiveModel = { provider: ActiveModelProvider.Builtin }
@@ -250,139 +273,250 @@ export function ModelsPanel() {
     await saveSettings({ activeModel: newActive })
   }
 
-  // Set custom model as active
   const handleSetCustomActive = async (id: string) => {
     const newActive: ActiveModel = { provider: ActiveModelProvider.Custom, id }
     setActiveModel(newActive)
     await saveSettings({ activeModel: newActive })
   }
 
-  // Form validation
-  const formErrors = {
+  const providerFormErrors = {
+    name: !formProviderName.trim() ? t.settings.validationRequired ?? 'Required' : null,
+    // Local Ollama usually needs no API key.
+    apiKey: !editingProvider && !formProviderApiKey.trim() && formProviderType !== 'ollama'
+      ? t.settings.validationRequired ?? 'Required'
+      : formProviderApiKey.trim() && formProviderApiKey.trim().length < 8
+        ? t.settings.validationApiKeyTooShort ?? 'API Key is too short'
+        : null,
+    baseUrl: formProviderBaseUrl.trim() && !/^https?:\/\/.+/.test(formProviderBaseUrl.trim())
+      ? t.settings.validationBaseUrlFormat ?? 'Must start with http:// or https://'
+      : !formProviderBaseUrl.trim() && formProviderType !== 'ollama' && formProviderType !== 'minimax-cn' && formProviderType !== 'custom'
+        ? t.settings.validationRequired ?? 'Required'
+        : null,
+  }
+  const providerHasErrors = Object.values(providerFormErrors).some((e) => e !== null)
+
+  const modelFormErrors = {
+    accountId: !formAccountId.trim() ? t.settings.validationRequired ?? 'Required' : null,
     name: !formName.trim() ? t.settings.validationRequired ?? 'Required' : null,
     modelId: !formModelId.trim()
       ? t.settings.validationRequired ?? 'Required'
       : /\s/.test(formModelId.trim())
         ? t.settings.validationModelIdNoSpaces ?? 'Model ID cannot contain spaces'
         : null,
-    apiKey: !editingModel && !formApiKey.trim()
-      ? t.settings.validationRequired ?? 'Required'
-      : formApiKey.trim() && formApiKey.trim().length < 8
-        ? t.settings.validationApiKeyTooShort ?? 'API Key is too short'
-        : null,
-    baseUrl: formBaseUrl.trim() && !/^https?:\/\/.+/.test(formBaseUrl.trim())
-      ? t.settings.validationBaseUrlFormat ?? 'Must start with http:// or https://'
-      : null,
   }
-  const hasErrors = Object.values(formErrors).some((e) => e !== null)
+  const modelHasErrors = Object.values(modelFormErrors).some((e) => e !== null)
 
   const handleBlur = (field: string) => setTouched((prev) => ({ ...prev, [field]: true }))
 
-  // Open add dialog
-  const handleOpenAdd = () => {
+  const handleOpenAddProvider = () => {
+    setEditingProvider(null)
+    setFormProviderName("")
+    setFormProviderType("siliconflow")
+    formProviderTypeRef.current = "siliconflow"
+    setFormProviderApiKey("")
+    setFormProviderBaseUrl(CUSTOM_MODEL_PROVIDER_META.siliconflow.defaultBaseUrl)
+    setTouched({})
+    setProviderDialogOpen(true)
+  }
+
+  const handleOpenEditProvider = (account: CustomProviderAccountDTO) => {
+    setEditingProvider(account)
+    setFormProviderName(account.name)
+    setFormProviderType(account.provider)
+    formProviderTypeRef.current = account.provider
+    setFormProviderApiKey("")
+    setFormProviderBaseUrl(account.baseUrl)
+    setTouched({})
+    setProviderDialogOpen(true)
+  }
+
+  const handleProviderTypeChange = (value: CustomModelDTO['provider']) => {
+    const previous = formProviderType
+    const previousDefault = CUSTOM_MODEL_PROVIDER_META[previous].defaultBaseUrl
+    const nextDefault = CUSTOM_MODEL_PROVIDER_META[value].defaultBaseUrl
+    setFormProviderType(value)
+    formProviderTypeRef.current = value
+    setFormProviderBaseUrl((current) => {
+      const trimmed = current.trim()
+      if (!trimmed || trimmed === previousDefault) return nextDefault
+      return current
+    })
+    if (!formProviderName.trim() || formProviderName === CUSTOM_MODEL_PROVIDER_META[previous].label) {
+      setFormProviderName(CUSTOM_MODEL_PROVIDER_META[value].label)
+    }
+  }
+
+  const handleSaveProvider = async () => {
+    setTouched({ name: true, apiKey: true, baseUrl: true })
+    if (providerHasErrors) return
+
+    const provider = formProviderTypeRef.current
+    let updatedProviders: CustomProviderAccountDTO[]
+    if (editingProvider) {
+      updatedProviders = customProviders.map((item) =>
+        item.id === editingProvider.id
+          ? {
+              ...item,
+              name: formProviderName.trim(),
+              provider,
+              baseUrl: formProviderBaseUrl.trim(),
+              ...(formProviderApiKey.trim() ? { apiKey: formProviderApiKey.trim() } : {}),
+            }
+          : item
+      )
+    } else {
+      updatedProviders = [
+        ...customProviders,
+        {
+          id: crypto.randomUUID(),
+          name: formProviderName.trim() || CUSTOM_MODEL_PROVIDER_META[provider].label,
+          provider,
+          apiKey: formProviderApiKey.trim(),
+          baseUrl: formProviderBaseUrl.trim(),
+        },
+      ]
+    }
+
+    const updatedModels = customModels.map((model) => {
+      const account = updatedProviders.find((item) => item.id === model.providerAccountId)
+      if (!account) return model
+      return { ...model, provider: account.provider, baseUrl: account.baseUrl, apiKey: '' }
+    })
+
+    setCustomProviders(updatedProviders)
+    setCustomModels(updatedModels)
+    await saveSettings({ customProviders: updatedProviders, customModels: updatedModels })
+    setProviderDialogOpen(false)
+  }
+
+  const handleDeleteProvider = async (id: string) => {
+    const updatedProviders = customProviders.filter((item) => item.id !== id)
+    const removedModelIds = new Set(
+      customModels.filter((model) => model.providerAccountId === id).map((model) => model.id),
+    )
+    const updatedModels = customModels.filter((model) => model.providerAccountId !== id)
+    const partial: Partial<SettingsDTO> = {
+      customProviders: updatedProviders,
+      customModels: updatedModels,
+    }
+    if (
+      activeModel.provider === ActiveModelProvider.Custom
+      && activeModel.id
+      && removedModelIds.has(activeModel.id)
+    ) {
+      const next = updatedModels[0]
+      partial.activeModel = next
+        ? { provider: ActiveModelProvider.Custom, id: next.id }
+        : { provider: ActiveModelProvider.Builtin }
+      setActiveModel(partial.activeModel)
+    }
+    setCustomProviders(updatedProviders)
+    setCustomModels(updatedModels)
+    await saveSettings(partial)
+  }
+
+  const handleOpenAddModel = (accountId?: string) => {
+    if (customProviders.length === 0) return
     setEditingModel(null)
     setFormName("")
     setFormModelId("")
-    setFormApiKey("")
-    setFormBaseUrl(CUSTOM_MODEL_PROVIDER_META.anthropic.defaultBaseUrl)
-    setFormProvider("anthropic")
-    formProviderRef.current = "anthropic"
+    setFormAccountId(accountId || customProviders[0]!.id)
+    setRemoteModels([])
     setTouched({})
-    setDialogOpen(true)
+    setModelDialogOpen(true)
   }
 
-  // Open edit dialog
-  const handleOpenEdit = (model: CustomModelDTO) => {
+  const handleFetchRemoteModels = async () => {
+    if (!formAccountId) return
+    setRemoteLoading(true)
+    try {
+      const result = await listProviderRemoteModels(formAccountId)
+      setRemoteModels(result.models)
+      if (result.models.length === 0) {
+        console.info(t.settings.fetchRemoteModelsEmpty)
+      }
+    } catch (err) {
+      console.error(err)
+      setRemoteModels([])
+    } finally {
+      setRemoteLoading(false)
+    }
+  }
+
+  const handleOpenEditModel = (model: CustomModelDTO) => {
     setEditingModel(model)
     setFormName(model.name)
     setFormModelId(model.modelId)
-    setFormApiKey("")
-    setFormBaseUrl(model.baseUrl)
-    setFormProvider(model.provider)
-    formProviderRef.current = model.provider
+    setFormAccountId(model.providerAccountId || customProviders[0]?.id || "")
     setTouched({})
-    setDialogOpen(true)
+    setModelDialogOpen(true)
   }
 
-  const handleProviderChange = (value: CustomModelDTO['provider']) => {
-    const previousProvider = formProvider
-    const previousDefaultBaseUrl = CUSTOM_MODEL_PROVIDER_META[previousProvider].defaultBaseUrl
-    const nextDefaultBaseUrl = CUSTOM_MODEL_PROVIDER_META[value].defaultBaseUrl
-
-    setFormProvider(value)
-    formProviderRef.current = value
-    setFormBaseUrl((current) => {
-      const trimmed = current.trim()
-      if (!trimmed || trimmed === previousDefaultBaseUrl) {
-        return nextDefaultBaseUrl
-      }
-      return current
-    })
-  }
-
-  // Save custom model (create or edit)
   const handleSaveModel = async () => {
-    // Mark all fields as touched to show all errors
-    setTouched({ name: true, modelId: true, apiKey: true, baseUrl: true })
-    if (hasErrors) return
+    setTouched({ accountId: true, name: true, modelId: true })
+    if (modelHasErrors) return
+    const account = customProviders.find((item) => item.id === formAccountId)
+    if (!account) return
 
-    const provider = formProviderRef.current
     let updated: CustomModelDTO[]
     if (editingModel) {
       updated = customModels.map((m) =>
         m.id === editingModel.id
           ? {
               ...m,
-              name: formName,
-              modelId: formModelId,
-              baseUrl: formBaseUrl,
-              provider,
-              ...(formApiKey.trim() ? { apiKey: formApiKey } : {}),
+              name: formName.trim(),
+              modelId: formModelId.trim(),
+              providerAccountId: account.id,
+              provider: account.provider,
+              baseUrl: account.baseUrl,
+              apiKey: '',
             }
           : m
       )
     } else {
-      const newModel: CustomModelDTO = {
-        id: crypto.randomUUID(),
-        name: formName,
-        provider,
-        modelId: formModelId,
-        apiKey: formApiKey,
-        baseUrl: formBaseUrl,
-      }
-      updated = [...customModels, newModel]
+      updated = [
+        ...customModels,
+        {
+          id: crypto.randomUUID(),
+          name: formName.trim(),
+          modelId: formModelId.trim(),
+          providerAccountId: account.id,
+          provider: account.provider,
+          baseUrl: account.baseUrl,
+          apiKey: '',
+        },
+      ]
     }
     setCustomModels(updated)
     await saveSettings({ customModels: updated })
-    setDialogOpen(false)
+    setModelDialogOpen(false)
   }
 
-  // Delete custom model
   const handleDeleteModel = async (id: string) => {
     const updated = customModels.filter((m) => m.id !== id)
     setCustomModels(updated)
 
     const partial: Partial<SettingsDTO> = { customModels: updated }
     if (activeModel.provider === ActiveModelProvider.Custom && activeModel.id === id) {
-      const newActive: ActiveModel = { provider: ActiveModelProvider.Builtin }
+      const next = updated[0]
+      const newActive: ActiveModel = next
+        ? { provider: ActiveModelProvider.Custom, id: next.id }
+        : { provider: ActiveModelProvider.Builtin }
       setActiveModel(newActive)
       partial.activeModel = newActive
     }
     await saveSettings(partial)
   }
 
-  // Check if a custom model is active
   const isCustomActive = (id: string) => activeModel.provider === ActiveModelProvider.Custom && activeModel.id === id
 
   return (
     <div className="space-y-8">
-      {/* Active Model section */}
       <div>
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
           {t.settings.activeModel}
         </h4>
         <div className={cn("grid gap-3", showBuiltin ? "grid-cols-2" : "grid-cols-1")}>
-          {/* Built-in model (cloud service) card -- hidden when cloud billing is off */}
           {showBuiltin && (
             <button
               onClick={() => handleSetActiveProvider(ActiveModelProvider.Builtin)}
@@ -413,7 +547,6 @@ export function ModelsPanel() {
             </button>
           )}
 
-          {/* Custom API card */}
           <button
             onClick={() => handleSetActiveProvider(ActiveModelProvider.Custom)}
             className={cn(
@@ -444,7 +577,6 @@ export function ModelsPanel() {
         </div>
       </div>
 
-      {/* Built-in model list -- hidden when cloud billing is off */}
       {showBuiltin && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
@@ -504,15 +636,14 @@ export function ModelsPanel() {
         </div>
       )}
 
-      {/* Custom model list */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-            {t.settings.customModels}
+            {t.settings.customProviders}
           </h4>
-          <Button variant="ghost" size="sm" onClick={handleOpenAdd} className="h-7 gap-1 rounded-lg">
+          <Button variant="ghost" size="sm" onClick={handleOpenAddProvider} className="h-7 gap-1 rounded-lg">
             <Plus size={14} />
-            {t.settings.addCustomModel}
+            {t.settings.addCustomProvider}
           </Button>
         </div>
         <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
@@ -523,6 +654,9 @@ export function ModelsPanel() {
               </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 {t.settings.customModelSupportDesc}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t.settings.providerOneKeyHint}
               </p>
             </div>
             <Button
@@ -536,82 +670,157 @@ export function ModelsPanel() {
             </Button>
           </div>
         </div>
-        {customModels.length === 0 ? (
+
+        {customProviders.length === 0 ? (
           <div className="text-sm text-muted-foreground py-6 text-center border-2 border-dashed rounded-2xl">
-            {t.settings.customDesc}
+            {t.settings.noProviderYet}
           </div>
         ) : (
-          <div className="space-y-2">
-            {customModels.map((model) => (
-              <div
-                key={model.id}
-                className={cn(
-                  "flex items-center justify-between p-4 rounded-2xl border-2 transition-all",
-                  isCustomActive(model.id) ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30"
-                )}
-              >
-                <div className="min-w-0 flex-1 flex items-center gap-4">
-                  <div className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                    isCustomActive(model.id)
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                  )}>
-                    <Settings2 size={18} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold flex items-center gap-2">
-                      {model.name}
-                      {isCustomActive(model.id) && (
-                        <span className="text-xs font-medium text-primary flex items-center gap-1">
-                          <Check size={12} />
-                          {t.settings.currentSelection}
-                        </span>
-                      )}
+          <div className="space-y-4">
+            {customProviders.map((account) => {
+              const models = modelsByProvider.get(account.id) ?? []
+              return (
+                <div key={account.id} className="rounded-2xl border border-border overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold truncate">{account.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {CUSTOM_MODEL_PROVIDER_META[account.provider].label}
+                        {account.baseUrl ? ` · ${account.baseUrl}` : ''}
+                        {account.apiKey ? ` · ${account.apiKey}` : ''}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">{model.modelId}</div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 text-xs rounded-lg"
+                        onClick={() => handleOpenAddModel(account.id)}
+                      >
+                        <Plus size={13} />
+                        {t.settings.addModelUnderProvider}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-lg"
+                        onClick={() => handleOpenEditProvider(account)}
+                      >
+                        <Pencil size={13} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive"
+                        onClick={() => setDeleteProviderId(account.id)}
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!isCustomActive(model.id) && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs rounded-lg"
-                      onClick={() => handleSetCustomActive(model.id)}
-                    >
-                      {t.settings.setDefault}
-                    </Button>
+                  {models.length === 0 ? (
+                    <div className="px-4 py-4 text-xs text-muted-foreground">
+                      {t.settings.customDesc}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border/60">
+                      {models.map((model) => (
+                        <div
+                          key={model.id}
+                          className={cn(
+                            "flex items-center justify-between px-4 py-3 transition-colors",
+                            isCustomActive(model.id) && "bg-primary/5"
+                          )}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium flex items-center gap-2">
+                              {model.name}
+                              {isCustomActive(model.id) && (
+                                <span className="text-xs font-medium text-primary flex items-center gap-1">
+                                  <Check size={12} />
+                                  {t.settings.currentSelection}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">{model.modelId}</div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {!isCustomActive(model.id) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs rounded-lg"
+                                onClick={() => handleSetCustomActive(model.id)}
+                              >
+                                {t.settings.setDefault}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 rounded-lg"
+                              onClick={() => handleOpenEditModel(model)}
+                            >
+                              <Pencil size={13} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive"
+                              onClick={() => setDeleteModelId(model.id)}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 rounded-lg"
-                    onClick={() => handleOpenEdit(model)}
-                  >
-                    <Pencil size={13} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive"
-                    onClick={() => setDeleteModelId(model.id)}
-                  >
-                    <Trash2 size={13} />
-                  </Button>
+                </div>
+              )
+            })}
+            {/* Safety net: unlinked legacy rows should not disappear from the UI. */}
+            {customModels.filter((model) => !model.providerAccountId || !customProviders.some((p) => p.id === model.providerAccountId)).length > 0 && (
+              <div className="rounded-2xl border border-dashed border-amber-500/40 p-4">
+                <div className="mb-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  {t.settings.customModels}
+                </div>
+                <div className="space-y-2">
+                  {customModels
+                    .filter((model) => !model.providerAccountId || !customProviders.some((p) => p.id === model.providerAccountId))
+                    .map((model) => (
+                      <div key={model.id} className="flex items-center justify-between gap-2 text-sm">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{model.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">{model.modelId}</div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-lg" onClick={() => handleOpenEditModel(model)}>
+                            <Pencil size={13} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 rounded-lg text-destructive hover:text-destructive"
+                            onClick={() => setDeleteModelId(model.id)}
+                          >
+                            <Trash2 size={13} />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={providerDialogOpen} onOpenChange={setProviderDialogOpen}>
         <DialogContent className="w-[90vw] max-w-2xl p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">
-              {editingModel ? t.settings.editModel : t.settings.addCustomModel}
+              {editingProvider ? t.settings.editProvider : t.settings.addCustomProvider}
             </h2>
             <Button
               variant="ghost"
@@ -626,7 +835,7 @@ export function ModelsPanel() {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>{t.settings.modelProvider ?? 'Provider'}</Label>
-              <Select value={formProvider} onValueChange={(value) => handleProviderChange(value as CustomModelDTO['provider'])}>
+              <Select value={formProviderType} onValueChange={(value) => handleProviderTypeChange(value as CustomModelDTO['provider'])}>
                 <SelectTrigger className="rounded-xl">
                   <SelectValue placeholder={t.settings.modelProviderPlaceholder ?? 'Select a provider'} />
                 </SelectTrigger>
@@ -640,43 +849,30 @@ export function ModelsPanel() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>{t.settings.modelName}</Label>
+              <Label>{t.settings.providerAccountName}</Label>
               <Input
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
+                value={formProviderName}
+                onChange={(e) => setFormProviderName(e.target.value)}
                 onBlur={() => handleBlur('name')}
-                placeholder={t.settings.modelNamePlaceholder}
-                className={cn("rounded-xl", touched.name && formErrors.name ? 'border-destructive' : '')}
+                placeholder={t.settings.providerAccountNamePlaceholder}
+                className={cn("rounded-xl", touched.name && providerFormErrors.name ? 'border-destructive' : '')}
               />
-              {touched.name && formErrors.name && (
-                <p className="text-xs text-destructive">{formErrors.name}</p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t.settings.modelId}</Label>
-              <Input
-                value={formModelId}
-                onChange={(e) => setFormModelId(e.target.value)}
-                onBlur={() => handleBlur('modelId')}
-                placeholder={currentProviderMeta.modelIdExample ?? t.settings.modelIdPlaceholder}
-                className={cn("rounded-xl", touched.modelId && formErrors.modelId ? 'border-destructive' : '')}
-              />
-              {touched.modelId && formErrors.modelId && (
-                <p className="text-xs text-destructive">{formErrors.modelId}</p>
+              {touched.name && providerFormErrors.name && (
+                <p className="text-xs text-destructive">{providerFormErrors.name}</p>
               )}
             </div>
             <div className="space-y-1.5">
               <Label>API Key</Label>
               <Input
                 type="password"
-                value={formApiKey}
-                onChange={(e) => setFormApiKey(e.target.value)}
+                value={formProviderApiKey}
+                onChange={(e) => setFormProviderApiKey(e.target.value)}
                 onBlur={() => handleBlur('apiKey')}
-                placeholder={editingModel ? t.settings.apiKeyEditPlaceholder ?? "Leave empty to keep current key" : t.settings.apiKeyPlaceholder}
-                className={cn("rounded-xl", touched.apiKey && formErrors.apiKey ? 'border-destructive' : '')}
+                placeholder={editingProvider ? t.settings.apiKeyEditPlaceholder ?? "Leave empty to keep current key" : t.settings.apiKeyPlaceholder}
+                className={cn("rounded-xl", touched.apiKey && providerFormErrors.apiKey ? 'border-destructive' : '')}
               />
-              {touched.apiKey && formErrors.apiKey && (
-                <p className="text-xs text-destructive">{formErrors.apiKey}</p>
+              {touched.apiKey && providerFormErrors.apiKey && (
+                <p className="text-xs text-destructive">{providerFormErrors.apiKey}</p>
               )}
               <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
                 {t.settings.localSecretPlaintextNotice}
@@ -685,24 +881,24 @@ export function ModelsPanel() {
             <div className="space-y-1.5">
               <Label>Base URL</Label>
               <Input
-                value={formBaseUrl}
-                onChange={(e) => setFormBaseUrl(e.target.value)}
+                value={formProviderBaseUrl}
+                onChange={(e) => setFormProviderBaseUrl(e.target.value)}
                 onBlur={() => handleBlur('baseUrl')}
                 placeholder={t.settings.baseUrlPlaceholder}
-                className={cn("rounded-xl", touched.baseUrl && formErrors.baseUrl ? 'border-destructive' : '')}
+                className={cn("rounded-xl", touched.baseUrl && providerFormErrors.baseUrl ? 'border-destructive' : '')}
               />
-              {touched.baseUrl && formErrors.baseUrl && (
-                <p className="text-xs text-destructive">{formErrors.baseUrl}</p>
+              {touched.baseUrl && providerFormErrors.baseUrl && (
+                <p className="text-xs text-destructive">{providerFormErrors.baseUrl}</p>
               )}
               <p className="text-xs text-muted-foreground">
                 {t.settings.baseUrlFormatHint}
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">
+              <Button variant="outline" onClick={() => setProviderDialogOpen(false)} className="rounded-xl">
                 {t.common.cancel}
               </Button>
-              <Button onClick={handleSaveModel} disabled={hasErrors} className="rounded-xl">
+              <Button onClick={() => void handleSaveProvider()} disabled={providerHasErrors} className="rounded-xl">
                 {t.common.save}
               </Button>
             </div>
@@ -710,13 +906,110 @@ export function ModelsPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirmation dialog */}
+      <Dialog open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
+        <DialogContent className="w-[90vw] max-w-2xl p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">
+              {editingModel ? t.settings.editModel : t.settings.addCustomModel}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t.settings.providerOneKeyHint}</p>
+          </div>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>{t.settings.selectProviderAccount}</Label>
+              <Select value={formAccountId} onValueChange={setFormAccountId}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder={t.settings.selectProviderAccountPlaceholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  {customProviders.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name} ({CUSTOM_MODEL_PROVIDER_META[account.provider].label})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {touched.accountId && modelFormErrors.accountId && (
+                <p className="text-xs text-destructive">{modelFormErrors.accountId}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t.settings.modelName}</Label>
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                onBlur={() => handleBlur('name')}
+                placeholder={t.settings.modelNamePlaceholder}
+                className={cn("rounded-xl", touched.name && modelFormErrors.name ? 'border-destructive' : '')}
+              />
+              {touched.name && modelFormErrors.name && (
+                <p className="text-xs text-destructive">{modelFormErrors.name}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label>{t.settings.modelId}</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={!formAccountId || remoteLoading}
+                  onClick={() => void handleFetchRemoteModels()}
+                >
+                  {remoteLoading ? (t.common.loading ?? 'Loading...') : t.settings.fetchRemoteModels}
+                </Button>
+              </div>
+              {remoteModels.length > 0 && (
+                <Select
+                  value={remoteModels.some((m) => m.id === formModelId) ? formModelId : undefined}
+                  onValueChange={(value) => {
+                    setFormModelId(value)
+                    const hit = remoteModels.find((m) => m.id === value)
+                    if (hit && !formName.trim()) setFormName(hit.name || hit.id)
+                  }}
+                >
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder={t.settings.selectModel ?? t.settings.modelIdPlaceholder} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {remoteModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name || model.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Input
+                value={formModelId}
+                onChange={(e) => setFormModelId(e.target.value)}
+                onBlur={() => handleBlur('modelId')}
+                placeholder={currentProviderMeta.modelIdExample ?? t.settings.modelIdPlaceholder}
+                className={cn("rounded-xl", touched.modelId && modelFormErrors.modelId ? 'border-destructive' : '')}
+              />
+              {touched.modelId && modelFormErrors.modelId && (
+                <p className="text-xs text-destructive">{modelFormErrors.modelId}</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setModelDialogOpen(false)} className="rounded-xl">
+                {t.common.cancel}
+              </Button>
+              <Button onClick={() => void handleSaveModel()} disabled={modelHasErrors} className="rounded-xl">
+                {t.common.save}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!deleteModelId} onOpenChange={(open) => !open && setDeleteModelId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t.settings.confirmDeleteModel}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t.settings.confirmDeleteModel}
+              {t.settings.deleteModelDesc}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -724,8 +1017,31 @@ export function ModelsPanel() {
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
-                if (deleteModelId) handleDeleteModel(deleteModelId)
+                if (deleteModelId) void handleDeleteModel(deleteModelId)
                 setDeleteModelId(null)
+              }}
+            >
+              {t.common.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteProviderId} onOpenChange={(open) => !open && setDeleteProviderId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.settings.confirmDeleteProvider}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t.settings.confirmDeleteProvider}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteProviderId) void handleDeleteProvider(deleteProviderId)
+                setDeleteProviderId(null)
               }}
             >
               {t.common.delete}

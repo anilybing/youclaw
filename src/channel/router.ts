@@ -188,6 +188,7 @@ export class MessageRouter {
         {
           turnId: message.id,
           requestedSkills: requestedSkills.length > 0 ? requestedSkills : undefined,
+          modelOverride: message.modelOverride,
           browserProfileId: message.browserProfileId,
           attachments: message.attachments,
           agentOps: message.agentOps,

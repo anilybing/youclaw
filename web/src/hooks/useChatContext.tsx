@@ -29,9 +29,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [browserProfiles, setBrowserProfiles] = useState<BrowserProfileDTO[]>(
     [],
   );
+  const [draftModelOverride, setDraftModelOverride] = useState<{
+    providerAccountId: string
+    modelId: string
+  } | null>(null);
 
   const activeChatState = useActiveChatState();
   const actions = useChatActions(agentId);
+  const setChatModelOverride = useChatStore((s) => s.setChatModelOverride);
 
   const refreshAgents = useCallback(() => {
     getAgents()
@@ -133,6 +138,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [refreshChats],
   );
 
+  const modelOverride = activeChatState?.modelOverride ?? draftModelOverride;
+  const setModelOverride = useCallback((override: { providerAccountId: string; modelId: string } | null) => {
+    const chatId = useChatStore.getState().activeChatId;
+    if (chatId) {
+      setChatModelOverride(chatId, override);
+      return;
+    }
+    setDraftModelOverride(override);
+  }, [setChatModelOverride]);
+
+  const send = useCallback(async (prompt: string, attachments?: import('@/types/attachment').Attachment[]) => {
+    await actions.send(prompt, attachments, modelOverride);
+    // After first send creates a chat, clear draft (chat store now owns it).
+    setDraftModelOverride(null);
+  }, [actions, modelOverride]);
+
   return (
     <ChatContext.Provider
       value={{
@@ -149,6 +170,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         showInsufficientCredits:
           activeChatState?.showInsufficientCredits ?? false,
         ...actions,
+        send,
         chatList,
         refreshChats,
         searchQuery,
@@ -159,6 +181,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setAgentId,
         agents,
         refreshAgents,
+        modelOverride,
+        setModelOverride,
         browserProfiles,
         refreshBrowserProfiles,
       }}

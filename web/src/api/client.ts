@@ -81,10 +81,11 @@ export async function sendMessage(
   browserProfileId?: string | null,
   attachments?: Attachment[],
   messageId?: string,
+  modelOverride?: { providerAccountId: string; modelId: string },
 ) {
   return apiFetch<{ chatId: string; status: string }>(`/api/agents/${agentId}/message`, {
     method: 'POST',
-    body: JSON.stringify({ prompt, chatId, browserProfileId, attachments, messageId }),
+    body: JSON.stringify({ prompt, chatId, browserProfileId, attachments, messageId, modelOverride }),
   })
 }
 
@@ -1433,9 +1434,19 @@ export interface CustomModelDTO {
     | 'fireworks'
     | 'ollama'
     | 'custom'
+  /** 引用供应商账户；有值时 Key/Base URL 来自账户 */
+  providerAccountId?: string
   apiKey: string
   baseUrl: string
   modelId: string
+}
+
+export interface CustomProviderAccountDTO {
+  id: string
+  name: string
+  provider: CustomModelDTO['provider']
+  apiKey: string
+  baseUrl: string
 }
 
 export const ActiveModelProvider = {
@@ -1456,6 +1467,7 @@ export interface SettingsDTO {
     provider: ActiveModelProvider
     id?: string
   }
+  customProviders: CustomProviderAccountDTO[]
   customModels: CustomModelDTO[]
   defaultRegistrySource?: RegistrySelectableSource
   registrySources: {
@@ -1533,6 +1545,20 @@ export async function updateSettings(data: SettingsUpdateDTO) {
     method: 'PATCH',
     body: JSON.stringify(data),
   })
+}
+
+export interface RemoteModelInfoDTO {
+  id: string
+  name: string
+  ownedBy?: string
+}
+
+/** Fetch live model catalog from a configured provider account (OpenAI-compatible /models). */
+export async function listProviderRemoteModels(providerAccountId: string) {
+  return apiFetch<{
+    account: { id: string; name: string; provider: string; baseUrl: string }
+    models: RemoteModelInfoDTO[]
+  }>(`/api/settings/custom-providers/${encodeURIComponent(providerAccountId)}/remote-models`)
 }
 
 // ===== System Logs API =====
@@ -2143,7 +2169,7 @@ export interface WorkflowStepDTO {
   id?: string
   title: string
   prompt: string
-  kind?: 'agent' | 'llm' | 'tool'
+  kind?: 'agent' | 'llm' | 'tool' | 'approval'
   tool?: string
   args?: Record<string, string>
   when?: { var: string; op: string; value?: string }

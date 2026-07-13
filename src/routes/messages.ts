@@ -101,6 +101,10 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
       messageId: z.string().optional(),
       skills: z.array(z.string()).optional(),
       browserProfileId: z.string().nullable().optional(),
+      modelOverride: z.object({
+        providerAccountId: z.string().min(1),
+        modelId: z.string().min(1),
+      }).optional(),
       attachments: z.array(AttachmentSchema).max(MAX_FILES).optional(),
     })
 
@@ -143,6 +147,7 @@ export function createMessagesRoutes(agentManager: AgentManager, agentQueue: Age
       isGroup: false,
       agentId,
       requestedSkills: body.skills,
+      modelOverride: body.modelOverride,
       browserProfileId: body.browserProfileId,
       attachments: body.attachments,
     }

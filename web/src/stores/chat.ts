@@ -76,6 +76,8 @@ export type RealtimeChatSnapshot = {
 export interface ChatState {
   chatId: string
   boundAgentId: string | null
+  /** Per-chat model pick from provider remote list. */
+  modelOverride: { providerAccountId: string; modelId: string } | null
   messages: Message[]
   timelineItems: TimelineItem[]
   streamingText: string
@@ -221,6 +223,7 @@ function defaultChatState(chatId: string): ChatState {
   return {
     chatId,
     boundAgentId: null,
+    modelOverride: null,
     messages: [],
     timelineItems: [],
     streamingText: '',
@@ -251,6 +254,7 @@ interface ChatStore {
 
   initChat(chatId: string): void
   setChatAgent(chatId: string, agentId: string): void
+  setChatModelOverride(chatId: string, modelOverride: { providerAccountId: string; modelId: string } | null): void
   appendStreamText(chatId: string, text: string): void
   setProcessing(chatId: string, isProcessing: boolean): void
   addToolUse(chatId: string, tool: ToolUseItem): void
@@ -283,6 +287,21 @@ export const useChatStore = create<ChatStore>((set) => ({
         boundAgentId: agentId,
       })),
     })),
+
+  setChatModelOverride: (chatId, modelOverride) =>
+    set((state) => {
+      if (!state.chats[chatId]) {
+        return {
+          chats: {
+            ...state.chats,
+            [chatId]: { ...defaultChatState(chatId), modelOverride },
+          },
+        }
+      }
+      return {
+        chats: updateChat(state.chats, chatId, () => ({ modelOverride })),
+      }
+    }),
 
   appendStreamText: (chatId, text) =>
     set((state) => ({

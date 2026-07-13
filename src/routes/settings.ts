@@ -8,7 +8,9 @@ import {
   getActiveModelConfig,
   getBuiltinModelId,
   resolveCustomModelApiKey,
+  resolveProviderAccountApiKey,
 } from '../settings/manager.ts'
+import { listRemoteModelsForProviderAccountId } from '../settings/remote-models.ts'
 import { RegistrySourceSettingSchema, UpdateReleaseChannelSchema } from '../settings/schema.ts'
 import { getDatabase } from '../db/index.ts'
 
@@ -30,11 +32,27 @@ function maskMedia(media: ReturnType<typeof getSettings>['media']) {
   }
 }
 
-function maskCustomModels(models: ReturnType<typeof getStoredSettings>['customModels']) {
+function maskCustomModels(
+  models: ReturnType<typeof getStoredSettings>['customModels'],
+) {
   return models.map((model) => {
+    // Linked models share the provider account key — don't surface a per-model masked key.
+    if (model.providerAccountId) {
+      return { ...model, apiKey: '' }
+    }
     const apiKey = resolveCustomModelApiKey(model)
     return {
       ...model,
+      apiKey: apiKey ? `****${apiKey.slice(-4)}` : '',
+    }
+  })
+}
+
+function maskCustomProviders(providers: ReturnType<typeof getStoredSettings>['customProviders']) {
+  return providers.map((account) => {
+    const apiKey = resolveProviderAccountApiKey(account)
+    return {
+      ...account,
       apiKey: apiKey ? `****${apiKey.slice(-4)}` : '',
     }
   })
@@ -58,6 +76,7 @@ app.get('/settings', (c) => {
       },
       tencent: settings.registrySources.tencent,
     },
+    customProviders: maskCustomProviders(storedSettings.customProviders),
     customModels: maskCustomModels(storedSettings.customModels),
     voice: maskVoice(settings.voice),
     media: maskMedia(settings.media),
@@ -72,14 +91,27 @@ app.patch('/settings', async (c) => {
 
   // Only pick fields actually present in body to avoid Zod defaults overwriting existing data
   const current = getSettings()
+  const storedCurrent = getStoredSettings()
   const partial: Record<string, unknown> = {}
 
   if ('activeModel' in body) {
     partial.activeModel = body.activeModel
   }
 
+  if ('customProviders' in body && Array.isArray(body.customProviders)) {
+    const existingMap = new Map(storedCurrent.customProviders.map((m) => [m.id, m.apiKey]))
+    partial.customProviders = (body.customProviders as Array<Record<string, unknown>>).map((m) => {
+      const apiKey = String(m.apiKey ?? '')
+      if ((apiKey.startsWith('****') || !apiKey) && existingMap.has(String(m.id))) {
+        // Keep secret ref / previous key when UI sends masked or empty (edit keep).
+        return { ...m, apiKey: existingMap.get(String(m.id))! }
+      }
+      return m
+    })
+  }
+
   if ('customModels' in body && Array.isArray(body.customModels)) {
-    // Preserve original apiKey for masked values
+    // Preserve original apiKey for masked values (legacy per-model keys)
     const existingMap = new Map(current.customModels.map((m) => [m.id, m.apiKey]))
     partial.customModels = (body.customModels as Array<Record<string, unknown>>).map((m) => {
       const apiKey = String(m.apiKey ?? '')
@@ -205,6 +237,7 @@ app.patch('/settings', async (c) => {
       },
       tencent: updated.registrySources.tencent,
     },
+    customProviders: maskCustomProviders(storedUpdated.customProviders),
     customModels: maskCustomModels(storedUpdated.customModels),
     voice: maskVoice(updated.voice),
     media: maskMedia(updated.media),
@@ -254,6 +287,19 @@ app.put('/settings/port', async (c) => {
     db.run("DELETE FROM kv_state WHERE key = 'preferred_port'")
   }
   return c.json({ ok: true })
+})
+
+// GET /settings/custom-providers/:id/remote-models — list models from the provider gateway
+app.get('/settings/custom-providers/:id/remote-models', async (c) => {
+  const id = c.req.param('id')
+  try {
+    const result = await listRemoteModelsForProviderAccountId(id)
+    return c.json(result)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = /not found/i.test(message) ? 404 : 502
+    return c.json({ error: message, errorCode: 'REMOTE_MODELS_FAILED' }, status)
+  }
 })
 
 export function createSettingsRoutes() {

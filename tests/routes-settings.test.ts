@@ -142,12 +142,16 @@ describe('settings routes', () => {
     const app = createSettingsRoutes()
     const res = await app.request('/settings')
     const body = await res.json() as {
-      customModels: Array<{ provider: string; apiKey: string; modelId: string }>
+      customProviders: Array<{ provider: string; apiKey: string }>
+      customModels: Array<{ provider: string; apiKey: string; modelId: string; providerAccountId?: string }>
     }
 
     expect(res.status).toBe(200)
     expect(body.customModels[0]?.provider).toBe('minimax')
-    expect(body.customModels[0]?.apiKey).toBe('****-key')
+    expect(body.customModels[0]?.providerAccountId).toBeTruthy()
+    expect(body.customModels[0]?.apiKey).toBe('')
+    expect(body.customProviders[0]?.provider).toBe('minimax')
+    expect(body.customProviders[0]?.apiKey).toBe('****-key')
   })
 
   test('GET /settings/active-model normalizes MiniMax custom provider for runtime', async () => {
@@ -198,12 +202,15 @@ describe('settings routes', () => {
     const app = createSettingsRoutes()
     const res = await app.request('/settings')
     const body = await res.json() as {
-      customModels: Array<{ provider: string; apiKey: string; modelId: string }>
+      customProviders: Array<{ provider: string; apiKey: string }>
+      customModels: Array<{ provider: string; apiKey: string; modelId: string; providerAccountId?: string }>
     }
 
     expect(res.status).toBe(200)
     expect(body.customModels[0]?.provider).toBe('glm')
-    expect(body.customModels[0]?.apiKey).toBe('****-key')
+    expect(body.customModels[0]?.apiKey).toBe('')
+    expect(body.customProviders[0]?.provider).toBe('glm')
+    expect(body.customProviders[0]?.apiKey).toBe('****-key')
   })
 
   test('PATCH /settings accepts newly added mainstream providers', async () => {
@@ -223,13 +230,16 @@ describe('settings routes', () => {
       }),
     })
     const body = await res.json() as {
-      customModels: Array<{ provider: string; modelId: string; apiKey: string }>
+      customProviders: Array<{ provider: string; apiKey: string }>
+      customModels: Array<{ provider: string; modelId: string; apiKey: string; providerAccountId?: string }>
     }
 
     expect(res.status).toBe(200)
     expect(body.customModels[0]?.provider).toBe('deepseek')
     expect(body.customModels[0]?.modelId).toBe('deepseek-chat')
-    expect(body.customModels[0]?.apiKey).toBe('****-key')
+    expect(body.customModels[0]?.apiKey).toBe('')
+    expect(body.customProviders[0]?.provider).toBe('deepseek')
+    expect(body.customProviders[0]?.apiKey).toBe('****-key')
   })
 
   test('PATCH /settings rewrites legacy cloud activeModel provider to builtin', async () => {

@@ -1,5 +1,5 @@
 // [XJC-PATCH] modified from upstream v0.0.178 — 详见 doc/侵入点清单.md（T-A2 语音输入麦克风按钮）
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Attachment,
   AttachmentInfo,
@@ -23,14 +23,20 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
-import { uploadChatAttachment } from "@/api/client";
+import {
+  getSettings,
+  listProviderRemoteModels,
+  uploadChatAttachment,
+  type CustomProviderAccountDTO,
+  type RemoteModelInfoDTO,
+} from "@/api/client";
 import { VOICE_ENABLED } from "@/config/features";
 import { useChatContext } from "@/hooks/chatCtx";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useI18n } from "@/i18n";
 import { resolveChatAttachments } from "@/lib/chat-attachments";
 import { notify, useAppRuntimeStore } from "@/stores/app";
-import { Bot, Loader2, Mic, PlusIcon } from "lucide-react";
+import { Bot, Cpu, Loader2, Mic, PlusIcon, RefreshCw } from "lucide-react";
 
 const MAX_FILES = 10;
 
@@ -48,7 +54,6 @@ function AddAttachmentButton() {
   );
 }
 
-// [XJC] T-A2 语音输入按钮：空闲=麦克风；录音中=红色脉冲+秒数（点击停止）；识别中=Loader
 function VoiceInputButton({ onTranscript }: { onTranscript: (text: string) => void }) {
   const { t } = useI18n();
   const { state, seconds, start, stop } = useVoiceRecorder(onTranscript);
@@ -119,6 +124,128 @@ function AttachmentPreviews() {
   );
 }
 
+function ModelSwitcher() {
+  const { t } = useI18n();
+  const { modelOverride, setModelOverride, chatStatus } = useChatContext();
+  const [providers, setProviders] = useState<CustomProviderAccountDTO[]>([]);
+  const [providerId, setProviderId] = useState("");
+  const [models, setModels] = useState<RemoteModelInfoDTO[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = chatStatus === "submitted" || chatStatus === "streaming";
+
+  useEffect(() => {
+    getSettings()
+      .then((settings) => {
+        const list = settings.customProviders ?? [];
+        setProviders(list);
+        const preferred =
+          modelOverride?.providerAccountId
+          || settings.customModels.find((m) => m.id === settings.activeModel.id)?.providerAccountId
+          || list[0]?.id
+          || "";
+        setProviderId((current) => current || preferred);
+      })
+      .catch(() => {});
+  }, [modelOverride?.providerAccountId]);
+
+  const refreshModels = useCallback(async (accountId: string, autoSelect = false) => {
+    if (!accountId) {
+      setModels([]);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await listProviderRemoteModels(accountId);
+      setModels(result.models);
+      if (autoSelect && result.models[0]) {
+        setModelOverride({ providerAccountId: accountId, modelId: result.models[0].id });
+      }
+    } catch (err) {
+      setModels([]);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [setModelOverride]);
+
+  useEffect(() => {
+    if (!providerId) return;
+    void refreshModels(providerId, !modelOverride);
+    // Only re-fetch when provider changes; modelOverride auto-select runs once per provider switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId]);
+
+  const selectedValue = modelOverride?.modelId || "";
+  const providerLabel = useMemo(
+    () => providers.find((p) => p.id === providerId)?.name || t.chat.modelProvider,
+    [providers, providerId, t.chat.modelProvider],
+  );
+
+  if (providers.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1">
+      {providers.length > 1 && (
+        <PromptInputSelect
+          value={providerId}
+          onValueChange={(id) => {
+            setProviderId(id);
+            setModelOverride(null);
+          }}
+          disabled={busy || loading}
+        >
+          <PromptInputSelectTrigger className="h-7 max-w-[140px] text-xs gap-1" disabled={busy || loading}>
+            <PromptInputSelectValue placeholder={t.chat.modelProvider} />
+          </PromptInputSelectTrigger>
+          <PromptInputSelectContent>
+            {providers.map((account) => (
+              <PromptInputSelectItem key={account.id} value={account.id}>
+                {account.name}
+              </PromptInputSelectItem>
+            ))}
+          </PromptInputSelectContent>
+        </PromptInputSelect>
+      )}
+      <PromptInputSelect
+        value={selectedValue}
+        onValueChange={(modelId) => {
+          if (!providerId || !modelId) return;
+          setModelOverride({ providerAccountId: providerId, modelId });
+        }}
+        disabled={busy || loading || models.length === 0}
+      >
+        <PromptInputSelectTrigger
+          className="h-7 max-w-[220px] text-xs gap-1"
+          data-testid="model-selector"
+          disabled={busy || loading || models.length === 0}
+          title={error || providerLabel}
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Cpu className="h-3.5 w-3.5" />}
+          <PromptInputSelectValue placeholder={loading ? t.chat.loadingModels : t.chat.selectModel} />
+        </PromptInputSelectTrigger>
+        <PromptInputSelectContent className="max-h-72">
+          {models.map((model) => (
+            <PromptInputSelectItem key={model.id} value={model.id} data-testid={`model-option-${model.id}`}>
+              {model.name || model.id}
+            </PromptInputSelectItem>
+          ))}
+        </PromptInputSelectContent>
+      </PromptInputSelect>
+      <PromptInputButton
+        size="sm"
+        disabled={busy || loading || !providerId}
+        onClick={() => void refreshModels(providerId)}
+        tooltip={t.chat.refreshModels}
+        aria-label={t.chat.refreshModels}
+      >
+        <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+      </PromptInputButton>
+    </div>
+  );
+}
+
 export function ChatInput() {
   const { t } = useI18n();
   const {
@@ -146,8 +273,6 @@ export function ChatInput() {
     return () => cancelAnimationFrame(frameId);
   }, [chatId, chatStatus]);
 
-  // [XJC] T-A2 语音识别文本追加到输入框现有内容（不自动发送）。
-  // 该输入框是非受控组件（表单提交经 FormData 读值），直接写 DOM value 即可。
   const appendTranscript = useCallback((text: string) => {
     const el = textareaRef.current;
     if (!el) return;
@@ -198,6 +323,7 @@ export function ChatInput() {
           <PromptInputTools>
             <AddAttachmentButton />
             {VOICE_ENABLED && <VoiceInputButton onTranscript={appendTranscript} />}
+            <ModelSwitcher />
             {agents.length > 1 && (
               <PromptInputSelect
                 value={effectiveAgentId}

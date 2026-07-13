@@ -14,7 +14,7 @@ import { resolve } from 'node:path'
 import { getPaths } from '../config/paths.ts'
 import { getLogger } from '../logger/index.ts'
 import { resolveRoutedModel, type ModelHint } from '../agent/model-hints.ts'
-import { getStoredSettings, resolveCustomModelApiKey } from '../settings/manager.ts'
+import { getStoredSettings, resolveCustomModelCredentials } from '../settings/manager.ts'
 
 export interface UserAiConfig {
   baseUrl: string
@@ -99,8 +99,9 @@ export function resolveUserKeyModelForHint(hint: ModelHint | undefined): UserAiC
     })
     if (!match) return null
 
-    const apiKey = resolveCustomModelApiKey(match).trim()
-    const baseUrl = match.baseUrl.trim().replace(/\/+$/, '')
+    const creds = resolveCustomModelCredentials(match, settings)
+    const apiKey = creds.apiKey.trim()
+    const baseUrl = creds.baseUrl.trim().replace(/\/+$/, '')
     const modelId = match.modelId.trim()
     if (!apiKey || !baseUrl || !modelId) return null
     return { baseUrl, apiKey, model: modelId }

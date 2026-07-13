@@ -109,7 +109,12 @@ function TaskForm({ task, locale, onBack }: { task: WorkbenchTask; locale: Workb
         const { run } = await runWorkflow(task.workflowId, inputs)
         void reportTelemetry('skill_run', { skill: task.id, workflowId: task.workflowId, ok: true })
         setSubmitting(false)
-        navigate(`/workflows?workflow=${encodeURIComponent(task.workflowId)}&run=${encodeURIComponent(run.id)}`)
+        // 漫剧专用工作室：跑起来后进阶段式 UI，而不是通用工作流列表。
+        if (task.workflowId === 'anime-drama-studio-v1') {
+          navigate(`/studio/anime-drama?run=${encodeURIComponent(run.id)}`)
+        } else {
+          navigate(`/workflows?workflow=${encodeURIComponent(task.workflowId)}&run=${encodeURIComponent(run.id)}`)
+        }
         return
       }
 
