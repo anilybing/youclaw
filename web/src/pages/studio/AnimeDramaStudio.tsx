@@ -65,7 +65,6 @@ import {
   parseShotList,
   parseStillFrames,
   parseVideoPrompts,
-  resolveShotMediaPath,
   resolveActiveStylePresetId,
   type StudioStageId,
 } from './anime-drama/parse'

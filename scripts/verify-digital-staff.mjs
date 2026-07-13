@@ -214,7 +214,7 @@ try {
 try {
   const cardsSrc = readFileSync(resolve(REPO, 'web/src/config/workbench-tasks.ts'), 'utf8')
   const cardIds = [...cardsSrc.matchAll(/^\s{4}id:\s*'([a-z-]+)'/gm)].map((m) => m[1])
-  check('工作台任务卡数量(46)', cardIds.length === 46, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
+  check('工作台任务卡数量(47)', cardIds.length === 47, `实际 ${cardIds.length}: ${cardIds.join(',')}`)
   check('工作台绑定 office-assistant', /WORKBENCH_AGENT_ID = 'office-assistant'/.test(cardsSrc))
   check('电商卡绑定 ecommerce-assistant', /ECOMMERCE_AGENT_ID = 'ecommerce-assistant'/.test(cardsSrc))
   check('创作卡绑定 content-creator', /CONTENT_AGENT_ID = 'content-creator'/.test(cardsSrc))
@@ -223,8 +223,8 @@ try {
   const agentBindCount = (cardsSrc.match(/agentId:\s*ECOMMERCE_AGENT_ID/g) ?? []).length
   check('电商卡均显式绑定 ecommerce-assistant', ecomCardIds.length > 0 && agentBindCount === ecomCardIds.length,
     `电商卡 ${ecomCardIds.length} 张 / agentId 绑定 ${agentBindCount} 处`)
-  // 每张 content-* 卡都必须显式绑定 agentId: CONTENT_AGENT_ID（漏绑会误派给办公助理）
-  const contentCardIds = cardIds.filter((id) => id.startsWith('content-'))
+  // 创作卡：content-* + 漫剧工作室卡，均须显式绑定 CONTENT_AGENT_ID
+  const contentCardIds = cardIds.filter((id) => id.startsWith('content-') || id === 'anime-drama-studio')
   const contentBindCount = (cardsSrc.match(/agentId:\s*CONTENT_AGENT_ID/g) ?? []).length
   check('创作卡均显式绑定 content-creator', contentCardIds.length > 0 && contentBindCount === contentCardIds.length,
     `创作卡 ${contentCardIds.length} 张 / agentId 绑定 ${contentBindCount} 处`)

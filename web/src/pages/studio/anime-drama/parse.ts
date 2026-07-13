@@ -292,17 +292,17 @@ export function parseStillFrames(raw: string | undefined | null): ParsedStillFra
         ? (data as { stills: unknown[] }).stills
         : null
   if (!list) return []
-  return list
-    .map((item, index) => {
-      const row = (item ?? {}) as Record<string, unknown>
-      const shotId = String(row.shotId ?? row.id ?? '').trim() || `S${index + 1}`
-      const startPath = String(row.startPath ?? row.path ?? row.mediaPath ?? '').trim() || undefined
-      const endPath = String(row.endPath ?? '').trim() || undefined
-      const continuityNote = row.continuityNote ? String(row.continuityNote) : undefined
-      if (!startPath && !endPath) return null
-      return { shotId, startPath, endPath, continuityNote }
-    })
-    .filter((item): item is ParsedStillFrame => item != null)
+  const frames: ParsedStillFrame[] = []
+  for (let index = 0; index < list.length; index++) {
+    const row = (list[index] ?? {}) as Record<string, unknown>
+    const shotId = String(row.shotId ?? row.id ?? '').trim() || `S${index + 1}`
+    const startPath = String(row.startPath ?? row.path ?? row.mediaPath ?? '').trim() || undefined
+    const endPath = String(row.endPath ?? '').trim() || undefined
+    const continuityNote = row.continuityNote ? String(row.continuityNote) : undefined
+    if (!startPath && !endPath) continue
+    frames.push({ shotId, startPath, endPath, continuityNote })
+  }
+  return frames
 }
 
 /** 按 shotId 取首帧路径；无结构化帧时回退到路径列表下标（兼容旧产出）。 */
