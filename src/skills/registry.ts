@@ -1472,6 +1472,11 @@ export class RegistryManager {
     mode: 'install' | 'update',
   ): Promise<void> {
     const userSkillsDir = this.resolveUserSkillsDir()
+    // [XJC-PATCH] 服务端返回的 detail.slug 未必可信(源被攻陷/响应被篡改可含 ../ 或分隔符),
+    // 落盘前用严格 slug 正则校验,阻断把技能目录 rename 到 userSkills 之外的路径穿越。
+    if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(detail.slug) || detail.slug.includes('..')) {
+      throw new Error(`Invalid skill slug from source: ${JSON.stringify(detail.slug)}`)
+    }
     const targetDir = resolve(userSkillsDir, detail.slug)
     const tempDir = resolve(userSkillsDir, `.tmp-${mode}-${detail.slug}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
     const backupDir = resolve(userSkillsDir, `.bak-${detail.slug}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)

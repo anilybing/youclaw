@@ -28,6 +28,18 @@ export function isMeaningfulSenderName(senderName: string | undefined, sender?: 
  *   单聊：好友昵称（senderName）→ 渠道实例自定义 label → 类型中文名。
  * 绝不落回原始 type 字符串。
  */
+// [XJC-PATCH] 会话标题可能来自攻击者可控的昵称/群名,须剥离控制字符/换行(含
+// U+202E 等双向控制符)并折叠空白,再截断——与 web 路径的换行清洗对齐,避免标题
+// 注入使前端列表展示错乱。
+function sanitizeTitle(raw: string): string {
+  return raw
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50)
+}
+
 export function deriveChannelChatTitle(params: {
   channelType: string
   sender?: string
@@ -36,14 +48,15 @@ export function deriveChannelChatTitle(params: {
   groupName?: string
   instanceLabel?: string | null
 }): string {
-  const base = params.instanceLabel?.trim() || channelTypeLabel(params.channelType)
+  const base = sanitizeTitle(params.instanceLabel?.trim() || channelTypeLabel(params.channelType)) || channelTypeLabel(params.channelType)
   if (params.isGroup) {
-    const groupName = params.groupName?.trim()
-    if (groupName) return groupName.slice(0, 50)
+    const groupName = sanitizeTitle(params.groupName?.trim() || '')
+    if (groupName) return groupName
     return `${base}·群`
   }
   if (isMeaningfulSenderName(params.senderName, params.sender)) {
-    return params.senderName!.trim().slice(0, 50)
+    const name = sanitizeTitle(params.senderName!.trim())
+    if (name) return name
   }
   return base
 }

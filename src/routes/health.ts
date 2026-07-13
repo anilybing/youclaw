@@ -10,9 +10,9 @@ import { which, resetShellEnvCache, getShellEnv } from '../utils/shell-env.ts'
 import { getLogger } from '../logger/index.ts'
 import { fetchRemoteMediaToBuffer } from '../channel/media-fetch.ts'
 import {
-  BUN_CDN_BASE, BUN_GITHUB_BASE, BUN_VERSION,
+  BUN_CDN_BASE, BUN_VERSION,
   GIT_CDN_URL, GIT_VERSION,
-  UV_CDN_BASE, UV_GITHUB_BASE, UV_VERSION,
+  UV_CDN_BASE, UV_VERSION,
 } from '../config/tools.ts'
 import {
   ensurePortableToolsInPath,
@@ -334,12 +334,12 @@ async function installBun(): Promise<InstallResult> {
   }
 
   const cdnUrl = `${BUN_CDN_BASE}/${zipName}`
-  const githubUrl = `${BUN_GITHUB_BASE}/${zipName}`
 
-  // Download zip: try CDN first, fallback to GitHub
+  // Download from the self-hosted domain only. No GitHub/external fallback:
+  // China users cannot reach GitHub, so every tool download must stay on our domain.
   let zipBuffer: Buffer | null = null
   let downloadSource = ''
-  for (const url of [cdnUrl, githubUrl]) {
+  for (const url of [cdnUrl]) {
     try {
       getLogger().info({ category: 'install' }, `[install-bun] Downloading from ${url}...`)
       zipBuffer = await downloadToBuffer(url, 120_000)
@@ -569,12 +569,11 @@ async function installUv(): Promise<InstallResult> {
   }
 
   const cdnUrl = `${UV_CDN_BASE}/${target.name}`
-  const githubUrl = `${UV_GITHUB_BASE}/${target.name}`
 
-  // Download: try CDN first, fallback to GitHub
+  // Download from the self-hosted domain only (no GitHub/external fallback).
   let archiveBuffer: Buffer | null = null
   let downloadSource = ''
-  for (const url of [cdnUrl, githubUrl]) {
+  for (const url of [cdnUrl]) {
     try {
       logger.info({ category: 'install' }, `[install-uv] Downloading from ${url}...`)
       archiveBuffer = await downloadToBuffer(url, 120_000)

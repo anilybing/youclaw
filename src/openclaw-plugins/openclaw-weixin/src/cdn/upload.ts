@@ -191,6 +191,14 @@ async function uploadMediaToCdn(params: {
 }): Promise<UploadedFileInfo> {
   const { filePath, toUserId, opts, cdnBaseUrl, mediaType, label } = params;
 
+  // [XJC-PATCH] 本地媒体上传前先按文件大小设上限(与其它渠道 50MB 对齐),避免超大文件
+  // 整包 readFile 进内存造成膨胀;超限直接抛中文错误而非读完再被 CDN 拒。
+  const MAX_WEIXIN_MEDIA_BYTES = 50 * 1024 * 1024;
+  const stat = await fs.stat(filePath);
+  if (stat.size > MAX_WEIXIN_MEDIA_BYTES) {
+    throw new Error(`媒体文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB),超过 50MB 上限`);
+  }
+
   const plaintext = await fs.readFile(filePath);
   const rawsize = plaintext.length;
   const rawfilemd5 = crypto.createHash("md5").update(plaintext).digest("hex");

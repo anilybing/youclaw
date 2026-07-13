@@ -11,6 +11,7 @@ import {
   clearFulfillmentAvailable,
   deleteFulfillmentSku,
   getFulfillmentDeliveries,
+  getFulfillmentDeliverySecret,
   type FulfillmentSkuDTO,
   type FulfillmentDeliveryDTO,
 } from '../api/client'
@@ -57,10 +58,6 @@ function formatDate(iso: string): string {
   return date.toLocaleString()
 }
 
-function maskSecret(secret: string): string {
-  if (secret.length <= 6) return '••••••'
-  return `${secret.slice(0, 3)}••••${secret.slice(-3)}`
-}
 
 export function Fulfillment() {
   const { t } = useI18n()
@@ -72,6 +69,8 @@ export function Fulfillment() {
   const [deliveryLoadState, setDeliveryLoadState] = useState<LoadState>('loading')
   const [deliveryFilter, setDeliveryFilter] = useState('')
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
+  // [XJC] 卡密明文按需从服务端单条取,缓存在此(列表响应默认不含明文)。
+  const [secrets, setSecrets] = useState<Map<string, string>>(new Map())
 
   // 新建商品对话框
   const [createOpen, setCreateOpen] = useState(false)
@@ -182,7 +181,30 @@ export function Fulfillment() {
     void loadDeliveries(skuId)
   }
 
-  const toggleReveal = (orderRef: string) => {
+  // [XJC] 按需取一次卡密明文并缓存;列表响应不含明文,故对账/复制时才拉取。
+  const ensureSecret = useCallback(async (orderRef: string): Promise<string> => {
+    const cached = secrets.get(orderRef)
+    if (cached !== undefined) return cached
+    const res = await getFulfillmentDeliverySecret(orderRef)
+    const value = res.secret ?? ''
+    setSecrets((prev) => {
+      const next = new Map(prev)
+      next.set(orderRef, value)
+      return next
+    })
+    return value
+  }, [secrets])
+
+  const toggleReveal = async (orderRef: string) => {
+    const willReveal = !revealed.has(orderRef)
+    if (willReveal) {
+      try {
+        await ensureSecret(orderRef)
+      } catch {
+        /* 取码失败时静默不展开 */
+        return
+      }
+    }
     setRevealed((prev) => {
       const next = new Set(prev)
       if (next.has(orderRef)) next.delete(orderRef)
@@ -191,12 +213,13 @@ export function Fulfillment() {
     })
   }
 
-  const copySecret = async (secret: string) => {
+  const copySecret = async (orderRef: string) => {
     try {
+      const secret = await ensureSecret(orderRef)
       await navigator.clipboard.writeText(secret)
       toast.success(t.fulfillment.copied)
     } catch {
-      /* clipboard 不可用时静默 */
+      /* clipboard / 取码失败时静默 */
     }
   }
 
@@ -384,8 +407,8 @@ export function Fulfillment() {
                     <span className="hidden sm:block w-32 text-muted-foreground">{formatDate(d.deliveredAt)}</span>
                     <span className="truncate" title={d.skuTitle}>{d.skuTitle}</span>
                     <span className="truncate font-mono" title={d.orderRef}>{d.orderRef}</span>
-                    <span className="truncate font-mono" title={isRevealed ? d.secret : undefined}>
-                      {isRevealed ? d.secret : maskSecret(d.secret)}
+                    <span className="truncate font-mono" title={isRevealed ? (secrets.get(d.orderRef) ?? '') : undefined}>
+                      {isRevealed ? (secrets.get(d.orderRef) ?? '') : '••••••'}
                     </span>
                     <div className="flex w-14 items-center justify-end gap-1">
                       <button
@@ -396,7 +419,7 @@ export function Fulfillment() {
                         {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                       </button>
                       <button
-                        onClick={() => void copySecret(d.secret)}
+                        onClick={() => void copySecret(d.orderRef)}
                         className="rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
                         title={t.fulfillment.copySecret}
                       >

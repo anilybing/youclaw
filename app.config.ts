@@ -24,15 +24,16 @@ const appConfig = {
   defaultModel: 'minimax/MiniMax-M2.7-highspeed',
   defaultLogLevel: 'info' as const,
 
-  // ── CDN ──  工具与安装包镜像（人类采购 CDN 后只改这两行）
-  cdnBase: 'https://cdn.xiaojuclaw.top/xiaojuclaw',
-  toolsCdnBase: 'https://cdn.xiaojuclaw.top/xiaojuclaw/tools',
+  // ── CDN ──  工具与安装包镜像（自建域名托管，不依赖外网/GitHub，国内可直连）
+  cdnBase: 'https://xiaoju.ncqianxi.cn/downloads',
+  toolsCdnBase: 'https://xiaoju.ncqianxi.cn/downloads/tools',
 
   // ── External Tool Downloads ──
+  // 工具全部由自建域名托管（见 toolsCdnBase）；不保留任何 GitHub/外网下载地址，
+  // 国内用户直连服务器域名即可，无外网兜底。
   tools: {
     bun: {
       version: '1.2.15',
-      githubReleaseBase: 'https://github.com/oven-sh/bun/releases/download',
     },
     git: {
       version: '2.53.0.2',
@@ -40,7 +41,6 @@ const appConfig = {
     },
     uv: {
       version: '0.7.12',
-      githubReleaseBase: 'https://github.com/astral-sh/uv/releases/download',
     },
   },
 } as const

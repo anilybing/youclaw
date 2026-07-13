@@ -1,5 +1,7 @@
 // @ts-nocheck
 import path from "node:path";
+import os from "node:os";
+import { rm } from "node:fs/promises";
 
 import type { ChannelPlugin, OpenClawConfig } from "openclaw/plugin-sdk";
 import { normalizeAccountId } from "openclaw/plugin-sdk";
@@ -38,7 +40,8 @@ function isRemoteUrl(mediaUrl: string): boolean {
   return mediaUrl.startsWith("http://") || mediaUrl.startsWith("https://");
 }
 
-const MEDIA_OUTBOUND_TEMP_DIR = "/tmp/openclaw/weixin/media/outbound-temp";
+// [XJC-PATCH] 用 os.tmpdir() 生成跨平台临时目录(原硬编码 /tmp 在 Windows 落到盘根 C:\tmp)。
+const MEDIA_OUTBOUND_TEMP_DIR = path.join(os.tmpdir(), "openclaw", "weixin", "media", "outbound-temp");
 
 /** Resolve any local path scheme to an absolute filesystem path. */
 function resolveLocalPath(mediaUrl: string): string {
@@ -151,23 +154,32 @@ export const weixinPlugin: ChannelPlugin<ResolvedWeixinAccount> = {
 
       if (mediaUrl && (isLocalFilePath(mediaUrl) || isRemoteUrl(mediaUrl))) {
         let filePath: string;
+        // [XJC-PATCH] 远程媒体下载到临时文件后须在发送完成/失败时清理,避免临时文件长期堆积。
+        let tempToClean: string | null = null;
         if (isLocalFilePath(mediaUrl)) {
           filePath = resolveLocalPath(mediaUrl);
           aLog.debug(`sendMedia: uploading local file ${filePath}`);
         } else {
           aLog.debug(`sendMedia: downloading remote mediaUrl=${mediaUrl.slice(0, 80)}...`);
           filePath = await downloadRemoteImageToTemp(mediaUrl, MEDIA_OUTBOUND_TEMP_DIR);
+          tempToClean = filePath;
           aLog.debug(`sendMedia: remote image downloaded to ${filePath}`);
         }
-        const contextToken = getContextToken(account.accountId, ctx.to);
-        const result = await sendWeixinMediaFile({
-          filePath,
-          to: ctx.to,
-          text: ctx.text ?? "",
-          opts: { baseUrl: account.baseUrl, token: account.token, contextToken },
-          cdnBaseUrl: account.cdnBaseUrl,
-        });
-        return { channel: "openclaw-weixin", messageId: result.messageId };
+        try {
+          const contextToken = getContextToken(account.accountId, ctx.to);
+          const result = await sendWeixinMediaFile({
+            filePath,
+            to: ctx.to,
+            text: ctx.text ?? "",
+            opts: { baseUrl: account.baseUrl, token: account.token, contextToken },
+            cdnBaseUrl: account.cdnBaseUrl,
+          });
+          return { channel: "openclaw-weixin", messageId: result.messageId };
+        } finally {
+          if (tempToClean) {
+            await rm(tempToClean, { force: true }).catch(() => {});
+          }
+        }
       }
 
       const result = await sendWeixinOutbound({

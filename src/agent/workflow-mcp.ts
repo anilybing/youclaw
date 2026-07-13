@@ -16,7 +16,7 @@ import {
   type WorkflowInput,
   type WorkflowBudgets,
 } from '../workflow/store.ts'
-import { startWorkflowRun, resumeWorkflowRun } from '../workflow/runner.ts'
+import { startWorkflowRun, resumeWorkflowRun, SKIP_MARKER } from '../workflow/runner.ts'
 import { getLogger } from '../logger/index.ts'
 
 const RUN_WAIT_DEFAULT_S = 600
@@ -48,7 +48,7 @@ function summarizeRun(runId: string): string {
     budgets: run.budgets,
     usage: run.usage,
     traceId: run.traceId,
-    final_output: run.status === 'success' ? run.outputs[run.outputs.length - 1] : undefined,
+    final_output: run.status === 'success' ? run.outputs.filter((o) => o !== SKIP_MARKER).at(-1) : undefined,
     note: run.status === 'running' ? '仍在运行；稍后用 mcp__workflow__get_run 查看，或让用户打开该 chatId 会话围观过程。' : undefined,
   }, null, 2)
 }

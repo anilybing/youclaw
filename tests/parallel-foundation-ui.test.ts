@@ -97,21 +97,20 @@ describe('sidecar readiness foundation', () => {
   })
 })
 
-describe('commercial OTP login and account privacy', () => {
-  test('login is a two-step OTP flow with small-window and offline escape paths', () => {
+describe('commercial mobile+password login and account privacy', () => {
+  test('login is a single-step mobile+password flow with guest and offline escape paths', () => {
     const login = read('web/src/pages/Login.tsx')
     const client = read('web/src/api/client.ts')
     const routes = read('src/routes/commercial-auth.ts')
 
-    expect(client).toContain("export async function requestLoginOtp")
-    expect(client).toContain("otpChallengeId: string")
-    expect(client).toContain("otpCode: string")
-    expect(routes).toContain("app.post('/auth/otp/request'")
+    expect(client).toContain("export async function mvpLogin")
+    expect(client).toContain("password: string")
+    expect(routes).toContain("app.post('/auth/login'")
     expect(routes).toContain("errorCode: 'CLOUD_UNREACHABLE'")
-    expect(login).toContain('data-testid="login-identity-step"')
-    expect(login).toContain('data-testid="login-otp-step"')
-    expect(login).toContain('autoComplete="one-time-code"')
-    expect(login).toContain('OTP_RESEND_COOLDOWN_MS')
+    expect(login).toContain('data-testid="password-login-form"')
+    expect(login).toContain('data-testid="guest-login-button"')
+    expect(login).toContain('type="password"')
+    expect(login).toContain('autoComplete="current-password"')
     expect(login).toContain('overflow-y-auto')
     expect(login).toContain('onClick={goOffline}')
   })

@@ -2,7 +2,7 @@
 
 > 本文件是检索与维护用的文字参考，不是客户主手册。正式图文操作手册位于 `web/public/user-guide/index.html`，应用内点击“使用手册”或 USB 根目录的 `XiaoJuClaw-User-Guide\index.html` 即可打开。
 >
-> 适用版本：XiaoJuClaw 1.2.2  
+> 适用版本：XiaoJuClaw 1.2.12  
 > 适用形态：Windows 安装版、U 盘便携版、离线版  
 > 最后更新：2026-07-11
 

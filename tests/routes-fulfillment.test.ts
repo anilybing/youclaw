@@ -68,7 +68,7 @@ describe('fulfillment routes', () => {
     await app.request(`/fulfillment/skus/${secondSku.id}`, { method: 'DELETE' })
   })
 
-  test('GET /deliveries 台账含订单/卡密/标题，可按 skuId 过滤', async () => {
+  test('GET /deliveries 台账含订单/标题但默认不含卡密明文，可按 skuId 过滤', async () => {
     await post('/fulfillment/skus', { id: 'rt-b', title: '商品B' })
     await post('/fulfillment/skus/rt-b/cards', { secrets: ['S1', 'S2'] })
     deliverForOrder('rt-b', 'order-x')
@@ -76,7 +76,15 @@ describe('fulfillment routes', () => {
     const res = await app.request('/fulfillment/deliveries?skuId=rt-b')
     const { deliveries } = await res.json() as { deliveries: Array<{ orderRef: string; secret: string; skuTitle: string }> }
     expect(deliveries).toHaveLength(1)
-    expect(deliveries[0]).toMatchObject({ orderRef: 'order-x', secret: 'S1', skuTitle: '商品B' })
+    // [XJC] 列表默认不下发卡密明文（防批量泄漏），只含订单号/标题
+    expect(deliveries[0]).toMatchObject({ orderRef: 'order-x', secret: '', skuTitle: '商品B' })
+
+    // 卡密明文按需单条取
+    const secretRes = await app.request('/fulfillment/deliveries/order-x/secret')
+    expect(secretRes.status).toBe(200)
+    expect((await secretRes.json() as { secret: string }).secret).toBe('S1')
+    const missingSecret = await app.request('/fulfillment/deliveries/order-none/secret')
+    expect(missingSecret.status).toBe(404)
 
     const other = await app.request('/fulfillment/deliveries?skuId=rt-none')
     expect((await other.json() as { deliveries: unknown[] }).deliveries).toHaveLength(0)

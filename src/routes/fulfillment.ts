@@ -13,6 +13,7 @@ import {
   clearAvailableCards,
   deleteSku,
   getSku,
+  getDeliverySecret,
   listDeliveries,
   listSkus,
   upsertSku,
@@ -100,7 +101,15 @@ export function createFulfillmentRoutes() {
   app.get('/fulfillment/deliveries', (c) => {
     const skuId = c.req.query('skuId') || undefined
     const limit = Number(c.req.query('limit')) || 50
+    // [XJC-PATCH] 列表默认不含卡密明文;前端按需单条取(下方 secret 端点)。
     return c.json({ deliveries: listDeliveries({ skuId, limit }) })
+  })
+
+  // [XJC-PATCH] 按订单号单条取卡密明文(对账/复制时前端显式调用),避免批量列表泄漏。
+  app.get('/fulfillment/deliveries/:orderRef/secret', (c) => {
+    const secret = getDeliverySecret(c.req.param('orderRef'))
+    if (secret === null) return c.json({ error: '发货记录不存在' }, 404)
+    return c.json({ secret })
   })
 
   return app

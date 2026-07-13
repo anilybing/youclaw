@@ -152,8 +152,12 @@ export interface DeliveryRecord {
   deliveredAt: string
 }
 
-/** 发货台账（买家"没收到码"扯皮时对账用）：按时间倒序，可按 SKU 过滤 */
-export function listDeliveries(opts: { skuId?: string; limit?: number } = {}): DeliveryRecord[] {
+/**
+ * 发货台账（买家"没收到码"扯皮时对账用）：按时间倒序，可按 SKU 过滤。
+ * [XJC-PATCH] 默认**不返回卡密明文**（与 MCP 侧口径一致，避免批量列表把全部卡密
+ * 明文经 HTTP 下发）；确需明文由 `getDeliverySecret(orderRef)` 单条按需取。
+ */
+export function listDeliveries(opts: { skuId?: string; limit?: number; includeSecret?: boolean } = {}): DeliveryRecord[] {
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 50)), 200)
   const skuId = opts.skuId?.trim().toLowerCase()
   const db = getDatabase()
@@ -165,7 +169,27 @@ export function listDeliveries(opts: { skuId?: string; limit?: number } = {}): D
     ? db.query(`${base} WHERE d.sku_id = ? ORDER BY d.delivered_at DESC LIMIT ?`).all(skuId, limit)
     : db.query(`${base} ORDER BY d.delivered_at DESC LIMIT ?`).all(limit)
   ) as Array<{ order_ref: string; sku_id: string; delivered_at: string; secret: string | null; sku_title: string }>
-  return rows.map((r) => ({ orderRef: r.order_ref, skuId: r.sku_id, skuTitle: r.sku_title, secret: r.secret ?? '', deliveredAt: r.delivered_at }))
+  return rows.map((r) => ({
+    orderRef: r.order_ref,
+    skuId: r.sku_id,
+    skuTitle: r.sku_title,
+    secret: opts.includeSecret ? (r.secret ?? '') : '',
+    deliveredAt: r.delivered_at,
+  }))
+}
+
+/** [XJC-PATCH] 按订单号单条取卡密明文（对账/复制时按需调用）。 */
+export function getDeliverySecret(orderRef: string): string | null {
+  const ref = String(orderRef || '').trim()
+  if (!ref) return null
+  const db = getDatabase()
+  const row = db.query(
+    `SELECT c.secret FROM fulfillment_deliveries d
+       LEFT JOIN fulfillment_cards c ON c.id = d.card_id
+      WHERE d.order_ref = ? LIMIT 1`,
+  ).get(ref) as { secret: string | null } | undefined
+  if (!row) return null
+  return row.secret ?? ''
 }
 
 /** 清空某 SKU 的未发库存（导错卡密时纠正用；已发卡与台账保留不动），返回清掉的张数 */

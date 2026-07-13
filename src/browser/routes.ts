@@ -7,6 +7,7 @@ import { detectInstalledBrowsers } from './detect.ts'
 import { buildBrowserExtensionZip, getBrowserExtensionPackageInfo } from './extension-package.ts'
 import { BrowserRelayTokenError } from './relay.ts'
 import {
+  assertExtensionBridgeSessionToken,
   pollExtensionBridgeCommand,
   resolveExtensionBridgeCommand,
 } from './extension-bridge.ts'
@@ -85,12 +86,17 @@ const ExtensionMainBridgeDetachSchema = z.object({
   sessionToken: z.string().min(1),
 })
 
+// [XJC-PATCH] poll/result 也必须携带配对时下发的 sessionToken:这两条端点被本地
+// 鉴权豁免(扩展跨浏览器进程调用),若不校验会话令牌,本机任意进程即可用固定
+// profileId 轮询窃取在途浏览器指令(明文密码/验证码)或伪造结果注入 agent。
 const ExtensionMainBridgePollSchema = z.object({
   profileId: z.string().min(1),
+  sessionToken: z.string().min(1),
 })
 
 const ExtensionMainBridgeResultSchema = z.object({
   profileId: z.string().min(1),
+  sessionToken: z.string().min(1),
   commandId: z.string().min(1),
   ok: z.boolean(),
   result: z.unknown().optional(),
@@ -460,8 +466,14 @@ export function createBrowserRoutes(browserManager: BrowserManager, agentManager
       return c.json({ error: 'Invalid request', details: parsed.error.issues }, { status: 400, headers: extensionCorsHeaders() })
     }
 
-    const command = pollExtensionBridgeCommand(parsed.data.profileId)
-    return c.json({ command }, { headers: extensionCorsHeaders() })
+    try {
+      assertExtensionBridgeSessionToken(parsed.data.profileId, parsed.data.sessionToken)
+      const command = pollExtensionBridgeCommand(parsed.data.profileId)
+      return c.json({ command }, { headers: extensionCorsHeaders() })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return c.json({ error: message }, { status: routeErrorStatus(err), headers: extensionCorsHeaders() })
+    }
   })
 
   app.options('/browser/main-bridge/extension-result', () => {
@@ -474,8 +486,14 @@ export function createBrowserRoutes(browserManager: BrowserManager, agentManager
       return c.json({ error: 'Invalid request', details: parsed.error.issues }, { status: 400, headers: extensionCorsHeaders() })
     }
 
-    resolveExtensionBridgeCommand(parsed.data)
-    return c.json({ ok: true }, { headers: extensionCorsHeaders() })
+    try {
+      assertExtensionBridgeSessionToken(parsed.data.profileId, parsed.data.sessionToken)
+      resolveExtensionBridgeCommand(parsed.data)
+      return c.json({ ok: true }, { headers: extensionCorsHeaders() })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return c.json({ error: message }, { status: routeErrorStatus(err), headers: extensionCorsHeaders() })
+    }
   })
 
   app.options('/browser/main-bridge/extension-sync', () => {

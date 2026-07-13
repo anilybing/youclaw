@@ -38,7 +38,10 @@ export class MessageRouter {
     }
     this.eventBus.subscribe({ types: ['complete'] }, (event) => {
       if (event.type === 'complete') {
-        if (event.fullText.trim()) {
+        // [XJC-PATCH] suppressOutbound(定时任务)由 scheduler.saveTaskMessages 独占落库
+        // (清洗 [[attach:]] 标记为 📎 行)。此处再落一条含原始标记的未清洗文本会造成
+        // 本地任务会话「双条 + 标记泄漏」,故 suppressOutbound 时跳过 router 落库。
+        if (event.fullText.trim() && !event.suppressOutbound) {
           this.persistCompletedReply(
             event.chatId,
             event.agentId,
@@ -49,7 +52,7 @@ export class MessageRouter {
             event.cancelled ? ErrorCode.CANCELLED : undefined,
             event.attachments,
           )
-        } else if (event.cancelled) {
+        } else if (event.cancelled && !event.suppressOutbound) {
           this.persistErroredReply(
             event.chatId,
             event.agentId,

@@ -26,7 +26,7 @@ import {
   listWorkflows,
   type WorkflowBudgets,
 } from '../workflow/store.ts'
-import { startWorkflowRun } from '../workflow/runner.ts'
+import { startWorkflowRun, SKIP_MARKER } from '../workflow/runner.ts'
 import {
   addCards,
   deliverForOrder,
@@ -345,7 +345,7 @@ function buildTools(deps: McpServerDeps): ExposedTool[] {
           budgets: run.budgets,
           usage: run.usage,
           traceId: run.traceId,
-          final_output: run.status === 'success' ? run.outputs[run.outputs.length - 1] : undefined,
+          final_output: run.status === 'success' ? run.outputs.filter((o) => o !== SKIP_MARKER).at(-1) : undefined,
         }, null, 2)
       },
     },

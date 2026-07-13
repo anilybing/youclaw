@@ -68,3 +68,11 @@ tool-cache/
 .claude/*
 !.claude/commands/
 .claude/commands/local-*
+
+# XJC IP release pipeline (contains deployment secrets - do not commit)
+publish-ip-release.bat
+publish-ip-release.mjs
+publish-ip-release.config.json
+publish-domain-release.bat
+publish-domain-release.mjs
+publish-domain-release.config.json

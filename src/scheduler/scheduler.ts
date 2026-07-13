@@ -26,7 +26,7 @@ import type { ScheduledTask } from '../db/index.ts'
 import type { AgentQueue } from '../agent/queue.ts'
 import type { AgentManager } from '../agent/manager.ts'
 import type { EventBus } from '../events/index.ts'
-import { startWorkflowRun } from '../workflow/runner.ts'
+import { startWorkflowRun, SKIP_MARKER } from '../workflow/runner.ts'
 
 // Auto-pause after N consecutive failures
 const MAX_CONSECUTIVE_FAILURES = 5
@@ -181,7 +181,10 @@ export class Scheduler {
       if (final.status !== 'success') {
         throw new Error(final.error || `工作流运行未成功（状态：${final.status}）`)
       }
-      const output = final.outputs.at(-1)
+      // [XJC-PATCH] 排除 SKIP_MARKER 占位符:末步被 when 条件跳过时 outputs 末项是
+      // 「（条件不满足，已跳过）」,不能当作任务结果投递到渠道/落库(与 runner 内
+      // autoRegisterDeliverable 的过滤保持一致)。
+      const output = final.outputs.filter((o) => o !== SKIP_MARKER).at(-1)
       return output && output.trim() ? output : '(工作流无输出)'
     }
     const result = await this.agentQueue.enqueue(task.agent_id, task.chat_id, task.prompt, { suppressOutbound: true })

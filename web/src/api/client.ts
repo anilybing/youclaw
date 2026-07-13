@@ -1772,11 +1772,9 @@ export async function requestLoginOtp(params: { mobile?: string; email?: string 
 }
 
 export async function mvpLogin(params: {
-  mobile?: string
-  email?: string
+  mobile: string
+  password: string
   displayName?: string
-  otpChallengeId: string
-  otpCode: string
 }) {
   return apiFetch<{ token: string; user: AuthUser }>('/api/auth/login', {
     method: 'POST',
@@ -2131,6 +2129,11 @@ export async function getFulfillmentDeliveries(skuId?: string, limit = 50) {
   if (skuId) params.set('skuId', skuId)
   params.set('limit', String(limit))
   return apiFetch<{ deliveries: FulfillmentDeliveryDTO[] }>(`/api/fulfillment/deliveries?${params}`)
+}
+
+// [XJC] 卡密明文按需单条取(列表默认不含明文,避免批量下发泄漏)。
+export async function getFulfillmentDeliverySecret(orderRef: string) {
+  return apiFetch<{ secret: string }>(`/api/fulfillment/deliveries/${encodeURIComponent(orderRef)}/secret`)
 }
 
 // ── 工作流（通用/垂直编排）────────────────────────────────────────────

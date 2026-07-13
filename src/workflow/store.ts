@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { getDatabase } from '../db/index.ts'
 import { getLogger } from '../logger/index.ts'
+import { hasWorkflowNodeTool } from './nodes.ts'
 import {
   EMPTY_AGENTOPS_USAGE,
   TOOL_EFFECT_CLASSES,
@@ -218,6 +219,14 @@ export function validateWorkflowBudgets(input: unknown): WorkflowBudgets | null 
     deniedToolEffects,
     unknownCostPolicy,
   }
+  // [XJC-PATCH] 预算上限为 0 会让工作流首步立即触发上限而永远跑不起来(maxSteps:0 →
+  // executedSteps(0) >= 0 立即抛)。任何已声明的数值上限必须 > 0(留空=不设该上限)。
+  for (const key of ['maxSteps', 'maxTotalTokens', 'maxCostUsd', 'maxActiveDurationMs', 'maxToolCalls'] as const) {
+    const v = budgets[key]
+    if (typeof v === 'number' && v <= 0) {
+      throw new WorkflowError(WORKFLOW_INVALID, `预算 ${key} 必须大于 0（留空表示不设该上限）`)
+    }
+  }
   const compact = Object.fromEntries(Object.entries(budgets).filter(([, value]) => value !== undefined))
   return Object.keys(compact).length > 0 ? compact as WorkflowBudgets : null
 }
@@ -321,6 +330,8 @@ export function validateWorkflowDraft(input: {
     if (!KINDS.has(s.kind!)) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步 kind「${s.kind}」不合法（agent/llm/tool/approval）`)
     if (s.kind === 'tool') {
       if (!s.tool) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步是 tool 节点但缺 tool 名`)
+      // [XJC-PATCH] 保存期即校验 tool 名是否已注册,避免「保存成功、运行到该步才报未注册工具」。
+      if (!hasWorkflowNodeTool(s.tool)) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步 tool「${s.tool}」未注册`)
     } else {
       if (!s.prompt) throw new WorkflowError(WORKFLOW_INVALID, `第 ${i + 1} 步缺 prompt`)
     }

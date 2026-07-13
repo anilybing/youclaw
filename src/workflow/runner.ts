@@ -632,6 +632,11 @@ export function resumeWorkflowRun(runId: string): { run: WorkflowRun; done: Prom
   const run = getRun(runId)
   if (!run) throw new WorkflowError(WORKFLOW_NOT_FOUND, `运行「${runId}」不存在`)
   if (run.status !== 'failed') throw new WorkflowError(WORKFLOW_INVALID, `只有失败的运行可以续跑（当前状态：${run.status}）`)
+  // [XJC-PATCH] 「人工拒绝」落 failed 但属终态,不能被续跑重新拉回 awaiting_approval,
+  // 否则拒绝失去终止语义(可被反复拉回待批)。拒绝后如需继续请重新运行工作流。
+  if (run.stopReason === 'rejected') {
+    throw new WorkflowError(WORKFLOW_INVALID, '该运行已被人工拒绝,不能续跑;如需继续请重新运行工作流')
+  }
   const wf = getWorkflow(run.workflowId)
   if (!wf) throw new WorkflowError(WORKFLOW_NOT_FOUND, `工作流「${run.workflowId}」已被删除，无法续跑`)
   if (!d.hasEmployee(wf.agentId)) throw new WorkflowError(WORKFLOW_INVALID, `执行员工「${wf.agentId}」不存在`)

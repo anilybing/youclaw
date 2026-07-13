@@ -662,12 +662,14 @@ async function executeCommand(command) {
   }
 }
 
-async function reportCommandResult(backendUrl, profileId, commandId, payload) {
+async function reportCommandResult(backendUrl, profileId, sessionToken, commandId, payload) {
   await fetch(`${backendUrl}/api/browser/main-bridge/extension-result`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // [XJC-PATCH] 携带配对会话令牌;服务端已强制校验,缺失或不匹配会被拒。
     body: JSON.stringify({
       profileId,
+      sessionToken,
       commandId,
       ...payload,
     }),
@@ -675,15 +677,15 @@ async function reportCommandResult(backendUrl, profileId, commandId, payload) {
 }
 
 async function pollBridgeOnce() {
-  const { backendUrl, profileId } = await getBridgeState()
-  if (!backendUrl || !profileId) {
+  const { backendUrl, profileId, sessionToken } = await getBridgeState()
+  if (!backendUrl || !profileId || !sessionToken) {
     return
   }
 
   const res = await fetch(`${backendUrl}/api/browser/main-bridge/extension-poll`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profileId }),
+    body: JSON.stringify({ profileId, sessionToken }),
   })
   const body = await res.json().catch(() => null)
   const command = body?.command
@@ -691,12 +693,12 @@ async function pollBridgeOnce() {
 
   try {
     const result = await executeCommand(command)
-    await reportCommandResult(backendUrl, profileId, command.id, {
+    await reportCommandResult(backendUrl, profileId, sessionToken, command.id, {
       ok: true,
       result,
     })
   } catch (error) {
-    await reportCommandResult(backendUrl, profileId, command.id, {
+    await reportCommandResult(backendUrl, profileId, sessionToken, command.id, {
       ok: false,
       error: toErrorMessage(error),
     })

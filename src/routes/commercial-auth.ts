@@ -106,6 +106,7 @@ export function createCommercialAuthRoutes() {
         mobile?: string
         email?: string
         displayName?: string
+        password?: string
         otpChallengeId?: string
         otpCode?: string
       }

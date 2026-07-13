@@ -3,32 +3,24 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useI18n } from "@/i18n"
 import { useAppRuntimeStore } from "@/stores/app"
-import {
-  mvpLogin,
-  requestLoginOtp,
-  syncRemoteStaff,
-  type LoginOtpChallenge,
-} from "@/api/client"
+import { mvpLogin, syncRemoteStaff } from "@/api/client"
 import { ApiError } from "@/lib/api-error"
 import { useWorkbenchCardsStore } from "@/stores/workbench-cards"
 import {
-  ArrowLeft,
   BookOpenCheck,
   Calendar,
-  KeyRound,
   Loader2,
+  Lock,
   LogIn,
-  Mail,
   MessageSquare,
   Phone,
-  RefreshCw,
   Settings2,
   ShieldCheck,
+  UserRound,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { isTauri } from "@/api/transport"
 import { WindowsTitleBar } from "@/components/layout/WindowsTitleBar"
 import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog"
@@ -36,10 +28,6 @@ import { notify } from "@/stores/app-runtime"
 import logoUrl from "@/assets/logo.png"
 
 const LOGIN_SETTINGS_TABS: SettingsTab[] = ["general", "models", "environment", "about"]
-const OTP_RESEND_COOLDOWN_MS = 60_000
-
-type LoginMethod = "mobile" | "email"
-type LoginStep = "identity" | "otp"
 
 export function Login() {
   const { t } = useI18n()
@@ -47,17 +35,8 @@ export function Login() {
   const navigate = useNavigate()
   const [version, setVersion] = useState("")
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>("mobile")
-  const [loginStep, setLoginStep] = useState<LoginStep>("identity")
   const [mobile, setMobile] = useState("")
-  const [email, setEmail] = useState("")
-  const [displayName, setDisplayName] = useState("")
-  const [otpCode, setOtpCode] = useState("")
-  const [otpChallenge, setOtpChallenge] = useState<LoginOtpChallenge | null>(null)
-  const [otpExpiresAt, setOtpExpiresAt] = useState(0)
-  const [otpResendAt, setOtpResendAt] = useState(0)
-  const [clock, setClock] = useState(() => Date.now())
-  const [otpRequestInProgress, setOtpRequestInProgress] = useState(false)
+  const [password, setPassword] = useState("")
   const [loginInProgress, setLoginInProgress] = useState(false)
 
   useEffect(() => {
@@ -67,36 +46,12 @@ export function Login() {
     })
   }, [])
 
-  useEffect(() => {
-    if (loginStep !== "otp") return
-    setClock(Date.now())
-    const timer = window.setInterval(() => setClock(Date.now()), 1_000)
-    return () => window.clearInterval(timer)
-  }, [loginStep])
-
-  function identityParams(): { mobile?: string; email?: string } | null {
-    if (loginMethod === "mobile") {
-      const value = mobile.trim()
-      if (!value) {
-        notify.error(t.login.mobileRequired)
-        return null
-      }
-      return { mobile: value }
-    }
-    const value = email.trim()
-    if (!value) {
-      notify.error(t.login.emailRequired)
-      return null
-    }
-    return { email: value }
-  }
-
   function isCloudUnreachable(err: unknown): boolean {
     if (!(err instanceof ApiError)) return false
     if (err.status === 0 || err.errorCode === "NETWORK_ERROR") return true
     if (err.errorCode === "CLOUD_UNREACHABLE") return true
-    // A structured cloud business error (OTP disabled, delivery failure, kill
-    // switch, etc.) proves the server responded and should be shown in place.
+    // A structured cloud business error (kill switch, invalid credentials, etc.)
+    // proves the server responded and should be shown in place.
     return err.status >= 500 && !err.errorCode
   }
 
@@ -105,23 +60,20 @@ export function Login() {
       return err instanceof Error ? err.message : t.login.loginUnavailable
     }
     const messages: Record<string, string> = {
-      OTP_RATE_LIMITED: t.login.otpRateLimited,
-      OTP_DELIVERY_FAILED: t.login.otpDeliveryFailed,
-      OTP_INVALID: t.login.otpInvalid,
-      OTP_INPUT_INVALID: t.login.otpRequired,
-      OTP_IDENTITY_MISMATCH: t.login.otpInvalid,
-      OTP_REPLAYED: t.login.otpExpiredError,
-      OTP_EXPIRED: t.login.otpExpiredError,
-      OTP_ATTEMPTS_EXCEEDED: t.login.otpAttemptsExceeded,
-      OTP_DISABLED: t.login.otpServiceDisabled,
+      LOGIN_INPUT_INVALID: err.message || t.login.passwordRequired,
+      LOGIN_FAILED: t.login.loginFailed,
       LOGIN_KILL_SWITCH_ON: t.login.loginUnavailable,
       REGISTER_KILL_SWITCH_ON: t.login.loginUnavailable,
       USER_DISABLED: t.login.userDisabled,
       CLOUD_NOT_CONFIGURED: t.login.loginUnavailable,
-      OTP_RESPONSE_INVALID: t.login.loginUnavailable,
       LOGIN_RESPONSE_INVALID: t.login.loginUnavailable,
     }
     return messages[err.errorCode] || err.message || t.login.loginUnavailable
+  }
+
+  function goOffline() {
+    enterOfflineFallback()
+    navigate("/today", { replace: true })
   }
 
   function enterOfflineAfterFailure() {
@@ -129,45 +81,19 @@ export function Login() {
     goOffline()
   }
 
-  async function handleRequestOtp() {
-    const identity = identityParams()
-    if (!identity) return
-    setOtpRequestInProgress(true)
-    try {
-      const challenge = await requestLoginOtp(identity)
-      const now = Date.now()
-      setOtpChallenge(challenge)
-      setOtpCode("")
-      setOtpExpiresAt(now + Math.max(1, Number(challenge.expiresIn) || 300) * 1_000)
-      setOtpResendAt(now + OTP_RESEND_COOLDOWN_MS)
-      setClock(now)
-      setLoginStep("otp")
-    } catch (err) {
-      if (isCloudUnreachable(err)) {
-        enterOfflineAfterFailure()
-        return
-      }
-      notify.error(loginErrorMessage(err))
-    } finally {
-      setOtpRequestInProgress(false)
-    }
-  }
-
   async function handleLogin() {
-    const identity = identityParams()
-    if (!identity) return
-    if (!otpChallenge || !/^\d{6}$/.test(otpCode)) {
-      notify.error(t.login.otpRequired)
+    const value = mobile.trim()
+    if (!value) {
+      notify.error(t.login.mobileRequired)
+      return
+    }
+    if (!password || password.length < 6) {
+      notify.error(t.login.passwordRequired)
       return
     }
     setLoginInProgress(true)
     try {
-      await mvpLogin({
-        ...identity,
-        ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
-        otpChallengeId: otpChallenge.otpChallengeId,
-        otpCode,
-      })
+      await mvpLogin({ mobile: value, password })
       await fetchUser()
       await fetchCreditBalance()
       notify.success(t.login.loginSuccess)
@@ -180,34 +106,13 @@ export function Login() {
         enterOfflineAfterFailure()
         return
       }
-      if (
-        err instanceof ApiError
-        && ["OTP_EXPIRED", "OTP_REPLAYED", "OTP_ATTEMPTS_EXCEEDED"].includes(err.errorCode)
-      ) {
-        setOtpExpiresAt(0)
-      }
       notify.error(loginErrorMessage(err))
     } finally {
       setLoginInProgress(false)
     }
   }
 
-  function changeIdentity() {
-    setLoginStep("identity")
-    setOtpChallenge(null)
-    setOtpCode("")
-    setOtpExpiresAt(0)
-    setOtpResendAt(0)
-  }
-
-  function goOffline() {
-    enterOfflineFallback()
-    navigate("/today", { replace: true })
-  }
-
-  const isLoading = authLoading || loginInProgress || otpRequestInProgress
-  const otpSecondsRemaining = Math.max(0, Math.ceil((otpExpiresAt - clock) / 1_000))
-  const resendSecondsRemaining = Math.max(0, Math.ceil((otpResendAt - clock) / 1_000))
+  const isLoading = authLoading || loginInProgress
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
@@ -273,7 +178,7 @@ export function Login() {
           </footer>
         </section>
 
-        {/* Right: two-step OTP login. The panel scrolls on small Windows viewports. */}
+        {/* Right: mobile + password login. The panel scrolls on small Windows viewports. */}
         <section className="w-full lg:w-[420px] overflow-y-auto bg-card">
           <div className="min-h-full w-full max-w-sm mx-auto flex flex-col justify-center gap-5 px-5 py-4 md:px-8 md:py-6">
             <header className="w-full text-center">
@@ -290,196 +195,89 @@ export function Login() {
 
             <form
               className="w-full space-y-4"
-              data-testid="otp-login-form"
+              data-testid="password-login-form"
               onSubmit={(event) => {
                 event.preventDefault()
-                if (loginStep === "identity") void handleRequestOtp()
-                else void handleLogin()
+                void handleLogin()
               }}
             >
-              {loginStep === "identity" ? (
-                <div data-testid="login-identity-step" className="space-y-4">
-                  <Tabs
-                    value={loginMethod}
-                    onValueChange={(value: string) => setLoginMethod(value as LoginMethod)}
-                  >
-                    <TabsList className="w-full">
-                      <TabsTrigger value="mobile" className="flex-1 gap-1.5">
-                        <Phone className="h-3.5 w-3.5" />
-                        {t.login.mobileTab}
-                      </TabsTrigger>
-                      <TabsTrigger value="email" className="flex-1 gap-1.5">
-                        <Mail className="h-3.5 w-3.5" />
-                        {t.login.emailTab}
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="mobile" className="mt-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="mobile">{t.login.mobileLabel}</Label>
-                        <Input
-                          id="mobile"
-                          type="tel"
-                          autoComplete="tel"
-                          placeholder={t.login.mobilePlaceholder}
-                          value={mobile}
-                          disabled={isLoading}
-                          onChange={(event) => setMobile(event.target.value)}
-                        />
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="email" className="mt-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="email">{t.login.emailLabel}</Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          autoComplete="email"
-                          placeholder={t.login.emailPlaceholder}
-                          value={email}
-                          disabled={isLoading}
-                          onChange={(event) => setEmail(event.target.value)}
-                        />
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="displayName">{t.login.displayNameLabel}</Label>
-                    <Input
-                      id="displayName"
-                      autoComplete="name"
-                      placeholder={t.login.displayNamePlaceholder}
-                      value={displayName}
-                      disabled={isLoading}
-                      onChange={(event) => setDisplayName(event.target.value)}
-                    />
-                  </div>
-
-                  <Button
-                    type="submit"
-                    size="lg"
+              <div className="space-y-1.5">
+                <Label htmlFor="mobile">{t.login.mobileLabel}</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="mobile"
+                    type="tel"
+                    autoComplete="username"
+                    className="pl-9"
+                    placeholder={t.login.mobilePlaceholder}
+                    value={mobile}
                     disabled={isLoading}
-                    className="w-full gap-2 py-6 text-sm font-semibold rounded-xl active:scale-[0.98] transition-all duration-200"
-                  >
-                    {otpRequestInProgress ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        {t.login.requestingCode}
-                      </>
-                    ) : (
-                      <>
-                        <KeyRound size={18} />
-                        {t.login.requestCode}
-                      </>
-                    )}
-                  </Button>
-                  <p className="text-center text-xs text-muted-foreground">
-                    {t.login.firstLoginHint}
-                  </p>
+                    onChange={(event) => setMobile(event.target.value)}
+                  />
                 </div>
-              ) : (
-                <div data-testid="login-otp-step" className="space-y-4">
-                  <div className="rounded-xl border bg-muted/30 p-3 text-sm">
-                    <p className="text-muted-foreground">{t.login.otpSentTo}</p>
-                    <p className="mt-1 font-semibold">{otpChallenge?.maskedIdentity}</p>
-                  </div>
+              </div>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="otpCode">{t.login.otpLabel}</Label>
-                    <Input
-                      id="otpCode"
-                      data-testid="otp-code-input"
-                      autoFocus
-                      autoComplete="one-time-code"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={6}
-                      placeholder={t.login.otpPlaceholder}
-                      value={otpCode}
-                      disabled={isLoading}
-                      onChange={(event) => {
-                        setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-                      }}
-                    />
-                  </div>
-
-                  <p
-                    className={otpSecondsRemaining > 0 ? "text-xs text-muted-foreground" : "text-xs text-destructive"}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    {otpSecondsRemaining > 0
-                      ? `${t.login.otpExpiresIn} ${otpSecondsRemaining}${t.login.seconds}`
-                      : t.login.otpExpired}
-                  </p>
-
-                  <Button
-                    type="submit"
-                    size="lg"
-                    disabled={isLoading || otpCode.length !== 6 || otpSecondsRemaining === 0}
-                    className="w-full gap-2 py-6 text-sm font-semibold rounded-xl active:scale-[0.98] transition-all duration-200"
-                  >
-                    {loginInProgress || authLoading ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        {t.login.verifying}
-                      </>
-                    ) : (
-                      <>
-                        <LogIn size={18} />
-                        {t.login.verifyLogin}
-                      </>
-                    )}
-                  </Button>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 rounded-xl"
-                      disabled={isLoading}
-                      onClick={changeIdentity}
-                    >
-                      <ArrowLeft size={14} />
-                      {t.login.changeIdentity}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 rounded-xl"
-                      disabled={isLoading || resendSecondsRemaining > 0}
-                      onClick={() => void handleRequestOtp()}
-                    >
-                      {otpRequestInProgress ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <RefreshCw size={14} />
-                      )}
-                      {resendSecondsRemaining > 0
-                        ? `${t.login.resendIn} ${resendSecondsRemaining}${t.login.seconds}`
-                        : t.login.resendCode}
-                    </Button>
-                  </div>
-
-                  <p className="text-center text-xs text-muted-foreground">
-                    {t.login.otpPrivacyHint}
-                  </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">{t.login.passwordLabel}</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    className="pl-9"
+                    placeholder={t.login.passwordPlaceholder}
+                    value={password}
+                    disabled={isLoading}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
                 </div>
-              )}
+              </div>
+
+              <Button
+                type="submit"
+                size="lg"
+                disabled={isLoading}
+                className="w-full gap-2 py-6 text-sm font-semibold rounded-xl active:scale-[0.98] transition-all duration-200"
+              >
+                {loginInProgress || authLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    {t.login.loggingIn}
+                  </>
+                ) : (
+                  <>
+                    <LogIn size={18} />
+                    {t.login.loginButton}
+                  </>
+                )}
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                {t.login.firstLoginHint}
+              </p>
             </form>
 
-            <div className="text-center">
-              <button
+            {/* 游客登录（复用离线模式）：无账号也能直接试用本地能力 */}
+            <div className="space-y-2">
+              <div className="relative flex items-center py-1">
+                <span className="flex-grow border-t border-border/60" />
+              </div>
+              <Button
                 type="button"
+                variant="outline"
+                size="lg"
+                disabled={isLoading}
                 onClick={goOffline}
-                className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline transition-colors"
+                data-testid="guest-login-button"
+                className="w-full gap-2 py-6 text-sm font-semibold rounded-xl active:scale-[0.98] transition-all duration-200"
               >
-                {t.login.offlineUse}
-              </button>
+                <UserRound size={18} />
+                {t.login.guestLogin}
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">
+                {t.login.guestLoginDesc}
+              </p>
             </div>
 
             <footer className="flex items-center justify-center gap-3 border-t border-border/50 pt-4">

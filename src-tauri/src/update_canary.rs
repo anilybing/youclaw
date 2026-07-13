@@ -597,7 +597,9 @@ fn verify_portable_manifest_with_key(
         || signed.channel != manifest.channel
         || signed.notes != manifest.notes
         || signed.force_update != manifest.force_update
-        || !matches!(signed.emergency_policy, true | false)
+        // [XJC-PATCH] 删除恒真的 `!matches!(signed.emergency_policy, true|false)` 空转子句
+        // （bool 必命中,取反恒 false,对校验无贡献）。emergency_policy 不在外层 manifest
+        // 结构、客户端也不据它决策,故无需比对;force_update 已逐字段绑定验签。
         || !file_contract_valid
         || signed_files != manifest_files
     {
