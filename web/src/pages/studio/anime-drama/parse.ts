@@ -15,10 +15,13 @@ export const STUDIO_STAGE_ORDER: StudioStageId[] = [
 export const STEP_TO_STAGE: Record<string, StudioStageId> = {
   script: 'script',
   bible: 'script',
+  seed_assets: 'assets',
   char_sheet: 'assets',
   gate_assets: 'assets',
+  assert_locked: 'assets',
   storyboard: 'storyboard',
   stills: 'storyboard',
+  animatic: 'storyboard',
   gate_board: 'storyboard',
   video_prompts: 'clips',
   gate_video: 'clips',
@@ -31,7 +34,33 @@ export const STYLE_PRESETS = [
   { id: 'guofeng', zh: '国风', en: 'Chinese fantasy' },
   { id: 'chibi', zh: 'Q 版', en: 'Chibi' },
   { id: 'motion', zh: '写实动态漫', en: 'Realistic motion comic' },
+  { id: 'webtoon', zh: '韩漫条漫', en: 'Webtoon' },
+  { id: 'american', zh: '美漫', en: 'American comic' },
+  { id: 'cyberpunk', zh: '赛博朋克', en: 'Cyberpunk' },
+  { id: 'watercolor', zh: '水彩插画', en: 'Watercolor' },
+  { id: 'ink', zh: '水墨', en: 'Ink wash' },
+  { id: '3d', zh: '3D 渲染风', en: '3D render' },
+  { id: 'custom', zh: '自定义', en: 'Custom' },
 ] as const
+
+export const SCRIPT_IMPORT_ACCEPT =
+  '.txt,.md,.markdown,.fountain,.text,.csv,.json,.yml,.yaml,text/plain,text/markdown'
+
+export function isStylePresetMatch(
+  style: string,
+  preset: (typeof STYLE_PRESETS)[number],
+  locale: string,
+): boolean {
+  const label = locale === 'zh' ? preset.zh : preset.en
+  return style === label || style === preset.zh || style === preset.en
+}
+
+export function resolveActiveStylePresetId(style: string, locale: string): string {
+  const trimmed = style.trim()
+  if (!trimmed) return 'custom'
+  const hit = STYLE_PRESETS.find((preset) => preset.id !== 'custom' && isStylePresetMatch(trimmed, preset, locale))
+  return hit?.id ?? 'custom'
+}
 
 export interface ParsedCharacter {
   id: string
@@ -48,6 +77,12 @@ export interface ParsedLocation {
   mood?: string
 }
 
+export interface ParsedProp {
+  id: string
+  name: string
+  description: string
+}
+
 export interface ParsedScript {
   title?: string
   hook?: string
@@ -55,9 +90,12 @@ export interface ParsedScript {
   cliffhanger?: string
   targetSeconds?: number
   style?: string
+  theme?: string
   characters: ParsedCharacter[]
   locations: ParsedLocation[]
-  beats: Array<{ beatId?: string; summary: string; dialogue?: string; emotion?: string }>
+  props: ParsedProp[]
+  beats: Array<{ beatId?: string; summary: string; dialogue?: string; emotion?: string; locationId?: string }>
+  consistencyRules?: string[]
 }
 
 export interface ParsedShot {
@@ -69,6 +107,11 @@ export interface ParsedShot {
   visualPrompt: string
   dialogue?: string
   characterIds?: string[]
+  locationId?: string
+  emotion?: string
+  emotionCurve?: string
+  continuityTo?: string | null
+  costTier?: 'draft' | 'hq'
 }
 
 export interface ParsedVideoPrompt {
@@ -77,6 +120,14 @@ export interface ParsedVideoPrompt {
   i2vPrompt: string
   cameraMove?: string
   riskNotes?: string
+  costTier?: 'draft' | 'hq'
+}
+
+export interface ParsedStillFrame {
+  shotId: string
+  startPath?: string
+  endPath?: string
+  continuityNote?: string
 }
 
 /** 从模型输出中抠出第一个 JSON 对象或数组（容忍前后说明文字 / 代码围栏）。 */
@@ -139,9 +190,23 @@ export function parseScriptDoc(raw: string | undefined | null): ParsedScript | n
           summary: String(row.summary ?? ''),
           dialogue: row.dialogue ? String(row.dialogue) : undefined,
           emotion: row.emotion ? String(row.emotion) : undefined,
+          locationId: row.locationId ? String(row.locationId) : undefined,
         }
       })
     : []
+  const props = Array.isArray(data.props)
+    ? data.props.map((item, index) => {
+        const row = (item ?? {}) as Record<string, unknown>
+        return {
+          id: String(row.id ?? `p${index + 1}`),
+          name: String(row.name ?? `prop-${index + 1}`),
+          description: String(row.description ?? row.visualNotes ?? row.notes ?? ''),
+        }
+      })
+    : []
+  const consistencyRules = Array.isArray(data.consistencyRules)
+    ? data.consistencyRules.map(String).filter(Boolean)
+    : undefined
   return {
     title: data.title ? String(data.title) : undefined,
     hook: data.hook ? String(data.hook) : undefined,
@@ -149,9 +214,12 @@ export function parseScriptDoc(raw: string | undefined | null): ParsedScript | n
     cliffhanger: data.cliffhanger ? String(data.cliffhanger) : undefined,
     targetSeconds: typeof data.targetSeconds === 'number' ? data.targetSeconds : undefined,
     style: data.style ? String(data.style) : undefined,
+    theme: data.theme ? String(data.theme) : undefined,
     characters,
     locations,
+    props,
     beats,
+    consistencyRules,
   }
 }
 
@@ -165,6 +233,15 @@ export function parseShotList(raw: string | undefined | null): ParsedShot[] {
   if (!list) return []
   return list.map((item, index) => {
     const row = (item ?? {}) as Record<string, unknown>
+    const tierRaw = String(row.costTier ?? '').toLowerCase()
+    const costTier = tierRaw === 'hq' || tierRaw === 'draft' ? (tierRaw as 'draft' | 'hq') : undefined
+    const continuityRaw = row.continuityTo
+    const continuityTo =
+      continuityRaw === null
+        ? null
+        : continuityRaw !== undefined
+          ? String(continuityRaw)
+          : undefined
     return {
       shotId: String(row.shotId ?? `S${index + 1}`),
       index: typeof row.index === 'number' ? row.index : index + 1,
@@ -174,6 +251,11 @@ export function parseShotList(raw: string | undefined | null): ParsedShot[] {
       visualPrompt: String(row.visualPrompt ?? row.i2vPrompt ?? ''),
       dialogue: row.dialogue ? String(row.dialogue) : undefined,
       characterIds: Array.isArray(row.characterIds) ? row.characterIds.map(String) : undefined,
+      locationId: row.locationId ? String(row.locationId) : undefined,
+      emotion: row.emotion ? String(row.emotion) : undefined,
+      emotionCurve: row.emotionCurve ? String(row.emotionCurve) : undefined,
+      continuityTo,
+      costTier,
     }
   })
 }
@@ -183,14 +265,56 @@ export function parseVideoPrompts(raw: string | undefined | null): ParsedVideoPr
   if (!Array.isArray(data)) return []
   return data.map((item, index) => {
     const row = (item ?? {}) as Record<string, unknown>
+    const tierRaw = String(row.costTier ?? '').toLowerCase()
+    const costTier = tierRaw === 'hq' || tierRaw === 'draft' ? (tierRaw as 'draft' | 'hq') : undefined
     return {
       shotId: String(row.shotId ?? `S${index + 1}`),
       durationSec: typeof row.durationSec === 'number' ? row.durationSec : undefined,
       i2vPrompt: String(row.i2vPrompt ?? row.visualPrompt ?? ''),
       cameraMove: row.cameraMove ? String(row.cameraMove) : undefined,
       riskNotes: row.riskNotes ? String(row.riskNotes) : undefined,
+      costTier,
     }
   })
+}
+
+/**
+ * 解析 stills 步骤产出的 shotId→路径映射。
+ * 优先 JSON 数组；若无结构化数据则返回空（调用方可用 extractMediaPaths 兜底）。
+ */
+export function parseStillFrames(raw: string | undefined | null): ParsedStillFrame[] {
+  const data = extractJson<unknown>(raw)
+  const list = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { frames?: unknown }).frames)
+      ? (data as { frames: unknown[] }).frames
+      : data && typeof data === 'object' && Array.isArray((data as { stills?: unknown }).stills)
+        ? (data as { stills: unknown[] }).stills
+        : null
+  if (!list) return []
+  return list
+    .map((item, index) => {
+      const row = (item ?? {}) as Record<string, unknown>
+      const shotId = String(row.shotId ?? row.id ?? '').trim() || `S${index + 1}`
+      const startPath = String(row.startPath ?? row.path ?? row.mediaPath ?? '').trim() || undefined
+      const endPath = String(row.endPath ?? '').trim() || undefined
+      const continuityNote = row.continuityNote ? String(row.continuityNote) : undefined
+      if (!startPath && !endPath) return null
+      return { shotId, startPath, endPath, continuityNote }
+    })
+    .filter((item): item is ParsedStillFrame => item != null)
+}
+
+/** 按 shotId 取首帧路径；无结构化帧时回退到路径列表下标（兼容旧产出）。 */
+export function resolveShotMediaPath(
+  shotId: string,
+  index: number,
+  frames: ParsedStillFrame[],
+  fallbackPaths: string[],
+): string | undefined {
+  const hit = frames.find((f) => f.shotId === shotId)
+  if (hit?.startPath) return hit.startPath
+  return fallbackPaths[index] || undefined
 }
 
 /** 从 agent markdown 产出里提取疑似本地媒体路径 */

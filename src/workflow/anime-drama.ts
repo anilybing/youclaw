@@ -1,11 +1,11 @@
 /**
  * AI 漫剧工作室 — 阶段状态机 / 数据结构 / 能力缺口 / 内置工作流定义。
  *
- * 主链（产品硬规则）：
- *   创意输入 → 结构化剧本 → 角色场景圣经 → 形象资产锁定
- *   → 分镜表 → 分镜静帧 → 分镜视频 → 配音字幕 → 合成成片
+ * 工业化主链（2026-07-14 调研对齐 + token 优化）：
+ *   Script(+bible) → Asset Lock → Keyframe → Animatic → Draft I2V → HQ → 后期
  *
- * 每个关键阶段后可挂人工门禁（approval），禁止「一句话直接出片」。
+ * Token 策略：合并圣经进剧本；削减跨步重复上下文；压缩字段与输出上限；收紧预算。
+ * P0：60–90 秒、≤2 角色、≤2 场景、8–12 镜；关键阶段人工门禁。
  */
 
 import type { WorkflowBudgets, WorkflowInput, WorkflowStep } from './store'
@@ -26,24 +26,31 @@ export type AnimeDramaStageStatus = 'pending' | 'active' | 'gated' | 'done' | 'f
 
 export interface AnimeDramaStageDef {
   id: AnimeDramaStageId
-  /** 对应内置工作流步骤 id（可一对多） */
   workflowStepIds: string[]
-  /** 进入下一阶段前是否需要人工确认 */
   requiresGate: boolean
   order: number
 }
 
 export const ANIME_DRAMA_STAGES: readonly AnimeDramaStageDef[] = [
   { id: 'idea', order: 0, requiresGate: false, workflowStepIds: [] },
-  { id: 'script', order: 1, requiresGate: true, workflowStepIds: ['script', 'bible'] },
-  { id: 'assets', order: 2, requiresGate: true, workflowStepIds: ['char_sheet', 'gate_assets'] },
-  { id: 'storyboard', order: 3, requiresGate: true, workflowStepIds: ['storyboard', 'stills', 'gate_board'] },
-  { id: 'clips', order: 4, requiresGate: true, workflowStepIds: ['video_prompts', 'gate_video', 'video_notes'] },
+  { id: 'script', order: 1, requiresGate: false, workflowStepIds: ['script'] },
+  {
+    id: 'assets',
+    order: 2,
+    requiresGate: true,
+    workflowStepIds: ['seed_assets', 'char_sheet', 'gate_assets', 'assert_locked'],
+  },
+  {
+    id: 'storyboard',
+    order: 3,
+    requiresGate: true,
+    workflowStepIds: ['storyboard', 'stills', 'animatic', 'gate_board'],
+  },
+  { id: 'clips', order: 4, requiresGate: true, workflowStepIds: ['video_prompts', 'gate_video'] },
   { id: 'audio', order: 5, requiresGate: false, workflowStepIds: ['video_notes'] },
   { id: 'final', order: 6, requiresGate: false, workflowStepIds: ['assemble'] },
 ] as const
 
-/** 结构化剧本（LLM 输出约定，供下游消费） */
 export interface AnimeDramaScriptBeat {
   beatId: string
   summary: string
@@ -83,7 +90,6 @@ export interface AnimeDramaScriptDoc {
   beats: AnimeDramaScriptBeat[]
 }
 
-/** 分镜表单镜 */
 export interface AnimeDramaShot {
   shotId: string
   index: number
@@ -98,9 +104,10 @@ export interface AnimeDramaShot {
   transition?: string
   firstFrameIntent?: string
   lastFrameIntent?: string
+  continuityTo?: string | null
+  costTier?: 'draft' | 'hq'
 }
 
-/** 资产锁定包 — 后续分镜/视频必须引用 assetId，不可静默换脸 */
 export interface AnimeDramaLockedAsset {
   assetId: string
   kind: 'character' | 'location' | 'prop'
@@ -119,58 +126,66 @@ export interface AnimeDramaProjectInputs {
   aspect: string
 }
 
-/**
- * 对照现有 youclaw workflow / media 能力的缺口清单。
- * status: covered = 已可跑通 MVP；partial = 有能力但不完整；gap = 需后续建设。
- */
 export const ANIME_DRAMA_CAPABILITY_GAPS = [
   {
     id: 'structured-script',
     area: '剧本结构化',
     status: 'covered' as const,
-    note: '用 llm 步骤输出 JSON 约定即可；无专用 schema 校验节点。',
+    note: '单次 llm 合并剧本+生产圣经；P0 约束写入提示词；控制字段长度以降 token。',
   },
   {
     id: 'asset-lock',
     area: '角色/场景资产锁定',
-    status: 'partial' as const,
-    note: '可用 agent+mcp__media__generate_image 出设定图；缺独立资产库表与强制引用校验。',
+    status: 'covered' as const,
+    note: 'studio_assets + seed + UI 锁定 + studio_assert_locked 硬门禁（未锁定/无参考图则阻断分镜）。',
   },
   {
     id: 'storyboard-stills',
-    area: '分镜表 + 静帧',
+    area: '分镜表 + 关键帧',
     status: 'partial' as const,
-    note: 'llm 出分镜表 + agent 出图；缺分镜拖拽排序持久化与单镜重生 API。',
+    note: 'llm 分镜 + agent 静帧 + animatic 清单；缺单镜重生 API 与拖拽排序持久化。',
+  },
+  {
+    id: 'animatic-gate',
+    area: '动态分镜 / Animatic 闸门',
+    status: 'partial' as const,
+    note: '已有 animatic 步骤输出镜间连续与节奏表；尚无低成本真视频预览拼接自动化。',
   },
   {
     id: 'i2v-clips',
-    area: '图生视频镜头',
+    area: '图生视频镜头（Draft/HQ）',
     status: 'partial' as const,
-    note: 'mcp__media__generate_video 可用，但贵且无首尾帧/角色参考一等公民参数；tool 节点未注册 media。',
+    note: '提示词包已分 draft/hq；media 无首尾帧一等公民参数；tool 节点未直调 generate_video。',
   },
   {
     id: 'tts-subtitle',
     area: '配音 / 字幕 / 口型',
     status: 'gap' as const,
-    note: '无内置 TTS/字幕烧录流水线；assemble 步骤仅输出制作清单。',
+    note: '无内置 TTS/字幕烧录流水线；assemble 步骤输出制作清单。',
   },
   {
     id: 'ffmpeg-assemble',
     area: '时间线合成导出',
-    status: 'gap' as const,
-    note: '无 FFmpeg 合成节点；需人工用剪映/外部工具按清单拼接。',
+    status: 'covered' as const,
+    note: '剪映草稿 + FFmpeg concat 一键合成脚本（studio 草稿包）。',
   },
   {
     id: 'stage-studio-ui',
     area: '专用工作室 UI',
     status: 'covered' as const,
-    note: '本模块提供阶段条 + 运行门禁页；底层复用 /api/workflows。',
+    note: '阶段条 + 运行门禁页；底层复用 /api/workflows。',
   },
   {
     id: 'media-as-tool-node',
     area: 'workflow tool 直调 media',
     status: 'gap' as const,
     note: 'nodes.ts 白名单无 generate_image/video；出图/视频须走 kind=agent。',
+  },
+  {
+    id: 'token-budget',
+    area: 'Token 成本控制',
+    status: 'covered' as const,
+    note: '合并圣经步；削减重复上下文；输出字数上限；预算 maxTotalTokens=36k / maxCostUsd=2.5。',
   },
 ] as const
 
@@ -196,18 +211,19 @@ export function buildAnimeDramaWorkflowDefinition(): {
     id: ANIME_DRAMA_WORKFLOW_ID,
     name: 'AI漫剧制作流水线',
     description:
-      '竖屏动态漫剧标准主链：剧本→角色场景圣经→形象资产→分镜表/静帧→视频提示→音画合成清单（含人工门禁）',
+      '工业化主链（token 优化）：单次剧本圣经→资产锁定→分镜关键帧→Animatic→Draft/HQ→清单',
     agentId: 'content-creator',
     inputs: [
       { key: 'premise', label: '故事梗概 / 大纲' },
       { key: 'style', label: '画风（日漫/国风/Q版/写实动态漫，可选）' },
-      { key: 'episode_mins', label: '目标时长（分钟，可选，默认 1）' },
+      { key: 'episode_mins', label: '目标时长（分钟，可选，默认 1；P0 建议 ≤1.5）' },
       { key: 'aspect', label: '画幅（9:16 / 16:9，可选，默认 9:16）' },
+      { key: 'resolution', label: '分辨率（720p / 1080p，可选，默认 720p）' },
     ],
     budgets: {
-      maxSteps: 14,
-      maxTotalTokens: 48_000,
-      maxCostUsd: 3,
+      maxSteps: 16,
+      maxTotalTokens: 36_000,
+      maxCostUsd: 2.5,
       maxActiveDurationMs: 45 * 60_000,
       maxToolCalls: 24,
       unknownCostPolicy: 'allow',
@@ -218,44 +234,42 @@ export function buildAnimeDramaWorkflowDefinition(): {
         title: '结构化剧本',
         kind: 'llm',
         prompt: [
-          '你是短剧编剧。根据梗概写出可被下游消费的**结构化漫剧剧本**（JSON，不要 Markdown 围栏）。',
-          '画风偏好：{{style}}；目标时长：{{episode_mins}} 分钟（未填按 1）；画幅：{{aspect}}（未填 9:16）。',
-          '梗概：{{premise}}',
+          '输出可下游消费的漫剧 JSON（不要 Markdown 围栏）。',
+          '画风:{{style}}；时长min:{{episode_mins}}(默认1)；画幅:{{aspect}}(默认9:16)；分辨率:{{resolution}}(默认720p)。',
+          '梗概:{{premise}}',
           '',
-          'JSON 字段必须包含：title, targetSeconds, aspectRatio, style, hook, climax, cliffhanger,',
-          'characters[{id,name,role,appearance,personality,wardrobeVariants}],',
-          'locations[{id,name,timeOfDay,mood,visualNotes}],',
-          'beats[{beatId,summary,dialogue,emotion,characters,locationId}]。',
-          '角色至少 1 个 lead；beats 按钩子→冲突升级→高潮→卡点编排；对白口语化、适合竖屏短剧。',
+          'P0：targetSeconds=60-90；characters≤2(1lead)；locations≤2；对白≤10字/句；动作外化。',
+          '节奏：3s钩子→10s立角色→冲突→结尾卡点。',
+          '字段：title,theme,targetSeconds,aspectRatio,style,styleLock,hook,climax,cliffhanger,',
+          'characters[{id,name,role,appearance≤80字,personality≤40字}],',
+          'locations[{id,name,timeOfDay,mood,visualNotes≤80字无人物}],',
+          'props[{id,name,description≤40字}]≤5,',
+          'beats[{beatId,summary,dialogue,emotion,characters,locationId}],',
+          'consistencyRules[string]（含：禁换脸/禁未锁场景/尾帧锚定下镜首帧）。',
+          'appearance/visualNotes 需可直接喂生图；禁止长散文。',
         ].join('\n'),
       },
       {
-        id: 'bible',
-        title: '角色与场景圣经',
-        kind: 'llm',
-        prompt: [
-          '基于剧本 JSON，整理**生产用角色/场景圣经**（仍输出 JSON）：',
-          '{{steps.script.output}}',
-          '',
-          '为每个 lead/support 角色补全：外貌关键词（发型/五官/服装/配色）、禁止漂移项、表情参考列表。',
-          '为每个关键场景补全：空间布局、光色、可复用道具线索。',
-          '输出 { characters:[...], locations:[...], consistencyRules:[string] }。',
-        ].join('\n'),
+        id: 'seed_assets',
+        title: '播种资产库',
+        kind: 'tool',
+        tool: 'studio_seed_assets',
+        prompt: '',
+        args: {
+          bibleJson: '{{steps.script.output}}',
+        },
       },
       {
         id: 'char_sheet',
         title: '形象设定出图',
         kind: 'agent',
         prompt: [
-          '根据角色场景圣经，为主角（及最多 1 个关键配角）生成设定图。',
-          '圣经：\n{{steps.bible.output}}',
-          '画风：{{style}}；画幅参考：{{aspect}}。',
-          '',
-          '要求：',
-          '1) 先写出每个角色的高质量生图提示词（正面半身或 3/4 视角、干净背景、角色一致性描述）。',
-          '2) 调用 mcp__media__generate_image 至少生成主角一张设定图；若服务未配置，明确引导到「设置 → 语音与媒体」。',
-          '3) 输出资产清单 Markdown：角色名 / 提示词 / 本地路径 / 建议锁定说明。',
-          '4) 不要生成整集分镜视频；本步只做形象资产。',
+          '只做出图资产，不出视频。画风:{{style}}；画幅:{{aspect}}。',
+          '剧本角色/场景：\n{{steps.script.output}}',
+          '已播种：\n{{steps.seed_assets.output}}',
+          '任务：为主角(+最多1配角)生成干净白底设定图；场景母版无人物。',
+          '调用 mcp__media__generate_image；未配置则提示「设置→语音与媒体」。',
+          '输出极简清单：name|refKey|path。提醒用户在资产库锁定并挂图。',
         ].join('\n'),
       },
       {
@@ -263,79 +277,89 @@ export function buildAnimeDramaWorkflowDefinition(): {
         title: '锁定形象资产',
         kind: 'approval',
         prompt:
-          '请确认主角/配角设定图与圣经一致且无串脸风险。确认后进入分镜；若需重做形象，请拒绝并说明修改意见。',
+          '请确认设定图无串脸、场景无人物，并在资产库锁定且挂上参考图。确认后将程序校验；未锁定会阻断分镜。',
+      },
+      {
+        id: 'assert_locked',
+        title: '校验资产锁定',
+        kind: 'tool',
+        tool: 'studio_assert_locked',
+        prompt: '',
+        args: {},
       },
       {
         id: 'storyboard',
         title: '分镜表',
         kind: 'llm',
         prompt: [
-          '你是分镜导演。把剧本拆成镜头级分镜表（JSON 数组，不要围栏）。',
+          '把剧本拆成镜头 JSON 数组（不要围栏）。',
           '剧本：\n{{steps.script.output}}',
-          '圣经：\n{{steps.bible.output}}',
-          '形象资产清单：\n{{steps.char_sheet.output}}',
-          '',
-          '每镜字段：shotId,index,durationSec(3-8),shotSize,cameraMove,characterIds,locationId,',
-          'visualPrompt,dialogue,sfx,transition,firstFrameIntent,lastFrameIntent。',
-          '总时长贴近 targetSeconds；每镜 visualPrompt 必须引用已锁定角色外貌关键词，禁止换脸描述。',
+          '锁定资产：\n{{steps.assert_locked.output}}',
+          '约束：8-12镜；durationSec3-8；总时长贴 targetSeconds；以切镜为主；continuityTo；默认costTier=draft，仅1-3高潮镜hq。',
+          '字段：shotId,index,durationSec,shotSize,cameraMove,characterIds,locationId,visualPrompt,dialogue,continuityTo,costTier,firstFrameIntent,lastFrameIntent。',
+          'visualPrompt 引用锁定外貌关键词；禁换脸；禁抽象心理。',
         ].join('\n'),
       },
       {
         id: 'stills',
-        title: '分镜静帧',
+        title: '关键帧静帧',
         kind: 'agent',
         prompt: [
-          '根据分镜表，挑选**最具叙事性的 3-6 个关键镜头**生成静帧（不要一次出全部以免超预算）。',
-          '分镜表：\n{{steps.storyboard.output}}',
-          '形象资产：\n{{steps.char_sheet.output}}',
-          '画风：{{style}}。',
-          '',
-          '对选中的每镜：用 mcp__media__generate_image 生成首帧静帧；提示词基于 visualPrompt + 锁定角色外貌。',
-          '输出表格：shotId / 静帧路径 / 用于 I2V 的首帧说明。服务未配置时停止出图并给出配置指引。',
+          '按分镜出首帧；hq/动作镜可补尾帧。画风:{{style}}。',
+          '分镜：\n{{steps.storyboard.output}}',
+          '锁定资产：\n{{steps.assert_locked.output}}',
+          '用 mcp__media__generate_image。预算紧则优先 hq+钩子+结尾。',
+          '最终输出只能是 JSON 数组（可代码围栏），不要其它长文：',
+          '[{"shotId":"S01","startPath":"<真实本机路径>","endPath":null}]',
+          '禁止编造路径。',
+        ].join('\n'),
+      },
+      {
+        id: 'animatic',
+        title: 'Animatic 节奏表',
+        kind: 'llm',
+        prompt: [
+          '输出 Animatic JSON（不要围栏）。只依据分镜判断节奏/连续；勿复述分镜全文。',
+          '分镜：\n{{steps.storyboard.output}}',
+          '静帧JSON：\n{{steps.stills.output}}',
+          '字段：{totalSeconds,shotCount,pacingNotes[≤5],continuityChain[{fromShotId,toShotId,ok}],riskShots[{shotId,reason,recommend}],draftPlan[{shotId,costTier}],readyForVideo,humanChecklist[≤5]}',
+          '问题严重则 readyForVideo=false。',
         ].join('\n'),
       },
       {
         id: 'gate_board',
-        title: '确认分镜与静帧',
+        title: '确认分镜与 Animatic',
         kind: 'approval',
-        prompt: '请确认分镜表叙事节奏与静帧构图可用。确认后生成镜头视频提示词；若需改镜，请拒绝并写明要改的 shotId。',
+        prompt: '确认分镜节奏、关键帧与 Animatic.readyForVideo。通过后生成 Draft/HQ I2V 提示词；改镜请拒绝并写 shotId。',
       },
       {
         id: 'video_prompts',
         title: '镜头视频提示词',
         kind: 'llm',
         prompt: [
-          '为分镜表中每一镜写出**图生视频（I2V）提示词包**（JSON 数组）：',
+          '为每镜写 I2V JSON 数组（不要围栏）。firstFrameRef 填 shotId 即可。',
           '分镜：\n{{steps.storyboard.output}}',
-          '静帧清单：\n{{steps.stills.output}}',
-          '',
-          '每项含：shotId, durationSec, i2vPrompt, cameraMove, firstFrameRef, lastFrameHint, negativePrompt, riskNotes。',
-          '强调短镜、运镜克制、角色一致性；标注哪些镜建议付费生成、哪些可跳过。',
+          'Animatic：\n{{steps.animatic.output}}',
+          '字段：shotId,durationSec,costTier,i2vPrompt(≤80字),cameraMove,firstFrameRef,lastFrameHint,negativePrompt,skipIfBudgetLow。',
+          '默认 draft；仅 hq/风险镜精修；短镜、克制运镜、角色一致。',
         ].join('\n'),
       },
       {
         id: 'gate_video',
         title: '确认视频生成',
         kind: 'approval',
-        prompt:
-          '视频生成成本较高。请确认 I2V 提示词包无误后再继续；本流水线默认只产出提示词与制作清单，不会在未确认时批量烧钱出片。',
+        prompt: '确认 I2V 包：先 Draft 后选镜 HQ。本流水线默认只出提示词与清单，不自动批量烧钱出片。',
       },
       {
         id: 'video_notes',
         title: '视频与音画制作清单',
         kind: 'llm',
         prompt: [
-          '汇总成**可执行的漫剧制作清单**（Markdown）：',
-          '1) 镜头顺序表（shotId、秒数、静帧路径、I2V 提示词摘要）',
-          '2) 建议生成优先级（P0/P1）与预估费用提醒',
-          '3) 配音：按角色拆分 TTS 音色建议 + 对白时间码草稿',
-          '4) BGM/音效与情绪曲线',
-          '5) 字幕样式与竖屏安全区注意点',
-          '6) 合成步骤（剪映/FFmpeg）与验收清单（串脸、穿帮、音画同步）',
-          '',
-          '剧本标题取自：\n{{steps.script.output}}',
-          'I2V 包：\n{{steps.video_prompts.output}}',
-          '静帧：\n{{steps.stills.output}}',
+          '写制作清单 Markdown，总字数≤700。',
+          '含：镜头表(shotId/秒/costTier/I2V摘要)、Draft vs HQ、TTS/BGM/字幕要点、合成与验收。',
+          'I2V：\n{{steps.video_prompts.output}}',
+          'Animatic：\n{{steps.animatic.output}}',
+          '勿粘贴原文长 JSON；只摘要。',
         ].join('\n'),
       },
       {
@@ -343,14 +367,8 @@ export function buildAnimeDramaWorkflowDefinition(): {
         title: '成片交付摘要',
         kind: 'llm',
         prompt: [
-          '把制作清单收成一页「成片交付摘要」：',
-          '- 一句话卖点 / 钩子',
-          '- 最终镜头数与目标时长',
-          '- 已锁定资产路径',
-          '- 待人工完成项（付费 I2V、TTS、时间线合成）',
-          '- 可直接复制的发布文案（竖屏短剧风，含 5 个话题标签）',
-          '',
-          '制作清单：\n{{steps.video_notes.output}}',
+          '从清单提炼交付摘要，≤250字：卖点、镜数/时长、Draft/HQ待办、人工项、5个话题标签发布文案。',
+          '清单：\n{{steps.video_notes.output}}',
         ].join('\n'),
       },
     ],

@@ -15,6 +15,7 @@ import {
   renderTodayBusinessBrief,
   type TodayBusinessSnapshot,
 } from '../business/dashboard.ts'
+import { seedAssetsFromScript, listAssets } from '../studio/assetStore.ts'
 
 export interface WorkflowNodeContext {
   /** 执行员工 id：文件型输入据此把读取限定在该员工工作区内。 */
@@ -175,6 +176,143 @@ const TOOLS: WorkflowNodeTool[] = [
         throw new Error('render_today_business_brief 需要有效的 args.snapshot JSON')
       }
       return renderTodayBusinessBrief(snapshot, args.ranking ?? '')
+    },
+  },
+  {
+    name: 'studio_seed_assets',
+    description:
+      '从漫剧圣经/剧本 JSON 播种角色·场景·道具到 studio_assets（幂等，不覆盖已锁定参考图），args: { bibleJson }；runId 取自当前工作流运行',
+    effect: 'write',
+    async execute(args, context) {
+      const runId = (context.workflowRunId ?? '').trim()
+      if (!runId) throw new Error('studio_seed_assets 无法确定 workflowRunId')
+      const raw = (args.bibleJson ?? '').trim()
+      if (!raw) throw new Error('studio_seed_assets 需要 args.bibleJson')
+
+      let data: Record<string, unknown>
+      try {
+        const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+        const candidate = (fenced?.[1] ?? raw).trim()
+        const startObj = candidate.indexOf('{')
+        if (startObj < 0) throw new Error('expected object')
+        const text = candidate.slice(startObj, candidate.lastIndexOf('}') + 1)
+        const parsed = JSON.parse(text) as unknown
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('root must be object')
+        }
+        data = parsed as Record<string, unknown>
+      } catch {
+        throw new Error('studio_seed_assets 需要对象形 bibleJson（含 characters/locations/props）')
+      }
+
+      const asItems = (value: unknown) => {
+        if (!Array.isArray(value)) return []
+        return value
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null
+            const row = item as Record<string, unknown>
+            const name = String(row.name ?? '').trim()
+            if (!name) return null
+            const appearance = String(row.appearance ?? '').trim()
+            const visualNotes = String(row.visualNotes ?? '').trim()
+            const description =
+              String(row.description ?? '').trim() || appearance || visualNotes
+            const personality = String(row.personality ?? '').trim()
+            const mood = String(row.mood ?? '').trim()
+            const descParts = [description, personality, mood].filter(Boolean)
+            return {
+              refKey: String(row.id ?? row.refKey ?? '').trim() || undefined,
+              name,
+              description: descParts.join(' · ') || undefined,
+              attributes: {
+                role: row.role ?? undefined,
+                timeOfDay: row.timeOfDay ?? undefined,
+                wardrobeVariants: row.wardrobeVariants ?? undefined,
+              },
+            }
+          })
+          .filter((item): item is NonNullable<typeof item> => item != null)
+      }
+
+      const assets = seedAssetsFromScript({
+        runId,
+        agentId: context.agentId,
+        characters: asItems(data.characters),
+        locations: asItems(data.locations),
+        props: asItems(data.props),
+      })
+
+      return JSON.stringify(
+        {
+          runId,
+          seeded: assets.length,
+          assets: assets.map((a) => ({
+            id: a.id,
+            kind: a.kind,
+            refKey: a.refKey,
+            name: a.name,
+            locked: a.locked,
+            imagePath: a.imagePath,
+            version: a.version,
+          })),
+        },
+        null,
+        2,
+      )
+    },
+  },
+  {
+    name: 'studio_assert_locked',
+    description:
+      '断言当前工作流 run 的角色资产已锁定且带参考图；未满足则抛错阻断进入分镜。args: {}（runId 取自运行上下文）',
+    effect: 'read',
+    async execute(_args, context) {
+      const runId = (context.workflowRunId ?? '').trim()
+      if (!runId) throw new Error('studio_assert_locked 无法确定 workflowRunId')
+      const assets = listAssets(runId)
+      const characters = assets.filter((a) => a.kind === 'character')
+      if (characters.length === 0) {
+        throw new Error('studio_assert_locked：无角色资产。请先完成圣经播种与形象出图，并在资产库确认。')
+      }
+      const unlocked = characters.filter((a) => !a.locked)
+      if (unlocked.length > 0) {
+        throw new Error(
+          `studio_assert_locked：以下角色未锁定，禁止进入分镜：${unlocked.map((a) => a.name).join('、')}`,
+        )
+      }
+      const noImage = characters.filter((a) => !a.imagePath)
+      if (noImage.length > 0) {
+        throw new Error(
+          `studio_assert_locked：以下角色缺少参考图：${noImage.map((a) => a.name).join('、')}`,
+        )
+      }
+      const locations = assets.filter((a) => a.kind === 'location')
+      const unlockedLocs = locations.filter((a) => !a.locked)
+      if (locations.length > 0 && unlockedLocs.length > 0) {
+        throw new Error(
+          `studio_assert_locked：以下场景未锁定：${unlockedLocs.map((a) => a.name).join('、')}`,
+        )
+      }
+      return JSON.stringify(
+        {
+          ok: true,
+          runId,
+          lockedCharacters: characters.map((a) => ({
+            id: a.id,
+            refKey: a.refKey,
+            name: a.name,
+            imagePath: a.imagePath,
+          })),
+          lockedLocations: locations.map((a) => ({
+            id: a.id,
+            refKey: a.refKey,
+            name: a.name,
+            imagePath: a.imagePath,
+          })),
+        },
+        null,
+        2,
+      )
     },
   },
 ]

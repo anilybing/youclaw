@@ -2273,6 +2273,144 @@ export async function rejectWorkflowRunById(runId: string, reason?: string) {
   })
 }
 
+// ── 漫剧工作室：资产库（角色/场景/道具一致性）+ 成片草稿导出 ──────────────
+export type StudioAssetKindDTO = 'character' | 'location' | 'prop'
+
+export interface StudioAssetDTO {
+  id: string
+  runId: string
+  projectKey: string | null
+  agentId: string | null
+  kind: StudioAssetKindDTO
+  refKey: string | null
+  name: string
+  description: string | null
+  imagePath: string | null
+  promptUsed: string | null
+  attributes: Record<string, unknown>
+  locked: boolean
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface StudioSeedAssetItem {
+  refKey?: string
+  name: string
+  description?: string
+  attributes?: Record<string, unknown>
+}
+
+export interface StudioTimelineShotDTO {
+  shotId: string
+  durationSec: number
+  mediaPath?: string
+  mediaType?: 'photo' | 'video'
+  dialogue?: string
+}
+
+export interface StudioDraftManifestDTO {
+  title: string
+  aspect: string
+  resolution: string
+  width: number
+  height: number
+  fps: number
+  totalSec: number
+  audioPath: string | null
+  shots: Array<{
+    index: number
+    shotId: string
+    startSec: number
+    durationSec: number
+    mediaPath: string | null
+    mediaType: 'photo' | 'video' | null
+    dialogue: string | null
+  }>
+}
+
+export async function listStudioAssets(runId: string, kind?: StudioAssetKindDTO) {
+  const params = new URLSearchParams({ runId })
+  if (kind) params.set('kind', kind)
+  return apiFetch<{ assets: StudioAssetDTO[] }>(`/api/studio/assets?${params}`)
+}
+
+export async function upsertStudioAsset(body: {
+  runId: string
+  kind: StudioAssetKindDTO
+  name: string
+  agentId?: string | null
+  projectKey?: string | null
+  refKey?: string | null
+  description?: string | null
+  imagePath?: string | null
+  promptUsed?: string | null
+  attributes?: Record<string, unknown> | null
+  locked?: boolean
+}) {
+  return apiFetch<{ asset: StudioAssetDTO }>('/api/studio/assets', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function patchStudioAsset(id: string, body: {
+  name?: string
+  description?: string | null
+  imagePath?: string | null
+  promptUsed?: string | null
+  attributes?: Record<string, unknown>
+  locked?: boolean
+}) {
+  return apiFetch<{ asset: StudioAssetDTO }>(`/api/studio/assets/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteStudioAsset(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/studio/assets/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function importStudioAssets(runId: string, body: {
+  agentId?: string | null
+  projectKey?: string | null
+  characters?: StudioSeedAssetItem[]
+  locations?: StudioSeedAssetItem[]
+  props?: StudioSeedAssetItem[]
+}) {
+  return apiFetch<{ assets: StudioAssetDTO[] }>(`/api/studio/runs/${encodeURIComponent(runId)}/assets/import`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function clearStudioAssets(runId: string) {
+  return apiFetch<{ removed: number }>(`/api/studio/runs/${encodeURIComponent(runId)}/assets`, { method: 'DELETE' })
+}
+
+export async function exportStudioDraft(runId: string, body: {
+  title: string
+  aspect: string
+  resolution: string
+  fps?: number
+  shots: StudioTimelineShotDTO[]
+  audioPath?: string
+  agentId?: string | null
+}) {
+  return apiFetch<{
+    runId: string
+    dir: string
+    totalSec: number
+    shotCount: number
+    files: string[]
+    manifest: StudioDraftManifestDTO
+  }>(`/api/studio/runs/${encodeURIComponent(runId)}/draft`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 // ── 一人公司经营画像与今日驾驶舱 ───────────────────────────────────────
 export interface BusinessProfileDTO {
   version: 1

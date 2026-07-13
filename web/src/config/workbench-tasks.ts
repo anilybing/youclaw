@@ -419,8 +419,8 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
     category: 'content',
     workflowId: 'anime-drama-studio-v1',
     promptTemplate: {
-      zh: '启动 AI 漫剧产线。梗概：{{premise}}。画风：{{style}}。时长：{{episode_mins}} 分钟。画幅：{{aspect}}。',
-      en: 'Start the anime drama pipeline. Premise: {{premise}}. Style: {{style}}. Minutes: {{episode_mins}}. Aspect: {{aspect}}.',
+      zh: '启动 AI 漫剧产线。梗概：{{premise}}。画风：{{style}}。时长：{{episode_mins}} 分钟。画幅：{{aspect}}。分辨率：{{resolution}}。',
+      en: 'Start the anime drama pipeline. Premise: {{premise}}. Style: {{style}}. Minutes: {{episode_mins}}. Aspect: {{aspect}}. Resolution: {{resolution}}.',
     },
     fields: [
       {
@@ -450,6 +450,13 @@ export const WORKBENCH_TASKS: WorkbenchTask[] = [
         required: false,
         label: { zh: '画幅（可选）', en: 'Aspect (optional)' },
         placeholder: { zh: '默认 9:16', en: 'Default 9:16' },
+      },
+      {
+        key: 'resolution',
+        kind: 'text',
+        required: false,
+        label: { zh: '分辨率（可选）', en: 'Resolution (optional)' },
+        placeholder: { zh: '默认 720p', en: 'Default 720p' },
       },
     ],
   },

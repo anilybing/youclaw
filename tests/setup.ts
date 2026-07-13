@@ -44,6 +44,11 @@ export function cleanAllTables() {
   db.run('DELETE FROM browser_profile_runtime')
   db.run('DELETE FROM chat_browser_state')
   db.run('DELETE FROM browser_profiles')
+  try {
+    db.run('DELETE FROM studio_assets')
+  } catch {
+    /* table may not exist in older test DBs */
+  }
 }
 
 /** Clear specified tables */

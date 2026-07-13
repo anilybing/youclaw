@@ -134,7 +134,7 @@ export const FOREACH_DEFAULT_CAP = 5
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/
 const INPUT_KEY_RE = /^[a-z][a-z0-9_]{0,31}$/
-const MAX_STEPS = 12
+const MAX_STEPS = 16
 const MAX_INPUTS = 8
 const MAX_PROMPT = 4000
 const MAX_NAME = 100
@@ -675,6 +675,9 @@ const SEED_FLAG_V1 = 'workflow_builtin_seeded_v1'
 const SEED_FLAG_V2 = 'workflow_builtin_seeded_v2'
 const SEED_FLAG_V3 = 'workflow_builtin_seeded_v3'
 const SEED_FLAG_V4 = 'workflow_builtin_seeded_v4'
+/** 刷新已存在的漫剧内置工作流定义（提示词/输入字段增量），不依赖「仅首次插入」逻辑。 */
+const ANIME_DRAMA_DEF_VERSION_KEY = 'anime_drama_workflow_def_version'
+const ANIME_DRAMA_DEF_VERSION = '6'
 const V2_WORKFLOW_IDS = new Set(['competitor-page-analysis'])
 const V3_WORKFLOW_IDS = new Set([TODAY_BUSINESS_BRIEF_WORKFLOW_ID])
 const V4_WORKFLOW_IDS = new Set([ANIME_DRAMA_WORKFLOW_ID])
@@ -844,6 +847,9 @@ export function seedBuiltinWorkflows(): number {
     { key: SEED_FLAG_V3, workflows: BUILTIN_WORKFLOWS.filter((wf) => V3_WORKFLOW_IDS.has(wf.id!)) },
     { key: SEED_FLAG_V4, workflows: BUILTIN_WORKFLOWS.filter((wf) => V4_WORKFLOW_IDS.has(wf.id!)) },
   ]
+  // 本次调用是否由阶段种入了漫剧工作流（初次安装或删档重种）。若是，则其定义天然为当前版本，
+  // 下方版本刷新块只需登记版本号、不得再次保存/计数——否则会与阶段种入重复计一次（历史 bug）。
+  let animeSeededThisRun = false
   for (const phase of phases) {
     const flag = db.query("SELECT value FROM kv_state WHERE key = ?").get(phase.key) as { value: string } | null
     if (flag?.value === '1') continue
@@ -852,8 +858,28 @@ export function seedBuiltinWorkflows(): number {
       if (exists) continue
       saveWorkflow(wf)
       seeded++
+      if (wf.id === ANIME_DRAMA_WORKFLOW_ID) animeSeededThisRun = true
     }
     db.run('INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)', [phase.key, '1'])
+  }
+  const animeDefFlag = db.query('SELECT value FROM kv_state WHERE key = ?').get(ANIME_DRAMA_DEF_VERSION_KEY) as
+    | { value: string }
+    | null
+  if (animeSeededThisRun) {
+    // 阶段刚种入当前定义：仅登记版本号，避免重复计数。
+    db.run('INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)', [
+      ANIME_DRAMA_DEF_VERSION_KEY,
+      ANIME_DRAMA_DEF_VERSION,
+    ])
+  } else if (animeDefFlag?.value !== ANIME_DRAMA_DEF_VERSION) {
+    // 既有安装且定义版本落后（含旧版无版本号）：刷新既有漫剧定义（提示词/输入字段增量）。
+    saveWorkflow(buildAnimeDramaWorkflowDefinition())
+    db.run('INSERT OR REPLACE INTO kv_state (key, value) VALUES (?, ?)', [
+      ANIME_DRAMA_DEF_VERSION_KEY,
+      ANIME_DRAMA_DEF_VERSION,
+    ])
+    seeded++
+    getLogger().info({ version: ANIME_DRAMA_DEF_VERSION, category: 'workflow' }, 'Anime drama workflow definition refreshed')
   }
   if (seeded > 0) getLogger().info({ seeded, category: 'workflow' }, 'Builtin workflows seeded')
   return seeded

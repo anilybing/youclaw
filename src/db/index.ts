@@ -357,6 +357,28 @@ CREATE TABLE IF NOT EXISTS deliverables (
 );
 CREATE INDEX IF NOT EXISTS idx_deliverables_status_created ON deliverables(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deliverables_created ON deliverables(created_at DESC);
+
+-- [XJC] 漫剧工作室资产库：角色/场景/道具设定资产，跨镜/跨集复用与一致性锁定的载体。
+-- project_key 便于将来跨 run（整季）复用；当前主要按 run_id（单集项目）读写。
+CREATE TABLE IF NOT EXISTS studio_assets (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  project_key TEXT,
+  agent_id TEXT,
+  kind TEXT NOT NULL,
+  ref_key TEXT,
+  name TEXT NOT NULL,
+  description TEXT,
+  image_path TEXT,
+  prompt_used TEXT,
+  attributes_json TEXT NOT NULL DEFAULT '{}',
+  locked INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_studio_assets_run ON studio_assets(run_id, kind);
+CREATE INDEX IF NOT EXISTS idx_studio_assets_project ON studio_assets(project_key, kind);
 `
 
 // bun:sqlite query result type helpers

@@ -28,6 +28,7 @@ import { createEvolutionRoutes } from './evolution.ts'
 import { createMediaRoutes } from './media.ts'
 import { createFeedbackRoutes } from './feedback.ts'
 import { createFulfillmentRoutes } from './fulfillment.ts'
+import { createStudioRoutes } from './studio.ts'
 import { createMcpServerRoutes } from './mcp-server.ts'
 import { createWorkflowsRoutes } from './workflows.ts'
 import { createAgentOpsRoutes } from './agentops.ts'
@@ -119,6 +120,8 @@ export function createApp(deps: AppDeps) {
   app.route('/api', createFeedbackRoutes())
   // [XJC] 卡密库（闲鱼虚拟商品发货）：商品/库存/发货台账管理
   app.route('/api', createFulfillmentRoutes())
+  // [XJC] 漫剧工作室：资产库（角色/场景/道具一致性）+ 成片草稿导出（剪映/FFmpeg）
+  app.route('/api', createStudioRoutes())
   // [XJC] 工作流（通用/垂直编排）：列表/建改/运行/历史
   app.route('/api', createWorkflowsRoutes())
   // [XJC-PATCH] Local-only execution traces; protected by the same /api token gate.

@@ -28,6 +28,37 @@ describe('anime drama studio chrome', () => {
     expect(studio).toContain('AssetsBench')
     expect(studio).toContain('StoryboardBench')
     expect(studio).toContain('ClipsBench')
+    expect(studio).toContain('LocalBriefPanel')
+    expect(studio).toContain('ProductionLog')
+    expect(studio).toContain('GateChecklist')
+    expect(zh).toContain('styleRecTitle:')
+    expect(en).toContain('styleRecTitle:')
+  })
+})
+
+describe('anime drama style presets', () => {
+  test('expands presets and resolves custom vs named styles', async () => {
+    const { STYLE_PRESETS, resolveActiveStylePresetId } = await import('../src/pages/studio/anime-drama/parse')
+    expect(STYLE_PRESETS.some((p) => p.id === 'custom')).toBe(true)
+    expect(STYLE_PRESETS.length).toBeGreaterThanOrEqual(8)
+    expect(resolveActiveStylePresetId('日漫', 'zh')).toBe('anime')
+    expect(resolveActiveStylePresetId('赛博朋克夜景', 'zh')).toBe('custom')
+    expect(resolveActiveStylePresetId('Webtoon', 'en')).toBe('webtoon')
+  })
+})
+
+describe('anime drama local brief', () => {
+  test('extracts theme and recommends styles for palace intrigue script', async () => {
+    const { analyzeLocalBrief, recommendStyles } = await import('../src/pages/studio/anime-drama/brief')
+    const brief = analyzeLocalBrief(
+      '# 退婚棋局\n\n题材：西方宫廷权谋\n角色：安娜、王子芬莱克\n场景：巴洛克宫廷大舞厅\n核心剧情：公爵之女在舞会当众被退婚。\n第1场 盛大舞会\n第2场 含泪质问',
+      '退婚棋局',
+    )
+    expect(brief?.title).toContain('退婚')
+    expect(brief?.theme).toMatch(/宫廷|权谋/)
+    expect(brief?.characters.length).toBeGreaterThan(0)
+    const recs = recommendStyles(brief!)
+    expect(recs[0]?.nameZh).toMatch(/写实|漫画/)
   })
 })
 
