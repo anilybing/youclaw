@@ -16,6 +16,8 @@ import {
   type TodayBusinessSnapshot,
 } from '../business/dashboard.ts'
 import { seedAssetsFromScript, listAssets } from '../studio/assetStore.ts'
+import { upsertShot, getShot, resolveForwardStart } from '../studio/shotStore.ts'
+import { renderShot } from '../studio/renderShot.ts'
 
 export interface WorkflowNodeContext {
   /** 执行员工 id：文件型输入据此把读取限定在该员工工作区内。 */
@@ -313,6 +315,68 @@ const TOOLS: WorkflowNodeTool[] = [
         null,
         2,
       )
+    },
+  },
+  {
+    name: 'studio_render_shot',
+    description:
+      '（漫剧工作室·G0）确定性渲染单镜视频：先落镜头规格到 shot store，再走共享核 renderShot（VideoProvider，默认 mock/dry-run 不联网不烧钱），'
+      + '产物落 per-run 目录并写 studio_cost_ledger（成本可见、可续跑、可单镜重渲；live 模式渲染前卡 ¥ 预算）。'
+      + 'args: { shotId, tier?(draft/hq), prompt?, startPath?, lastFramePath?, durationSec?, aspect?, shotIndex?, shot? }；'
+      + 'forEach 批量时可只传 shot（单镜 JSON，自动解析 shotId/i2vPrompt/costTier/首尾帧）。runId/agentId 取运行上下文。',
+    effect: 'network',
+    async execute(args, context) {
+      const runId = (context.workflowRunId ?? '').trim()
+      if (!runId) throw new Error('studio_render_shot 无法确定 workflowRunId')
+      const agentId = (context.agentId ?? '').trim() || null
+
+      // forEach 传入的单镜 JSON（{{item}}）作为字段默认值；flat args 可覆盖。
+      let shot: Record<string, unknown> = {}
+      const rawShot = (args.shot ?? '').trim()
+      if (rawShot) {
+        try {
+          const parsed = JSON.parse(rawShot) as unknown
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) shot = parsed as Record<string, unknown>
+        } catch {
+          throw new Error('studio_render_shot 的 args.shot 需为单镜 JSON 对象')
+        }
+      }
+      const pick = (flat: string | undefined, ...keys: string[]): string => {
+        const f = (flat ?? '').trim()
+        if (f) return f
+        for (const key of keys) {
+          const v = shot[key]
+          if (typeof v === 'string' && v.trim()) return v.trim()
+          if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+        }
+        return ''
+      }
+
+      const shotId = pick(args.shotId, 'shotId', 'id')
+      if (!shotId) throw new Error('studio_render_shot 需要 shotId（flat args 或 shot.shotId）')
+      const prompt = pick(args.prompt, 'i2vPrompt', 'visualPrompt', 'prompt')
+      const tier: 'draft' | 'hq' = pick(args.tier, 'tier', 'costTier').toLowerCase() === 'hq' ? 'hq' : 'draft'
+      const startPath = pick(args.startPath, 'startPath', 'firstFramePath') || null
+      const lastFramePath = pick(args.lastFramePath, 'lastFramePath', 'endPath') || null
+      const durationRaw = pick(args.durationSec, 'durationSec', 'duration')
+      const durationSec = durationRaw && Number.isFinite(Number(durationRaw)) ? Number(durationRaw) : null
+      const aspectRatio = pick(args.aspect, 'aspect', 'aspectRatio') || null
+      const indexRaw = pick(args.shotIndex, 'index', 'shotIndex')
+      const shotIndex = indexRaw && Number.isFinite(Number(indexRaw)) ? Math.trunc(Number(indexRaw)) : 0
+
+      // 前向 I2V 兼底（项2）：新镜若无首帧，用前一镜尾帧作起始图（end[n-1]→start[n]）。
+      const effectiveStart = startPath || (prompt ? resolveForwardStart(runId, shotIndex) : null)
+      // 有 prompt = 新镜/更新规格；无 prompt 则要求该镜已在台账（HQ 选镜重渲，从 shot store 取规格）。
+      const existing = getShot(runId, shotId)
+      if (prompt) {
+        upsertShot({ runId, shotId, shotIndex, spec: { prompt, durationSec, aspectRatio }, startPath: effectiveStart, endPath: lastFramePath })
+      } else if (!existing) {
+        throw new Error(`studio_render_shot 需要 prompt（新镜），或 shotId「${shotId}」须已在镜头台账（重渲）`)
+      } else if (startPath || lastFramePath) {
+        upsertShot({ runId, shotId, startPath, endPath: lastFramePath })
+      }
+      const outcome = await renderShot({ runId, agentId, shotId, tier })
+      return JSON.stringify({ ok: true, ...outcome }, null, 2)
     },
   },
 ]

@@ -166,6 +166,36 @@ export const MediaSettingsSchema = z.object({
   video: MediaVideoConfigSchema.default(DEFAULT_MEDIA_VIDEO_CONFIG),
 }).default({ image: DEFAULT_MEDIA_IMAGE_CONFIG, video: DEFAULT_MEDIA_VIDEO_CONFIG })
 
+// [XJC] 漫剧工作室配置（G0 视频渲染 provider 路由 + ¥ 预算硬闸，src/media/video-provider.ts）。
+// videoRenderMode 默认 mock（不联网不烧钱）；env XJC_STUDIO_VIDEO_MODE 仅 CI/dry-run 覆盖。
+export const StudioVideoRenderModeSchema = z.enum(['mock', 'live'])
+
+export const StudioSettingsSchema = z.object({
+  videoRenderMode: StudioVideoRenderModeSchema.default('mock'),
+  /** 每 run 媒体渲染花费硬顶（¥ 全口径；SiliconFlow 按 ¥ 计费，用户预算 ¥32）。 */
+  maxRenderCnyPerRun: z.number().default(32),
+  /** tier→provider 路由（live 模式生效） */
+  draftProvider: z.string().default('wan'),
+  hqProvider: z.string().default('kling'),
+  /** 各档视频模型 id（SiliconFlow） */
+  draftModel: z.string().default('Wan-AI/Wan2.2-I2V-A14B'),
+  hqModel: z.string().default(''),
+  /** live provider 端点/密钥；留空则回退 env（SILICONFLOW_BASE_URL / SILICONFLOW_API_KEY） */
+  baseUrl: z.string().default(''),
+  apiKey: z.string().default(''),
+}).default({
+  videoRenderMode: 'mock',
+  maxRenderCnyPerRun: 32,
+  draftProvider: 'wan',
+  hqProvider: 'kling',
+  draftModel: 'Wan-AI/Wan2.2-I2V-A14B',
+  hqModel: '',
+  baseUrl: '',
+  apiKey: '',
+})
+
+export const DEFAULT_STUDIO_SETTINGS = StudioSettingsSchema.parse({})
+
 export const SettingsSchema = z.object({
   activeModel: ActiveModelSchema,
   /** 供应商账户（一 Key 多模型） */
@@ -182,6 +212,7 @@ export const SettingsSchema = z.object({
   voice: VoiceSettingsSchema,
   evolution: EvolutionSettingsSchema,
   media: MediaSettingsSchema,
+  studio: StudioSettingsSchema,
   mcpServer: McpServerSettingsSchema,
   update: UpdateSettingsSchema,
 })
@@ -197,4 +228,5 @@ export type VoiceTtsConfig = z.infer<typeof VoiceTtsConfigSchema>
 export type MediaSettings = z.infer<typeof MediaSettingsSchema>
 export type MediaImageConfig = z.infer<typeof MediaImageConfigSchema>
 export type MediaVideoConfig = z.infer<typeof MediaVideoConfigSchema>
+export type StudioSettings = z.infer<typeof StudioSettingsSchema>
 export type UpdateSettings = z.infer<typeof UpdateSettingsSchema>

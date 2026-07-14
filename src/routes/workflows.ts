@@ -19,7 +19,7 @@ import {
   type WorkflowStep,
   type WorkflowBudgets,
 } from '../workflow/store.ts'
-import { startWorkflowRun, resumeWorkflowRun, approveWorkflowRun, rejectWorkflowRun } from '../workflow/runner.ts'
+import { startWorkflowRun, resumeWorkflowRun, approveWorkflowRun, rejectWorkflowRun, rerunShot } from '../workflow/runner.ts'
 import { getLogger } from '../logger/index.ts'
 
 function handleError(err: unknown, fallback: string): { status: 400 | 404 | 500; body: { error: string; errorCode?: string } } {
@@ -128,6 +128,22 @@ export function createWorkflowsRoutes() {
       return c.json({ run })
     } catch (err) {
       const { status, body } = handleError(err, '拒绝失败')
+      return c.json(body, status)
+    }
+  })
+
+  // [XJC] 漫剧单镜重渲（与 resume/approve 并列）：只重跑指定 shotId（默认 hq），不重跑整批。
+  // live 真出片须 confirmed=true（等价 UI 二次确认）；mock 默认免费。
+  app.post('/workflow-runs/:runId/rerun-shot', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({})) as { shotId?: string; tier?: 'draft' | 'hq'; confirmed?: boolean }
+      const shotId = String(body.shotId ?? '').trim()
+      if (!shotId) return c.json({ error: '缺 shotId' }, 400)
+      const tier = body.tier === 'draft' ? 'draft' : 'hq'
+      const outcome = await rerunShot(c.req.param('runId'), shotId, tier, { confirmed: body.confirmed === true })
+      return c.json({ outcome })
+    } catch (err) {
+      const { status, body } = handleError(err, '单镜重渲失败')
       return c.json(body, status)
     }
   })

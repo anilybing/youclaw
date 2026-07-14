@@ -55,6 +55,9 @@ import {
   type WorkflowRun,
   type WorkflowStep,
 } from './store.ts'
+import { renderShot, type RenderShotOutcome } from '../studio/renderShot.ts'
+import { getShot, type ShotTier } from '../studio/shotStore.ts'
+import { studioVideoMode } from '../media/video-provider.ts'
 
 /** 条件跳过占位（写进 outputs 保持步序对齐；重建变量表时排除） */
 export const SKIP_MARKER = '（条件不满足，已跳过）'
@@ -746,4 +749,37 @@ export function rejectWorkflowRun(runId: string, reason?: string): WorkflowRun {
   }
   getLogger().info({ runId: run.id, category: 'workflow' }, 'Workflow approval rejected')
   return getRun(run.id)!
+}
+
+/**
+ * [XJC] 漫剧单镜重渲（架构师 G0 契约 Q3）：与 resume/approve 并列的 workflow 级带外入口。
+ * 复用 renderShot 共享核，重跑指定 shotId（默认 hq 精修档），只重渲该镜、不重跑整批
+ * （runner.ts 的 forEach 检查点只能从失败项往后续、无法重跑已成功的指定镜，故必设此独立入口）。
+ * 并发保护（契约 Q3）：目标 run 所属工作流有在途运行时拒绝，避免与批量渲染/续跑并发写同一 run。
+ * 授权（契约 Q6）：live 真出片带外单镜须 confirmed=true（等价 UI 轻量 per-action 确认）；mock 免费不需。
+ */
+export async function rerunShot(
+  runId: string,
+  shotId: string,
+  tier: ShotTier = 'hq',
+  options?: { confirmed?: boolean; agentId?: string | null },
+): Promise<RenderShotOutcome> {
+  const id = (runId ?? '').trim()
+  const sid = (shotId ?? '').trim()
+  if (!id || !sid) throw new WorkflowError(WORKFLOW_INVALID, 'rerunShot 需要 runId 与 shotId')
+  if (!getShot(id, sid)) throw new WorkflowError(WORKFLOW_NOT_FOUND, `镜头不存在：${id}/${sid}（请先跑一次批量渲染落镜头规格）`)
+
+  const run = getRun(id)
+  const wf = run ? getWorkflow(run.workflowId) : null
+  // 并发保护：同工作流在途（running/awaiting_approval）时拒绝带外单镜重渲
+  if (wf && (runningWorkflows.has(wf.id) || hasRunningRun(wf.id))) {
+    throw new WorkflowError(WORKFLOW_INVALID, `工作流「${wf.name}」正在运行中，请等它跑完再重渲单镜`)
+  }
+  // live 真出片带外单镜：须显式确认（UI 轻量二次确认）；mock 免费不需
+  if (studioVideoMode() === 'live' && !options?.confirmed) {
+    throw new WorkflowError(WORKFLOW_INVALID, '单镜重渲（live 真出片）需显式确认：请带 confirmed=true')
+  }
+  const agentId = options?.agentId ?? wf?.agentId ?? null
+  getLogger().info({ runId: id, shotId: sid, tier, category: 'workflow' }, 'Studio rerunShot invoked')
+  return renderShot({ runId: id, agentId, shotId: sid, tier, allowNearLimit: options?.confirmed })
 }

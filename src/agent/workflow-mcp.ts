@@ -16,7 +16,7 @@ import {
   type WorkflowInput,
   type WorkflowBudgets,
 } from '../workflow/store.ts'
-import { startWorkflowRun, resumeWorkflowRun, SKIP_MARKER } from '../workflow/runner.ts'
+import { startWorkflowRun, resumeWorkflowRun, rerunShot, SKIP_MARKER } from '../workflow/runner.ts'
 import { getLogger } from '../logger/index.ts'
 
 const RUN_WAIT_DEFAULT_S = 600
@@ -117,6 +117,13 @@ const GetRunParams = Type.Object({
 
 const DeleteParams = Type.Object({
   workflowId: Type.String(),
+})
+
+const RerunShotParams = Type.Object({
+  runId: Type.String({ description: '漫剧运行 id（= workflow_runs.id）' }),
+  shotId: Type.String({ description: '要重渲的镜头 id（该 run 的镜头台账内）' }),
+  tier: Type.Optional(Type.Union([Type.Literal('draft'), Type.Literal('hq')], { description: '档位，默认 hq 精修' })),
+  confirmed: Type.Optional(Type.Boolean({ description: 'live 真出片二次确认；mock 默认免费无需' })),
 })
 
 /** 可信会话前缀：应用内 web、定时任务、Cursor 桥。渠道会话（微信/TG…）面向陌生人，禁写禁跑 */
@@ -239,6 +246,22 @@ export function createWorkflowTools(params: { agentId: string; chatId?: string }
           }
           return ok(summarizeRun(run.id))
         } catch (err) { fail(err, '续跑失败') }
+      },
+    },
+    {
+      name: 'mcp__workflow__rerun_shot',
+      label: 'mcp__workflow__rerun_shot',
+      description:
+        '漫剧单镜重渲：只重跑指定 runId 下的某个 shotId（默认 hq 精修档），不重跑整批（forEach 检查点只能从失败项往后续，无法重跑已成功的指定镜）。'
+        + 'live 真出片须 confirmed=true（等价 UI 二次确认）；mock 默认免费。目标工作流在途时拒绝（并发保护）。',
+      parameters: RerunShotParams,
+      async execute(_id, args: { runId: string; shotId: string; tier?: 'draft' | 'hq'; confirmed?: boolean }) {
+        try {
+          assertMutationAllowed()
+          const tier = args.tier === 'draft' ? 'draft' : 'hq'
+          const outcome = await rerunShot(args.runId.trim(), args.shotId.trim(), tier, { confirmed: args.confirmed === true })
+          return ok(JSON.stringify(outcome, null, 2))
+        } catch (err) { fail(err, '单镜重渲失败') }
       },
     },
     {

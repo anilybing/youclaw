@@ -42,6 +42,8 @@ describe('anime drama pipeline blueprint', () => {
       'gate_board',
       'video_prompts',
       'gate_video',
+      'render_draft',
+      'render_hq',
       'video_notes',
       'assemble',
     ])
@@ -85,6 +87,6 @@ describe('anime drama pipeline blueprint', () => {
     expect(byId['animatic-gate']?.status).toBe('partial')
     expect(byId['token-budget']?.status).toBe('covered')
     expect(byId['tts-subtitle']?.status).toBe('gap')
-    expect(byId['media-as-tool-node']?.status).toBe('gap')
+    expect(byId['media-as-tool-node']?.status).toBe('covered')
   })
 })

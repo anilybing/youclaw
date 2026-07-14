@@ -244,8 +244,8 @@ export class MediaService {
     }
   }
 
-  /** 文生图：prompt → 产物落盘 */
-  async generateImage(prompt: string, agentId?: string): Promise<MediaFileResult> {
+  /** 文生图：prompt → 产物落盘。opts.imageSize（如 "720x1280" 竖屏）仅 openai-compatible 生效。 */
+  async generateImage(prompt: string, agentId?: string, opts?: { imageSize?: string }): Promise<MediaFileResult> {
     const cfg = imageConfig()
     if (!isImageConfigured(cfg)) {
       throw new MediaError(MEDIA_NOT_CONFIGURED, '图像生成未配置，请到 设置 → 语音与媒体 填写服务信息')
@@ -253,7 +253,9 @@ export class MediaService {
     if (cfg.provider === 'dashscope') {
       return this.callDashscopeImageApi('图像生成', cfg, cfg.model, [{ text: prompt }], agentId)
     }
-    return this.callImageApi('图像生成', cfg, { model: cfg.model, prompt }, agentId)
+    const payload: Record<string, unknown> = { model: cfg.model, prompt }
+    if (opts?.imageSize?.trim()) payload.image_size = opts.imageSize.trim()
+    return this.callImageApi('图像生成', cfg, payload, agentId)
   }
 
   /**

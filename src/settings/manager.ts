@@ -91,6 +91,8 @@ export function updateSettings(partial: Partial<Settings>): Settings {
       image: { ...current.media.image, ...partial.media?.image },
       video: { ...current.media.video, ...partial.media?.video },
     },
+    // [XJC] 漫剧工作室配置（视频渲染模式 + ¥ 预算硬闸）
+    studio: { ...current.studio, ...partial.studio },
     // [XJC] Update release channel is local, stable-by-default configuration.
     update: { ...current.update, ...partial.update },
   }

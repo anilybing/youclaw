@@ -677,7 +677,7 @@ const SEED_FLAG_V3 = 'workflow_builtin_seeded_v3'
 const SEED_FLAG_V4 = 'workflow_builtin_seeded_v4'
 /** 刷新已存在的漫剧内置工作流定义（提示词/输入字段增量），不依赖「仅首次插入」逻辑。 */
 const ANIME_DRAMA_DEF_VERSION_KEY = 'anime_drama_workflow_def_version'
-const ANIME_DRAMA_DEF_VERSION = '6'
+const ANIME_DRAMA_DEF_VERSION = '7'
 const V2_WORKFLOW_IDS = new Set(['competitor-page-analysis'])
 const V3_WORKFLOW_IDS = new Set([TODAY_BUSINESS_BRIEF_WORKFLOW_ID])
 const V4_WORKFLOW_IDS = new Set([ANIME_DRAMA_WORKFLOW_ID])

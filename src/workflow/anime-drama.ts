@@ -46,7 +46,7 @@ export const ANIME_DRAMA_STAGES: readonly AnimeDramaStageDef[] = [
     requiresGate: true,
     workflowStepIds: ['storyboard', 'stills', 'animatic', 'gate_board'],
   },
-  { id: 'clips', order: 4, requiresGate: true, workflowStepIds: ['video_prompts', 'gate_video'] },
+  { id: 'clips', order: 4, requiresGate: true, workflowStepIds: ['video_prompts', 'gate_video', 'render_draft', 'render_hq'] },
   { id: 'audio', order: 5, requiresGate: false, workflowStepIds: ['video_notes'] },
   { id: 'final', order: 6, requiresGate: false, workflowStepIds: ['assemble'] },
 ] as const
@@ -178,8 +178,8 @@ export const ANIME_DRAMA_CAPABILITY_GAPS = [
   {
     id: 'media-as-tool-node',
     area: 'workflow tool 直调 media',
-    status: 'gap' as const,
-    note: 'nodes.ts 白名单无 generate_image/video；出图/视频须走 kind=agent。',
+    status: 'covered' as const,
+    note: 'studio_render_shot 工具节点直连 VideoProvider（默认 mock/dry-run）；render_draft(forEach)/render_hq 已接入 gate_video 后，单镜重渲走 rerunShot。',
   },
   {
     id: 'token-budget',
@@ -219,13 +219,16 @@ export function buildAnimeDramaWorkflowDefinition(): {
       { key: 'episode_mins', label: '目标时长（分钟，可选，默认 1；P0 建议 ≤1.5）' },
       { key: 'aspect', label: '画幅（9:16 / 16:9，可选，默认 9:16）' },
       { key: 'resolution', label: '分辨率（720p / 1080p，可选，默认 720p）' },
+      { key: 'hq_shot_ids', label: '选中走 HQ 精修的 shotId（可选，一行一个/逗号分隔；P0.5 默认空=仅 draft）' },
     ],
     budgets: {
-      maxSteps: 16,
+      // maxSteps/maxToolCalls 放宽以容纳 render_draft/render_hq 的 forEach 逐镜（每镜计一步/一次工具调用）。
+      // 媒体 ¥ 花费由 studio_cost_ledger 的 ¥ 预算硬闸(settings.studio.maxRenderCnyPerRun)另行卡；此处仍是 token 预算。
+      maxSteps: 48,
       maxTotalTokens: 36_000,
       maxCostUsd: 2.5,
-      maxActiveDurationMs: 45 * 60_000,
-      maxToolCalls: 24,
+      maxActiveDurationMs: 90 * 60_000,
+      maxToolCalls: 48,
       unknownCostPolicy: 'allow',
     },
     steps: [
@@ -348,7 +351,30 @@ export function buildAnimeDramaWorkflowDefinition(): {
         id: 'gate_video',
         title: '确认视频生成',
         kind: 'approval',
-        prompt: '确认 I2V 包：先 Draft 后选镜 HQ。本流水线默认只出提示词与清单，不自动批量烧钱出片。',
+        prompt: '确认 I2V 包：通过后按镜批量出 Draft（默认 mock/dry-run 不烧钱；live 真出片受 ¥ 预算硬闸），再对选中镜走 HQ。改镜请拒绝并写 shotId。',
+      },
+      {
+        // G0：逐镜批量出 Draft。复用 runner forEach 逐项检查点（失败可续跑）；每镜走 studio_render_shot
+        // 共享核 renderShot（VideoProvider 默认 mock；live 渲染前按镜卡 ¥ 预算），产物+成本落 shot store / cost_ledger。
+        id: 'render_draft',
+        title: '批量出草稿',
+        kind: 'tool',
+        tool: 'studio_render_shot',
+        prompt: '',
+        args: { shot: '{{item}}' },
+        forEach: { var: 'steps.video_prompts.output', maxItems: 12 },
+      },
+      {
+        // 选镜 HQ 精修：仅当用户在 inputs.hq_shot_ids 指定了 shotId 时执行；每镜按 shotId 从 shot store 取规格重渲 hq。
+        // P0.5 默认空 → 跳过（HQ 暂缓，只做 draft）。
+        id: 'render_hq',
+        title: '精修选中镜',
+        kind: 'tool',
+        tool: 'studio_render_shot',
+        prompt: '',
+        args: { shotId: '{{item}}', tier: 'hq' },
+        when: { var: 'inputs.hq_shot_ids', op: 'not_empty' },
+        forEach: { var: 'inputs.hq_shot_ids', maxItems: 12 },
       },
       {
         id: 'video_notes',

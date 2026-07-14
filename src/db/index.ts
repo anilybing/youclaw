@@ -379,6 +379,56 @@ CREATE TABLE IF NOT EXISTS studio_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_studio_assets_run ON studio_assets(run_id, kind);
 CREATE INDEX IF NOT EXISTS idx_studio_assets_project ON studio_assets(project_key, kind);
+
+-- [XJC] 漫剧工作室·镜头台账（per-run shot store）：G0「视频进流水线」的锚。
+-- 每镜一行，(run_id, shot_id) 唯一；draft/hq 分档、渲染状态、首尾帧路径、产物路径、重试计数都落这里，
+-- 供 forEach 批量渲染、单镜重渲、成本归集共用同一份真源。
+CREATE TABLE IF NOT EXISTS studio_shots (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  shot_id TEXT NOT NULL,
+  shot_index INTEGER NOT NULL DEFAULT 0,
+  spec_json TEXT NOT NULL DEFAULT '{}',
+  start_path TEXT,
+  end_path TEXT,
+  draft_path TEXT,
+  hq_path TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  selected INTEGER NOT NULL DEFAULT 0,
+  last_tier TEXT,
+  last_provider TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  qc_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_shots_run_shot ON studio_shots(run_id, shot_id);
+CREATE INDEX IF NOT EXISTS idx_studio_shots_run_status ON studio_shots(run_id, status);
+
+-- [XJC] 漫剧工作室·镜头级成本台账（cost_ledger）：每次 render_* 写一行。
+-- 与 run 级 token 预算(budget.ts, 36k/$2.5 硬闸)互补——这里记的是视频供应商的 credits/费用，
+-- 按 run/shot/provider/tier 归集，支撑「镜头级成本 + 每分钟成本 + provider 占比」看板与降本策略。
+CREATE TABLE IF NOT EXISTS studio_cost_ledger (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  shot_id TEXT,
+  kind TEXT NOT NULL DEFAULT 'video',
+  provider TEXT NOT NULL,
+  model TEXT,
+  tier TEXT,
+  credits REAL NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  cost_cny REAL NOT NULL DEFAULT 0,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ok',
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_studio_cost_ledger_run ON studio_cost_ledger(run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_studio_cost_ledger_run_shot ON studio_cost_ledger(run_id, shot_id);
 `
 
 // bun:sqlite query result type helpers
@@ -494,6 +544,10 @@ export function initDatabase(): Database {
   try { _db.exec('ALTER TABLE browser_profiles ADD COLUMN attach_only INTEGER NOT NULL DEFAULT 0') } catch {}
   try { _db.exec('ALTER TABLE browser_profiles ADD COLUMN launch_args_json TEXT') } catch {}
   try { _db.exec('ALTER TABLE browser_profiles ADD COLUMN updated_at TEXT') } catch {}
+
+  // [XJC] 漫剧成本台账/镜头台账：为旧库补列（新库由上方 CREATE 一次到位；try-catch ALTER 幂等）
+  try { _db.exec('ALTER TABLE studio_cost_ledger ADD COLUMN cost_cny REAL NOT NULL DEFAULT 0') } catch {}
+  try { _db.exec('ALTER TABLE studio_cost_ledger ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0') } catch {}
 
   getLogger().info({ path: paths.db }, 'Database initialized')
   return _db

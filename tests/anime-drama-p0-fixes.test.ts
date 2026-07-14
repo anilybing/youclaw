@@ -47,6 +47,8 @@ describe('anime drama P0 fixes', () => {
       'gate_board',
       'video_prompts',
       'gate_video',
+      'render_draft',
+      'render_hq',
       'video_notes',
       'assemble',
     ])
