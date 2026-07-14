@@ -352,7 +352,7 @@ export function Agents() {
     <div className="flex h-full">
       {/* Left side: Agent list */}
       <SidePanel>
-        <div className="h-9 shrink-0 px-3 border-b border-border flex items-center justify-between" {...drag}>
+        <div className="h-9 shrink-0 px-3 border-b border-[var(--subtle-border)] flex items-center justify-between" {...drag}>
           <h2 className="font-semibold text-sm">{t.agents.title}</h2>
           <button
             data-testid="agent-create-btn"
@@ -360,7 +360,7 @@ export function Agents() {
               setViewMode('create')
               setSelected(null)
             }}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-accent-foreground transition-all duration-200 ease-[var(--ease-soft)]"
             title={t.agents.createAgent}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -376,10 +376,10 @@ export function Agents() {
                 setViewMode('detail')
               }}
               className={cn(
-                'flex items-center gap-3 w-full px-3 py-2 text-sm rounded-md text-left transition-colors group',
+                'flex items-center gap-3 w-full px-3 py-2 text-sm rounded-[10px] text-left transition-all duration-200 ease-[var(--ease-soft)] group',
                 selected === agent.id && viewMode === 'detail'
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50',
+                  ? 'bg-primary/8 text-foreground'
+                  : 'text-muted-foreground hover:bg-[var(--surface-hover)]',
               )}
             >
               <div
@@ -461,10 +461,12 @@ export function Agents() {
             onSkillsUpdate={loadConfig}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
+          <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <Bot className="h-12 w-12 mx-auto mb-4 opacity-20" />
-              <p>{t.agents.selectAgent}</p>
+              <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <Bot className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{t.agents.selectAgent}</p>
             </div>
           </div>
         )}
@@ -546,7 +548,7 @@ function CreateAgentForm({
 
   return (
     <div className="p-6 max-w-lg">
-      <h1 className="text-lg font-semibold mb-6">{t.agents.createTitle}</h1>
+      <h1 className="text-lg font-semibold tracking-tight mb-6">{t.agents.createTitle}</h1>
 
       <div className="space-y-4">
         <div>
@@ -956,7 +958,7 @@ function DocSection({
       {isExpanded && (
         <div className="border-t border-border">
           {/* Toolbar */}
-          <div className="flex items-center justify-end px-3 py-1.5 bg-muted/30 border-b border-border/50">
+          <div className="flex items-center justify-end px-3 py-1.5 bg-[var(--surface-raised)] border-b border-[var(--subtle-border)]">
             {isEditing ? (
               <div className="flex items-center gap-2">
                 <button
@@ -1399,7 +1401,7 @@ function AgentSkillsSection({
                 </div>
               )}
               errorState={(
-                <div className="flex h-full items-center justify-center py-6 text-center text-xs text-red-400">
+                <div className="flex h-full items-center justify-center py-6 text-center text-xs text-destructive">
                   {marketplaceError || t.agents.marketplaceError}
                 </div>
               )}
@@ -1554,7 +1556,7 @@ function SubAgentsSection({
               {isExpanded && (
                 <div className="border-t border-border">
                   {/* Toolbar */}
-                  <div className="flex items-center justify-end px-3 py-1.5 bg-muted/30 border-b border-border/50 gap-2">
+                  <div className="flex items-center justify-end px-3 py-1.5 bg-[var(--surface-raised)] border-b border-[var(--subtle-border)] gap-2">
                     {isEditing ? (
                       <>
                         <button
@@ -1616,7 +1618,7 @@ function SubAgentsSection({
               <span className="font-medium">{t.agents.addSubAgent}</span>
             </div>
             <div className="border-t border-border">
-              <div className="flex items-center justify-end px-3 py-1.5 bg-muted/30 border-b border-border/50 gap-2">
+              <div className="flex items-center justify-end px-3 py-1.5 bg-[var(--surface-raised)] border-b border-[var(--subtle-border)] gap-2">
                 <button
                   onClick={handleCancel}
                   className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-muted-foreground hover:bg-accent transition-colors"
@@ -1687,7 +1689,7 @@ function SubAgentReadView({ t, def }: { t: ReturnType<typeof useI18n>['t']; def:
       {def.prompt && (
         <div>
           <span className="text-xs font-medium text-muted-foreground">{t.agents.promptLabel}</span>
-          <pre className="text-sm whitespace-pre-wrap font-mono bg-muted/50 rounded p-2 mt-0.5 text-foreground/80">
+          <pre className="text-sm whitespace-pre-wrap font-mono bg-[var(--surface-raised)] border border-[var(--subtle-border)] rounded-lg p-2.5 mt-0.5 text-foreground/80">
             {def.prompt}
           </pre>
         </div>
@@ -1848,7 +1850,7 @@ function StatusCard({
   color?: 'green' | 'yellow' | 'red'
 }) {
   return (
-    <div className="rounded-md border border-border p-3 space-y-1">
+    <div className="rounded-xl border border-[var(--subtle-border)] bg-[var(--card)] p-3 space-y-1 shadow-[var(--shadow-soft)]">
       <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
         {icon}
         {label}
@@ -1868,7 +1870,7 @@ function StatusCard({
 // === Info Row ===
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b border-border/50">
+    <div className="flex items-center justify-between py-2 border-b border-[var(--subtle-border)]">
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="text-sm">{value}</span>
     </div>

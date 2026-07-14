@@ -283,7 +283,7 @@ export function TodayOperations() {
 
   return (
     <div className="flex-1 overflow-auto" data-testid="today-operations-page">
-      <div className="max-w-7xl mx-auto px-5 py-6 lg:px-8 space-y-6">
+      <div className="app-ambient max-w-7xl mx-auto px-5 py-6 lg:px-8 space-y-6">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -291,12 +291,12 @@ export function TodayOperations() {
               <span>{dateLabel}</span>
               <Badge variant="secondary">{t.todayOperations.localOnly}</Badge>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight mt-2">
+            <h1 className="mt-2.5 text-[2rem] font-bold leading-tight tracking-tight">
               {profile.businessName
                 ? t.todayOperations.greeting.replace('{name}', profile.businessName)
                 : t.todayOperations.title}
             </h1>
-            <p className="text-muted-foreground mt-1">{t.todayOperations.subtitle}</p>
+            <p className="mt-1.5 text-[15px] text-muted-foreground">{t.todayOperations.subtitle}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => { setLoading(true); void loadDashboard() }}>
@@ -317,14 +317,16 @@ export function TodayOperations() {
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Card>
+          <Card className="surface-card-interactive">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t.todayOperations.workflowToday}</span>
-                <Workflow className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium text-muted-foreground">{t.todayOperations.workflowToday}</span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Workflow className="h-4 w-4" />
+                </span>
               </div>
-              <div className="text-2xl font-bold mt-2">{automation.workflowRunsToday.total}</div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <div className="mt-3 text-3xl font-bold tracking-tight tabular-nums">{automation.workflowRunsToday.total}</div>
+              <p className="text-xs text-muted-foreground mt-1.5">
                 {t.todayOperations.workflowBreakdown
                   .replace('{success}', String(automation.workflowRunsToday.success))
                   .replace('{running}', String(automation.workflowRunsToday.runningNow))
@@ -332,38 +334,44 @@ export function TodayOperations() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="surface-card-interactive">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t.todayOperations.activeAutomation}</span>
-                <CalendarClock className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-medium text-muted-foreground">{t.todayOperations.activeAutomation}</span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-sky-500/10 text-sky-500">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
               </div>
-              <div className="text-2xl font-bold mt-2">{automation.scheduledTasks.active}</div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <div className="mt-3 text-3xl font-bold tracking-tight tabular-nums">{automation.scheduledTasks.active}</div>
+              <p className="text-xs text-muted-foreground mt-1.5">
                 {automation.scheduledTasks.failing > 0
                   ? t.todayOperations.failingTasks.replace('{count}', String(automation.scheduledTasks.failing))
                   : t.todayOperations.noFailingTasks}
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="surface-card-interactive">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t.todayOperations.activePlans}</span>
-                <ClipboardList className="h-4 w-4 text-violet-500" />
+                <span className="text-sm font-medium text-muted-foreground">{t.todayOperations.activePlans}</span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-violet-500/10 text-violet-500">
+                  <ClipboardList className="h-4 w-4" />
+                </span>
               </div>
-              <div className="text-2xl font-bold mt-2">{automation.activePlans}</div>
-              <p className="text-xs text-muted-foreground mt-1">{t.todayOperations.planHint}</p>
+              <div className="mt-3 text-3xl font-bold tracking-tight tabular-nums">{automation.activePlans}</div>
+              <p className="text-xs text-muted-foreground mt-1.5">{t.todayOperations.planHint}</p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="surface-card-interactive">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t.todayOperations.aiCostToday}</span>
-                <CircleDollarSign className="h-4 w-4 text-emerald-500" />
+                <span className="text-sm font-medium text-muted-foreground">{t.todayOperations.aiCostToday}</span>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-500/10 text-emerald-500">
+                  <CircleDollarSign className="h-4 w-4" />
+                </span>
               </div>
-              <div className="text-2xl font-bold mt-2">${automation.aiUsageToday.costUsd.toFixed(4)}</div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <div className="mt-3 text-3xl font-bold tracking-tight tabular-nums">${automation.aiUsageToday.costUsd.toFixed(4)}</div>
+              <p className="text-xs text-muted-foreground mt-1.5">
                 {t.todayOperations.usageBreakdown
                   .replace('{calls}', String(automation.aiUsageToday.modelCalls))
                   .replace('{tokens}', automation.aiUsageToday.totalTokens.toLocaleString())}
@@ -386,17 +394,20 @@ export function TodayOperations() {
                   key={action.id}
                   type="button"
                   onClick={() => navigate(action.route)}
-                  className="w-full text-left rounded-xl border bg-card p-4 hover:bg-accent/50 hover:border-primary/30 transition-colors group"
+                  className="group w-full rounded-xl border border-[var(--subtle-border)] bg-[var(--card)] p-4 text-left transition-all duration-200 ease-[var(--ease-soft)] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[var(--shadow-raised)]"
                   data-testid="today-action-card"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold shrink-0">
+                  <div className="flex items-start gap-3.5">
+                    <div
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold text-[var(--primary-foreground)] shadow-[var(--shadow-soft)]"
+                      style={{ background: "linear-gradient(140deg, var(--brand), var(--brand-strong))" }}
+                    >
                       {index + 1}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold flex items-center justify-between gap-2">
                         <span>{action.title}</span>
-                        <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary shrink-0" />
+                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary" />
                       </div>
                       <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{action.reason}</p>
                     </div>
@@ -684,20 +695,20 @@ export function TodayOperations() {
               <>
                 <p className="text-sm text-muted-foreground">{review.weekStartDate} ~ {review.weekEndDate}</p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-lg bg-muted/50 p-3 text-center">
-                    <div className="text-xl font-bold">{review.deliverables.total}</div>
+                  <div className="rounded-xl border border-[var(--subtle-border)] bg-[var(--surface-raised)] p-3.5 text-center">
+                    <div className="text-xl font-bold tabular-nums">{review.deliverables.total}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.deliverables}</div>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3 text-center">
-                    <div className="text-xl font-bold">{review.deliverables.adoptionRate}%</div>
+                  <div className="rounded-xl border border-[var(--subtle-border)] bg-[var(--surface-raised)] p-3.5 text-center">
+                    <div className="text-xl font-bold tabular-nums">{review.deliverables.adoptionRate}%</div>
                     <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.adoptionRate}</div>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3 text-center">
-                    <div className="text-xl font-bold">{review.workflows.success}/{review.workflows.total}</div>
+                  <div className="rounded-xl border border-[var(--subtle-border)] bg-[var(--surface-raised)] p-3.5 text-center">
+                    <div className="text-xl font-bold tabular-nums">{review.workflows.success}/{review.workflows.total}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.workflows}</div>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3 text-center">
-                    <div className="text-xl font-bold">${review.aiUsage.costUsd.toFixed(2)}</div>
+                  <div className="rounded-xl border border-[var(--subtle-border)] bg-[var(--surface-raised)] p-3.5 text-center">
+                    <div className="text-xl font-bold tabular-nums">${review.aiUsage.costUsd.toFixed(2)}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{t.weeklyReview.cost}</div>
                   </div>
                 </div>

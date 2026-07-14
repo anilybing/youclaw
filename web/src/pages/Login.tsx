@@ -114,83 +114,107 @@ export function Login() {
 
   const isLoading = authLoading || loginInProgress
 
+  const features = [
+    {
+      icon: Calendar,
+      title: t.login.featureSchedule,
+      desc: t.login.featureScheduleDesc,
+      chip: "bg-primary/12 text-primary",
+    },
+    {
+      icon: MessageSquare,
+      title: t.login.featureChat,
+      desc: t.login.featureChatDesc,
+      chip: "bg-sky-500/12 text-sky-600 dark:text-sky-400",
+    },
+    {
+      icon: ShieldCheck,
+      title: t.login.featureIntegration,
+      desc: t.login.featureIntegrationDesc,
+      chip: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
+    },
+  ]
+
   return (
-    <div className="h-screen w-screen flex flex-col bg-gradient-to-br from-background to-muted/30">
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[var(--background)]">
       {/* 无边框窗口下登录页也需要可拖拽/关闭（组件自守卫，仅 Windows 桌面渲染） */}
       <WindowsTitleBar />
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Left hero area - large screens only */}
-        <section
-          className="hidden lg:flex flex-1 flex-col p-12 relative border-r border-border/50 bg-gradient-to-br from-background via-primary/5 to-background"
-        >
-          {/* Decorative elements */}
-          <div className="absolute top-20 right-10 w-32 h-32 bg-primary/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-20 left-10 w-48 h-48 bg-muted/40 rounded-full blur-3xl" />
+        <section className="relative hidden lg:flex flex-1 flex-col overflow-hidden border-r border-[var(--subtle-border)] px-14 py-12">
+          {/* Ambient sunrise — the one place we spend real color, tied to the
+              tangerine brand so the empty space reads as atmosphere, not filler. */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+            <div
+              className="absolute inset-0"
+              style={{ background: "linear-gradient(158deg, color-mix(in oklab, var(--brand) 11%, var(--background)), var(--background) 52%)" }}
+            />
+            <div
+              className="absolute -left-28 -top-28 h-[540px] w-[540px] rounded-full blur-3xl opacity-70"
+              style={{ background: "radial-gradient(circle, var(--brand-glow), transparent 68%)" }}
+            />
+            <div
+              className="absolute right-[-12%] top-1/3 h-[420px] w-[420px] rounded-full blur-3xl opacity-60"
+              style={{ background: "radial-gradient(circle, var(--ambient-cool), transparent 70%)" }}
+            />
+          </div>
 
-          <header className="mb-auto relative z-10">
-            <h2 className="text-3xl font-bold tracking-tight text-foreground">
+          <header className="relative z-10">
+            <div className="flex items-center gap-2.5">
+              <img src={logoUrl} alt="" draggable={false} className="h-9 w-9 rounded-xl shadow-[var(--shadow-soft)]" />
+              <span className="text-base font-semibold tracking-tight text-foreground">XiaoJuClaw</span>
+            </div>
+            <h2 className="mt-12 max-w-md text-[2.6rem] font-bold leading-[1.08] tracking-tight text-foreground">
               {t.login.heroTitle}
             </h2>
-            <p className="mt-2 text-muted-foreground max-w-sm">
+            <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-muted-foreground">
               {t.login.heroDesc}
             </p>
           </header>
 
           {/* Feature cards */}
-          <div className="flex-grow flex items-center justify-center py-10 relative z-10">
-            <div className="relative w-full max-w-sm">
-              <div className="animate-[float_6s_ease-in-out_infinite]">
-                <div className="bg-card p-5 rounded-2xl shadow-lg border border-border/50 flex items-center gap-4 mb-5 translate-x-12">
-                  <div className="bg-primary/10 p-3 rounded-xl text-primary shrink-0">
-                    <Calendar className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm text-foreground">{t.login.featureSchedule}</p>
-                    <p className="text-xs text-muted-foreground">{t.login.featureScheduleDesc}</p>
-                  </div>
-                </div>
-
-                <div className="bg-card p-5 rounded-2xl shadow-lg border border-border/50 flex items-center gap-4 mb-5 -translate-x-4">
-                  <div className="bg-blue-500/10 p-3 rounded-xl text-blue-500 shrink-0">
-                    <MessageSquare className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm text-foreground">{t.login.featureChat}</p>
-                    <p className="text-xs text-muted-foreground">{t.login.featureChatDesc}</p>
+          <div className="relative z-10 my-auto flex justify-center py-10">
+            <div className="w-full max-w-sm space-y-3.5 motion-safe:animate-[login-drift_8s_ease-in-out_infinite]">
+              {features.map((feature) => (
+                <div key={feature.title} className="surface-card flex items-center gap-4 p-4">
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${feature.chip}`}>
+                    <feature.icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">{feature.title}</p>
+                    <p className="text-xs text-muted-foreground">{feature.desc}</p>
                   </div>
                 </div>
-
-                <div className="bg-card p-5 rounded-2xl shadow-lg border border-border/50 flex items-center gap-4 translate-x-8">
-                  <div className="bg-green-500/10 p-3 rounded-xl text-green-500 shrink-0">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm text-foreground">{t.login.featureIntegration}</p>
-                    <p className="text-xs text-muted-foreground">{t.login.featureIntegrationDesc}</p>
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
-          <footer className="mt-auto flex gap-6 text-xs font-medium text-muted-foreground relative z-10">
+          <footer className="relative z-10 text-xs font-medium text-muted-foreground">
             <span>&copy; 2026 XiaoJuClaw</span>
           </footer>
         </section>
 
         {/* Right: mobile + password login. The panel scrolls on small Windows viewports. */}
-        <section className="w-full lg:w-[420px] overflow-y-auto bg-card">
-          <div className="min-h-full w-full max-w-sm mx-auto flex flex-col justify-center gap-5 px-5 py-4 md:px-8 md:py-6">
+        <section className="w-full overflow-y-auto border-l border-[var(--subtle-border)] bg-[var(--card)] lg:w-[440px]">
+          <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center gap-6 px-6 py-8 md:px-9">
             <header className="w-full text-center">
-              <div className="inline-block transition-transform hover:scale-105 duration-300">
+              <div className="relative inline-grid place-items-center">
+                <span
+                  aria-hidden
+                  className="absolute inset-0 -z-10 rounded-[1.5rem] blur-xl opacity-70"
+                  style={{ background: "radial-gradient(circle, var(--brand-glow), transparent 70%)" }}
+                />
                 <img
                   src={logoUrl}
                   alt="XiaoJuClaw Logo"
-                  className="w-20 h-20 p-2 mx-auto rounded-2xl shadow-lg border border-border/50 bg-white"
+                  draggable={false}
+                  className="h-[72px] w-[72px] rounded-[1.3rem] border border-[var(--subtle-border)] bg-white p-2 shadow-[var(--shadow-raised)] transition-transform duration-300 hover:scale-105"
                 />
               </div>
-              <h1 className="mt-3 text-2xl font-bold text-foreground tracking-tight">XiaoJuClaw</h1>
-              <p className="text-muted-foreground text-sm mt-1">{t.login.subtitle}</p>
+              <h1 className="mt-4 text-2xl font-bold tracking-tight">
+                <span className="text-gradient-brand">XiaoJuClaw</span>
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">{t.login.subtitle}</p>
             </header>
 
             <form
@@ -209,7 +233,7 @@ export function Login() {
                     id="mobile"
                     type="tel"
                     autoComplete="username"
-                    className="pl-9"
+                    className="h-11 pl-9"
                     placeholder={t.login.mobilePlaceholder}
                     value={mobile}
                     disabled={isLoading}
@@ -226,7 +250,7 @@ export function Login() {
                     id="password"
                     type="password"
                     autoComplete="current-password"
-                    className="pl-9"
+                    className="h-11 pl-9"
                     placeholder={t.login.passwordPlaceholder}
                     value={password}
                     disabled={isLoading}
@@ -239,7 +263,7 @@ export function Login() {
                 type="submit"
                 size="lg"
                 disabled={isLoading}
-                className="w-full gap-2 py-6 text-sm font-semibold rounded-xl active:scale-[0.98] transition-all duration-200"
+                className="w-full gap-2 py-6 text-sm font-semibold rounded-xl shadow-[var(--shadow-soft)] active:scale-[0.98] transition-all duration-200"
               >
                 {loginInProgress || authLoading ? (
                   <>
@@ -261,7 +285,7 @@ export function Login() {
             {/* 游客登录（复用离线模式）：无账号也能直接试用本地能力 */}
             <div className="space-y-2">
               <div className="relative flex items-center py-1">
-                <span className="flex-grow border-t border-border/60" />
+                <span className="flex-grow border-t border-[var(--subtle-border)]" />
               </div>
               <Button
                 type="button"
@@ -280,7 +304,7 @@ export function Login() {
               </p>
             </div>
 
-            <footer className="flex items-center justify-center gap-3 border-t border-border/50 pt-4">
+            <footer className="flex items-center justify-center gap-3 border-t border-[var(--subtle-border)] pt-4">
               <Button
                 type="button"
                 variant="outline"
@@ -309,9 +333,9 @@ export function Login() {
         </section>
 
         <style>{`
-          @keyframes float {
+          @keyframes login-drift {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-20px); }
+            50% { transform: translateY(-12px); }
           }
         `}</style>
       </div>

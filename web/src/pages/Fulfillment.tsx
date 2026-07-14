@@ -292,8 +292,10 @@ export function Fulfillment() {
             </div>
           ) : skuViewState === 'empty' ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <PackagePlus className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground">{t.fulfillment.empty}</p>
+              <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <PackagePlus className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{t.fulfillment.empty}</p>
             </div>
           ) : (
             <div className="rounded-lg border border-[var(--subtle-border)] overflow-hidden">

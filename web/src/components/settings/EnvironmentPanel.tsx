@@ -75,20 +75,20 @@ export function EnvironmentPanel() {
       {/* Dependencies list */}
       <div className="space-y-3">
         {dependencies.map((dep) => (
-          <div key={dep.name} className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-card">
+          <div key={dep.name} className="flex items-center justify-between p-3 rounded-xl border border-[var(--subtle-border)] bg-[var(--card)]">
             <div className="flex items-center gap-3">
               {dep.available ? (
                 <CheckCircle2 size={18} className="text-green-500 shrink-0" />
               ) : (
-                <XCircle size={18} className="text-red-400 shrink-0" />
+                <XCircle size={18} className="text-destructive shrink-0" />
               )}
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-sm">{dep.name}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-md ${dep.required ? 'bg-red-500/10 text-red-400' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-md ${dep.required ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>
                     {dep.required ? t.envPanel.required : t.envPanel.optional}
                   </span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-md ${dep.available ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-md ${dep.available ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-destructive/10 text-destructive'}`}>
                     {dep.available ? t.envPanel.installed : t.envPanel.notInstalled}
                   </span>
                 </div>

@@ -297,14 +297,14 @@ export function Skills() {
   return (
     <div className="flex h-full flex-col">
       <div className="px-6 pt-4 pb-2">
-        <div className="inline-flex items-center gap-1 rounded-xl bg-muted/60 p-1">
+        <div className="inline-flex items-center gap-1 rounded-xl border border-[var(--subtle-border)] bg-[var(--surface-raised)] p-1">
           <button
             data-testid="skills-installed-tab"
             onClick={() => setTab('installed')}
             className={cn(
-              'rounded-lg px-4 py-1.5 text-sm font-medium transition-all',
+              'rounded-lg px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)]',
               tab === 'installed'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-[var(--card)] text-foreground shadow-[var(--shadow-soft)]'
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
@@ -314,9 +314,9 @@ export function Skills() {
             data-testid="skills-marketplace-tab"
             onClick={() => setTab('marketplace')}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-all',
+              'flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)]',
               tab === 'marketplace'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-[var(--card)] text-foreground shadow-[var(--shadow-soft)]'
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >

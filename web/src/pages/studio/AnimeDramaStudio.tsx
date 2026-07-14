@@ -408,13 +408,13 @@ export function AnimeDramaStudio() {
                 disabled={visual === 'locked'}
                 onClick={() => selectStage(stageId, visual)}
                 className={cn(
-                  'group relative min-w-[132px] flex-1 rounded-2xl border px-3 py-3 text-left transition-all duration-200',
-                  visual === 'active' && 'border-sky-400/50 bg-sky-400/10 shadow-[0_0_0_1px_rgba(56,189,248,0.15)]',
+                  'group relative min-w-[132px] flex-1 rounded-2xl border px-3 py-3 text-left transition-all duration-200 ease-[var(--ease-soft)]',
+                  visual === 'active' && 'border-primary/50 bg-primary/10 shadow-[0_0_0_1px_oklch(0.635_0.19_50/0.2)]',
                   visual === 'gated' && 'border-amber-400/50 bg-amber-400/10',
                   visual === 'complete' && 'border-emerald-500/25 bg-emerald-500/5 hover:border-emerald-400/40',
-                  visual === 'idle' && 'border-border/70 bg-card/30 hover:border-border',
-                  visual === 'locked' && 'cursor-not-allowed border-border/40 bg-muted/20 opacity-55',
-                  viewing === stageId && visual !== 'active' && visual !== 'gated' && visual !== 'locked' && 'ring-2 ring-sky-400/35',
+                  visual === 'idle' && 'border-[var(--subtle-border)] bg-[var(--surface-raised)] hover:border-primary/30',
+                  visual === 'locked' && 'cursor-not-allowed border-[var(--subtle-border)] bg-muted/20 opacity-55',
+                  viewing === stageId && visual !== 'active' && visual !== 'gated' && visual !== 'locked' && 'ring-2 ring-primary/30',
                 )}
               >
                 <div className="mb-2 flex items-center gap-2">
@@ -424,8 +424,8 @@ export function AnimeDramaStudio() {
                     <ShieldCheck className="h-4 w-4 text-amber-300" />
                   ) : visual === 'active' ? (
                     run?.status === 'running' && stageId === pipelineStage
-                      ? <Loader2 className="h-4 w-4 animate-spin text-sky-300" />
-                      : <Circle className="h-4 w-4 text-sky-300" />
+                      ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      : <Circle className="h-4 w-4 text-primary" />
                   ) : visual === 'locked' ? (
                     <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                   ) : (
@@ -756,10 +756,10 @@ function IdeaBench({
                       type="button"
                       onClick={() => selectStylePreset(preset)}
                       className={cn(
-                        'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                        'rounded-full border px-3 py-1.5 text-sm transition-all duration-200 ease-[var(--ease-soft)]',
                         active
-                          ? 'border-sky-500 bg-sky-500/15 font-medium text-sky-800 dark:border-sky-400/70 dark:bg-sky-400/20 dark:text-sky-100'
-                          : 'border-border/70 bg-background/30 text-muted-foreground hover:border-border hover:text-foreground',
+                          ? 'border-primary/60 bg-primary/12 font-medium text-primary'
+                          : 'border-[var(--subtle-border)] bg-[var(--surface-raised)] text-muted-foreground hover:border-primary/30 hover:text-foreground',
                       )}
                     >
                       {label}
@@ -800,10 +800,10 @@ function IdeaBench({
                       type="button"
                       onClick={() => setAspect(ratio)}
                       className={cn(
-                        'flex-1 rounded-xl border py-2 text-sm font-medium transition-colors',
+                        'flex-1 rounded-xl border py-2 text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)]',
                         aspect === ratio
-                          ? 'border-sky-500 bg-sky-500/15 text-sky-800 dark:border-sky-400/70 dark:bg-sky-400/20 dark:text-sky-100'
-                          : 'border-border/70 bg-background/30 text-muted-foreground hover:text-foreground',
+                          ? 'border-primary/60 bg-primary/12 text-primary'
+                          : 'border-[var(--subtle-border)] bg-[var(--surface-raised)] text-muted-foreground hover:border-primary/30 hover:text-foreground',
                       )}
                     >
                       {ratio}
@@ -820,10 +820,10 @@ function IdeaBench({
                       type="button"
                       onClick={() => setResolution(item.id)}
                       className={cn(
-                        'flex-1 rounded-xl border py-2 text-sm font-medium transition-colors',
+                        'flex-1 rounded-xl border py-2 text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)]',
                         resolution === item.id
-                          ? 'border-sky-500 bg-sky-500/15 text-sky-800 dark:border-sky-400/70 dark:bg-sky-400/20 dark:text-sky-100'
-                          : 'border-border/70 bg-background/30 text-muted-foreground hover:text-foreground',
+                          ? 'border-primary/60 bg-primary/12 text-primary'
+                          : 'border-[var(--subtle-border)] bg-[var(--surface-raised)] text-muted-foreground hover:border-primary/30 hover:text-foreground',
                       )}
                     >
                       {locale === 'zh' ? item.zh : item.en}

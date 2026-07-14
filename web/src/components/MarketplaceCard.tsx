@@ -285,7 +285,7 @@ export function MarketplaceCard({
             data-testid={`marketplace-uninstall-${viewModel.slug}`}
             size="sm"
             variant="ghost"
-            className="text-xs text-muted-foreground hover:text-red-400"
+            className="text-xs text-muted-foreground hover:text-destructive"
             onClick={handleUninstall}
             disabled={status === 'uninstalling'}
           >
@@ -305,8 +305,8 @@ export function MarketplaceCard({
     return (
       <div
         data-testid={`marketplace-card-${viewModel.slug}`}
-        className={`rounded-[24px] border border-border bg-background p-4 transition-all duration-200 ${
-          canOpenInstallDialog ? 'cursor-pointer hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]' : ''
+        className={`rounded-[24px] border border-[var(--subtle-border)] bg-[var(--card)] p-4 shadow-[var(--shadow-card)] transition-all duration-200 ease-[var(--ease-soft)] ${
+          canOpenInstallDialog ? 'cursor-pointer hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-raised)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]' : ''
         }`}
         role={canOpenInstallDialog ? 'button' : undefined}
         tabIndex={canOpenInstallDialog ? 0 : undefined}
@@ -315,7 +315,7 @@ export function MarketplaceCard({
       >
         <div className="flex h-full flex-col">
           <div className="flex min-h-12 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-primary/10">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[var(--subtle-border)] bg-primary/10">
               <Puzzle className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
@@ -371,7 +371,7 @@ export function MarketplaceCard({
   return (
     <div
       data-testid={`marketplace-card-${viewModel.slug}`}
-      className={`rounded-xl border border-border p-4 transition-colors hover:bg-accent/20 ${
+      className={`rounded-xl border border-[var(--subtle-border)] bg-[var(--card)] p-4 transition-all duration-200 ease-[var(--ease-soft)] hover:border-primary/30 hover:shadow-[var(--shadow-soft)] ${
         canOpenInstallDialog ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]' : ''
       }`}
       role={canOpenInstallDialog ? 'button' : undefined}

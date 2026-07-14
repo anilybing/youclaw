@@ -68,7 +68,7 @@ export function Channels() {
     <div className="flex h-full">
       {/* Left: Channel list */}
       <SidePanel>
-        <div className="h-9 shrink-0 px-3 border-b border-border flex items-center justify-between" {...drag}>
+        <div className="h-9 shrink-0 px-3 border-b border-[var(--subtle-border)] flex items-center justify-between" {...drag}>
           <h2 className="font-semibold text-sm">{t.channels.title}</h2>
           <div className="flex items-center gap-1">
             <button
@@ -278,7 +278,7 @@ function CreateChannelForm({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder={t.channels.labelPlaceholder.replace('{example}', `${translatedTypeLabel} 1`)}
-              className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               data-testid="channel-input-label"
             />
             <p className="text-xs text-muted-foreground mt-1.5">{t.channels.labelHint}</p>
@@ -293,7 +293,7 @@ function CreateChannelForm({
                 value={configValues[field.key] ?? ''}
                 onChange={(e) => setConfigValues({ ...configValues, [field.key]: e.target.value })}
                 placeholder={field.placeholder}
-                className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 data-testid={`channel-input-config-${field.key}`}
               />
             </div>
@@ -302,7 +302,7 @@ function CreateChannelForm({
       )}
 
       {error && (
-        <div className="text-sm text-red-400" data-testid="channel-form-error">{error}</div>
+        <div className="text-sm text-destructive" data-testid="channel-form-error">{error}</div>
       )}
 
       <div className="flex gap-2">
@@ -316,7 +316,7 @@ function CreateChannelForm({
         </button>
         <button
           onClick={onCancel}
-          className="px-5 py-2 text-sm font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent/50 transition-colors"
+          className="px-5 py-2 text-sm font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent/50 transition-colors"
           data-testid="channel-cancel-btn"
         >
           {t.common.cancel}
@@ -520,7 +520,7 @@ function ChannelDetail({
                     if (e.key === 'Enter') handleSaveLabel()
                     if (e.key === 'Escape') { setEditingLabel(false); setLabelDraft(channel.label) }
                   }}
-                  className="text-xl font-semibold bg-muted border border-border rounded-xl px-3 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="text-xl font-semibold bg-muted border border-[var(--subtle-border)] rounded-xl px-3 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
                   data-testid="channel-label-input"
                 />
                 <button
@@ -600,7 +600,7 @@ function ChannelDetail({
           className={cn(
             'flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border transition-colors disabled:opacity-50',
             channel.enabled
-              ? 'border-border text-muted-foreground hover:bg-accent/50'
+              ? 'border-[var(--subtle-border)] text-muted-foreground hover:bg-accent/50'
               : 'border-green-500 bg-green-500 text-white shadow-[0_0_0_1px_rgba(34,197,94,0.2)] hover:bg-green-600 hover:border-green-600',
           )}
           data-testid="channel-toggle-btn"
@@ -615,7 +615,7 @@ function ChannelDetail({
         {!confirmDelete ? (
           <button
             onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors ml-auto"
             data-testid="channel-delete-btn"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -623,7 +623,7 @@ function ChannelDetail({
           </button>
         ) : (
           <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs text-red-400">{t.channels.confirmDelete}</span>
+            <span className="text-xs text-destructive">{t.channels.confirmDelete}</span>
             <button
               onClick={handleDelete}
               disabled={!!actionLoading}
@@ -634,7 +634,7 @@ function ChannelDetail({
             </button>
             <button
               onClick={() => setConfirmDelete(false)}
-              className="px-4 py-2 text-xs font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent/50 transition-colors"
+              className="px-4 py-2 text-xs font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent/50 transition-colors"
               data-testid="channel-cancel-delete-btn"
             >
               {t.common.cancel}
@@ -645,17 +645,17 @@ function ChannelDetail({
 
       {/* Action error */}
       {actionError && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-3" data-testid="channel-action-error">
-          <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-400">{actionError}</div>
+        <div className="rounded-md border border-destructive/30 bg-red-500/5 p-3 flex items-start gap-3" data-testid="channel-action-error">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <div className="text-sm text-destructive">{actionError}</div>
         </div>
       )}
 
       {/* Connection error */}
       {channel.error && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-3">
-          <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-400">{channel.error}</div>
+        <div className="rounded-md border border-destructive/30 bg-red-500/5 p-3 flex items-start gap-3">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <div className="text-sm text-destructive">{channel.error}</div>
         </div>
       )}
 
@@ -694,7 +694,7 @@ function ChannelDetail({
       </div>
 
       {channel.supportsQrLogin && (
-        <div className="rounded-2xl border border-border p-5 space-y-4">
+        <div className="rounded-2xl border border-[var(--subtle-border)] p-5 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">{t.channels.qrLogin}</h2>
@@ -716,7 +716,7 @@ function ChannelDetail({
                 <button
                   onClick={handleLogout}
                   disabled={!!actionLoading}
-                  className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                   data-testid="channel-qr-logout-btn"
                 >
                   <PowerOff className="h-3.5 w-3.5" />
@@ -733,7 +733,7 @@ function ChannelDetail({
           )}
 
           {qrImageUrl && (
-            <div className="rounded-2xl bg-muted/60 border border-border p-4 inline-flex flex-col gap-3" data-testid="channel-qr-code">
+            <div className="rounded-2xl bg-muted/60 border border-[var(--subtle-border)] p-4 inline-flex flex-col gap-3" data-testid="channel-qr-code">
               <img src={qrImageUrl} alt={t.channels.qrCodeAlt} className="w-56 h-56 rounded-xl bg-white p-3" />
               <div className="text-xs text-muted-foreground">{t.channels.scanQrHint}</div>
             </div>
@@ -812,7 +812,7 @@ function ConfigFieldEditor({
   }
 
   return (
-    <div className="rounded-2xl border border-border p-4">
+    <div className="rounded-2xl border border-[var(--subtle-border)] p-4">
       <div className="flex items-center justify-between mb-3">
         <label className="text-xs font-medium">
           {fieldLabel}
@@ -835,7 +835,7 @@ function ConfigFieldEditor({
                 ? t.channels.secretConfigured
                 : field.placeholder || field.key
             }
-            className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring pr-10"
+            className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] text-foreground focus:outline-none focus:ring-1 focus:ring-ring pr-10"
             data-testid={`channel-input-config-${field.key}`}
           />
           {field.secret && (
@@ -859,7 +859,7 @@ function ConfigFieldEditor({
         </button>
       </div>
       {saveError && (
-        <div className="text-xs text-red-400 mt-2" data-testid={`channel-config-error-${field.key}`}>{saveError}</div>
+        <div className="text-xs text-destructive mt-2" data-testid={`channel-config-error-${field.key}`}>{saveError}</div>
       )}
     </div>
   )
@@ -878,7 +878,7 @@ function InfoCard({
   mono?: boolean
 }) {
   return (
-    <div className="rounded-2xl border border-border p-4">
+    <div className="rounded-2xl border border-[var(--subtle-border)] p-4">
       <p className="text-xs text-muted-foreground mb-1.5">{label}</p>
       <p
         className={cn(

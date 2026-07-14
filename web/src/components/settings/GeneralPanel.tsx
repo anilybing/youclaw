@@ -262,10 +262,10 @@ export function GeneralPanel() {
                 key={option.value}
                 onClick={() => setTheme(option.value)}
                 className={cn(
-                  'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-3',
+                  'p-4 rounded-2xl border transition-all duration-200 ease-[var(--ease-soft)] flex flex-col items-center gap-3',
                   theme === option.value
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-muted-foreground/30',
+                    ? 'border-primary/60 bg-primary/10 shadow-[var(--shadow-soft)]'
+                    : 'border-[var(--subtle-border)] hover:border-primary/30',
                 )}
               >
                 <div className={cn(
@@ -293,10 +293,10 @@ export function GeneralPanel() {
               key={option.value}
               onClick={() => setLocale(option.value)}
               className={cn(
-                'px-6 py-3 rounded-xl border-2 text-sm font-medium transition-all',
+                'px-6 py-3 rounded-xl border text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)]',
                 locale === option.value
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:border-muted-foreground/30',
+                  ? 'border-primary/60 bg-primary/10 text-foreground shadow-[var(--shadow-soft)]'
+                  : 'border-[var(--subtle-border)] text-muted-foreground hover:border-primary/30',
               )}
             >
               {option.label}
@@ -311,7 +311,7 @@ export function GeneralPanel() {
             {t.settings.ingestTitle}
           </h4>
           <p className="text-xs text-muted-foreground mb-3">{t.settings.ingestHint}</p>
-          <div className="flex items-center justify-between gap-4 rounded-2xl border-2 border-border p-4 mb-3">
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--subtle-border)] p-4 mb-3">
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">{t.settings.ingestEnable}</div>
               <div className="mt-1 text-xs text-muted-foreground">{t.settings.ingestEnableDesc}</div>
@@ -374,7 +374,7 @@ export function GeneralPanel() {
             {ingestSaveFailed && <p className="text-xs text-destructive">{t.settings.ingestSaveFailed}</p>}
           </div>
           {/* [G6.2] 渠道消息日摘要开关（与文件夹摄取独立） */}
-          <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border-2 border-border p-4">
+          <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-[var(--subtle-border)] p-4">
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">{t.settings.channelDigestEnable}</div>
               <div className="mt-1 text-xs text-muted-foreground">{t.settings.channelDigestEnableDesc}</div>
@@ -405,7 +405,7 @@ export function GeneralPanel() {
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
             {t.settings.evolutionTitle}
           </h4>
-          <div className="flex items-center justify-between gap-4 rounded-2xl border-2 border-border p-4">
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--subtle-border)] p-4">
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">{t.settings.evolutionEnable}</div>
               <div className="mt-1 text-xs text-muted-foreground">{t.settings.evolutionEnableDesc}</div>
@@ -460,7 +460,7 @@ export function GeneralPanel() {
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-4">
             {t.settings.mcpTitle}
           </h4>
-          <div className="rounded-2xl border-2 border-border p-4">
+          <div className="rounded-2xl border border-[var(--subtle-border)] p-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-sm font-medium text-foreground">{t.settings.mcpEnable}</div>
@@ -588,10 +588,10 @@ export function GeneralPanel() {
                 key={option.titleKey}
                 onClick={() => void setCloseAction(option.value)}
                 className={cn(
-                  'rounded-2xl border-2 p-4 text-left transition-all',
+                  'rounded-2xl border p-4 text-left transition-all duration-200 ease-[var(--ease-soft)]',
                   closeAction === option.value
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-muted-foreground/30'
+                    ? 'border-primary/60 bg-primary/10 shadow-[var(--shadow-soft)]'
+                    : 'border-[var(--subtle-border)] hover:border-primary/30'
                 )}
               >
                 <div className="text-sm font-medium text-foreground">

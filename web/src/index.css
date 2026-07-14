@@ -21,64 +21,106 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
   --radius: var(--radius);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: "Inter", "Inter var", "Segoe UI Variable Text", "Segoe UI",
+    system-ui, -apple-system, "PingFang SC", "HarmonyOS Sans SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
 }
 
 :root {
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.15 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0 0);
-  --primary: oklch(0.5 0.2 25);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.96 0 0);
-  --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.94 0 0);
-  --accent-foreground: oklch(0.15 0 0);
-  --destructive: oklch(0.55 0.22 30);
-  --border: oklch(0.91 0 0);
-  --input: oklch(0.91 0 0);
-  --ring: oklch(0.5 0.2 25);
-  --radius: 0.625rem;
-  --subtle-border: oklch(0 0 0 / 0.06);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0 0);
-  --surface-hover: oklch(0 0 0 / 0.03);
-  --surface-raised: oklch(0.97 0 0);
+  /* Warm "sun-paper" light theme — neutrals carry a faint tangerine warmth so
+     the whole surface belongs to the 小橘 (little-tangerine) brand instead of a
+     cold default gray. */
+  --background: oklch(0.986 0.005 73);
+  --foreground: oklch(0.23 0.014 55);
+  --card: oklch(0.999 0.002 73);
+  --card-foreground: oklch(0.23 0.014 55);
+  --primary: oklch(0.635 0.19 50);
+  --primary-foreground: oklch(0.99 0.012 75);
+  --secondary: oklch(0.965 0.009 68);
+  --secondary-foreground: oklch(0.29 0.02 55);
+  --muted: oklch(0.966 0.008 68);
+  --muted-foreground: oklch(0.53 0.021 58);
+  --accent: oklch(0.955 0.014 62);
+  --accent-foreground: oklch(0.25 0.018 55);
+  --destructive: oklch(0.585 0.216 26);
+  --destructive-foreground: oklch(0.99 0.012 75);
+  --border: oklch(0.906 0.009 68);
+  --input: oklch(0.9 0.01 68);
+  --ring: oklch(0.635 0.19 50);
+  --radius: 0.7rem;
+  --subtle-border: oklch(0.42 0.03 60 / 0.1);
+  --popover: oklch(0.999 0.002 73);
+  --popover-foreground: oklch(0.23 0.014 55);
+  --surface-hover: oklch(0.5 0.04 60 / 0.05);
+  --surface-raised: oklch(0.976 0.009 68);
+
+  /* Brand accents for signature surfaces (hero, sidebar, ambient glow) */
+  --brand: oklch(0.635 0.19 50);
+  --brand-strong: oklch(0.56 0.185 42);
+  --brand-glow: oklch(0.72 0.16 58 / 0.5);
+  --ambient-warm: oklch(0.82 0.11 62 / 0.55);
+  --ambient-cool: oklch(0.8 0.07 78 / 0.4);
+
+  /* Soft, warm-tinted elevation instead of flat neutral drop shadows */
+  --shadow-soft: 0 1px 2px oklch(0.36 0.05 55 / 0.05), 0 1px 3px oklch(0.36 0.05 55 / 0.05);
+  --shadow-card: 0 1px 2px oklch(0.36 0.05 55 / 0.04), 0 6px 16px -6px oklch(0.36 0.05 55 / 0.1);
+  --shadow-raised: 0 2px 6px oklch(0.36 0.05 55 / 0.06), 0 16px 36px -12px oklch(0.36 0.05 55 / 0.16);
+  --shadow-pop: 0 4px 10px oklch(0.36 0.05 55 / 0.08), 0 24px 48px -16px oklch(0.36 0.05 55 / 0.22);
 }
 
 .dark {
-  --background: oklch(0.13 0 0);
-  --foreground: oklch(0.93 0 0);
-  --card: oklch(0.17 0 0);
-  --card-foreground: oklch(0.93 0 0);
-  --primary: oklch(0.55 0.2 25);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.2 0 0);
-  --secondary-foreground: oklch(0.85 0 0);
-  --muted: oklch(0.2 0 0);
-  --muted-foreground: oklch(0.55 0 0);
-  --accent: oklch(0.22 0 0);
-  --accent-foreground: oklch(0.93 0 0);
-  --destructive: oklch(0.55 0.22 30);
-  --border: oklch(0.26 0 0);
-  --input: oklch(0.2 0 0);
-  --ring: oklch(0.55 0.2 25);
-  --subtle-border: oklch(1 0 0 / 0.06);
-  --popover: oklch(0.17 0 0);
-  --popover-foreground: oklch(0.93 0 0);
-  --surface-hover: oklch(1 0 0 / 0.03);
-  --surface-raised: oklch(0.16 0 0);
+  /* Warm charcoal — a whisper of tangerine keeps the dark theme from reading as
+     a cold slate panel and lets the orange accent sit naturally on top. */
+  --background: oklch(0.168 0.008 56);
+  --foreground: oklch(0.94 0.008 74);
+  --card: oklch(0.208 0.01 56);
+  --card-foreground: oklch(0.94 0.008 74);
+  --primary: oklch(0.68 0.175 55);
+  --primary-foreground: oklch(0.16 0.026 52);
+  --secondary: oklch(0.262 0.012 56);
+  --secondary-foreground: oklch(0.9 0.008 74);
+  --muted: oklch(0.262 0.012 56);
+  --muted-foreground: oklch(0.68 0.016 62);
+  --accent: oklch(0.3 0.015 56);
+  --accent-foreground: oklch(0.94 0.008 74);
+  --destructive: oklch(0.62 0.2 26);
+  --destructive-foreground: oklch(0.985 0.008 74);
+  --border: oklch(0.31 0.013 56);
+  --input: oklch(0.27 0.012 56);
+  --ring: oklch(0.68 0.175 55);
+  --subtle-border: oklch(0.92 0.02 74 / 0.09);
+  --popover: oklch(0.208 0.01 56);
+  --popover-foreground: oklch(0.94 0.008 74);
+  --surface-hover: oklch(0.95 0.03 74 / 0.05);
+  --surface-raised: oklch(0.238 0.011 56);
+
+  --brand: oklch(0.72 0.17 56);
+  --brand-strong: oklch(0.66 0.18 52);
+  --brand-glow: oklch(0.7 0.17 56 / 0.45);
+  --ambient-warm: oklch(0.62 0.17 56 / 0.3);
+  --ambient-cool: oklch(0.55 0.09 70 / 0.22);
+
+  --shadow-soft: 0 1px 2px oklch(0 0 0 / 0.4), 0 1px 3px oklch(0 0 0 / 0.32);
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.36), 0 8px 20px -8px oklch(0 0 0 / 0.5);
+  --shadow-raised: 0 4px 10px oklch(0 0 0 / 0.4), 0 18px 40px -14px oklch(0 0 0 / 0.6);
+  --shadow-pop: 0 6px 14px oklch(0 0 0 / 0.44), 0 28px 56px -18px oklch(0 0 0 / 0.7);
 }
 
 * {
   border-color: var(--border);
+}
+
+html {
+  font-family: var(--font-sans);
 }
 
 body {
@@ -86,6 +128,83 @@ body {
   color: var(--foreground);
   margin: 0;
   min-height: 100vh;
+  font-family: var(--font-sans);
+  /* Crisper glyphs on Windows WebView2 / macOS WKWebView, and proportional CJK
+     spacing so the interface reads as considered rather than default. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.006em;
+}
+
+/* Large headings get tighter optical tracking; numeric data lines up in tables
+   and dashboards via tabular figures. */
+h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+/* ── Signature helpers ─────────────────────────────────────────────────────
+   Warm ambient light + premium elevation, used sparingly on hero surfaces so
+   the boldness lives in one place and everything else stays disciplined. */
+.app-ambient {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-ambient::before {
+  content: "";
+  position: absolute;
+  inset: -10% -20% auto -20%;
+  height: 340px;
+  background:
+    radial-gradient(60% 120% at 18% 0%, var(--ambient-warm), transparent 62%),
+    radial-gradient(48% 120% at 88% 0%, var(--ambient-cool), transparent 66%);
+  filter: blur(6px);
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-card { box-shadow: var(--shadow-card); }
+.shadow-raised { box-shadow: var(--shadow-raised); }
+.shadow-pop { box-shadow: var(--shadow-pop); }
+
+/* Elevated card: warm hairline + soft depth + a quiet lift on hover. */
+.surface-card {
+  background: var(--card);
+  border: 1px solid var(--subtle-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 240ms var(--ease-soft), transform 240ms var(--ease-soft),
+    border-color 240ms var(--ease-soft);
+}
+
+.surface-card-interactive {
+  transition: box-shadow 240ms var(--ease-soft), transform 240ms var(--ease-soft),
+    border-color 240ms var(--ease-soft);
+}
+
+.surface-card-interactive:hover {
+  box-shadow: var(--shadow-raised);
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--primary) 30%, var(--subtle-border));
+}
+
+/* Tangerine wordmark / accent text */
+.text-gradient-brand {
+  background: linear-gradient(120deg, var(--brand-strong), var(--brand) 55%, oklch(0.78 0.14 66));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-card,
+  .surface-card-interactive:hover {
+    transition: none;
+    transform: none;
+  }
 }
 
 /* Scrollbar color for all platforms (preserves native overlay behavior on macOS) */
@@ -209,7 +328,7 @@ body {
 
 .chat-welcome-mascot {
   transform: translateY(0) scale(1);
-  filter: drop-shadow(0 0 0 oklch(0.55 0.2 25 / 0));
+  filter: drop-shadow(0 0 0 oklch(0.635 0.19 50 / 0));
   transform-origin: center bottom;
   will-change: transform, filter;
   transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), filter 260ms var(--ease-soft);
@@ -218,7 +337,7 @@ body {
 .chat-welcome-mascot:hover {
   transform: translateY(-3px) scale(1.03);
   animation: chat-welcome-mascot-hover 420ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
-  filter: drop-shadow(0 8px 16px oklch(0.55 0.2 25 / 0.12));
+  filter: drop-shadow(0 8px 16px oklch(0.635 0.19 50 / 0.18));
 }
 
 @media (prefers-reduced-motion: reduce) {

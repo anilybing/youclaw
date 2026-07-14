@@ -30,18 +30,23 @@ export function StartupError({ onRetry }: StartupErrorProps) {
         <div className="w-full max-w-lg space-y-8">
           {/* Logo & Title */}
           <div className="text-center">
-            <div className="inline-block transition-transform hover:scale-105 duration-300">
+            <div className="relative inline-grid place-items-center transition-transform hover:scale-105 duration-300">
+              <span
+                aria-hidden
+                className="absolute inset-0 -z-10 rounded-[1.5rem] blur-xl opacity-70"
+                style={{ background: "radial-gradient(circle, var(--brand-glow), transparent 70%)" }}
+              />
               <img
                 src={logoUrl}
                 alt="XiaoJuClaw Logo"
-                className="w-20 h-20 p-2 mx-auto rounded-2xl shadow-lg border border-border/50 bg-white"
+                className="w-20 h-20 p-2 mx-auto rounded-[1.3rem] border border-[var(--subtle-border)] bg-white shadow-[var(--shadow-raised)]"
               />
             </div>
-            <h1 className="mt-5 text-2xl font-bold text-foreground tracking-tight">XiaoJuClaw</h1>
+            <h1 className="mt-5 text-2xl font-bold tracking-tight"><span className="text-gradient-brand">XiaoJuClaw</span></h1>
           </div>
 
           {/* Error Card */}
-          <div className="bg-card rounded-2xl shadow-lg border border-border/50 p-6 space-y-5">
+          <div className="bg-[var(--card)] rounded-2xl shadow-[var(--shadow-card)] border border-[var(--subtle-border)] p-6 space-y-5">
             <div className="flex items-start gap-3">
               <div className="bg-destructive/10 p-2.5 rounded-xl text-destructive shrink-0 mt-0.5">
                 <AlertTriangle className="h-5 w-5" />
@@ -72,7 +77,7 @@ export function StartupError({ onRetry }: StartupErrorProps) {
             </Button>
 
             {/* Contact Info */}
-            <div className="pt-3 border-t border-border/50 space-y-2">
+            <div className="pt-3 border-t border-[var(--subtle-border)] space-y-2">
               <p className="text-xs text-muted-foreground text-center">{t.startupError.contactHint}</p>
               <div className="flex items-center justify-center gap-4">
                 <a

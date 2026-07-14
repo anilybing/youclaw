@@ -58,7 +58,7 @@ function CopyableCommand({ command }: { command: string }) {
   }, [command])
 
   return (
-    <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2 font-mono text-xs">
+    <div className="flex items-center gap-2 bg-[var(--surface-raised)] border border-[var(--subtle-border)] rounded-lg px-3 py-2 font-mono text-xs">
       <Terminal size={14} className="text-muted-foreground shrink-0" />
       <code className="flex-1 text-foreground select-all break-all">{command}</code>
       <button
@@ -185,18 +185,23 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
         <div className="w-full max-w-lg space-y-6">
           {/* Logo & Title */}
           <div className="text-center">
-            <div className="inline-block transition-transform hover:scale-105 duration-300">
+            <div className="relative inline-grid place-items-center transition-transform hover:scale-105 duration-300">
+              <span
+                aria-hidden
+                className="absolute inset-0 -z-10 rounded-[1.5rem] blur-xl opacity-70"
+                style={{ background: "radial-gradient(circle, var(--brand-glow), transparent 70%)" }}
+              />
               <img
                 src={logoUrl}
                 alt="XiaoJuClaw Logo"
-                className="w-20 h-20 p-2 mx-auto rounded-2xl shadow-lg border border-border/50 bg-white"
+                className="w-20 h-20 p-2 mx-auto rounded-[1.3rem] border border-[var(--subtle-border)] bg-white shadow-[var(--shadow-raised)]"
               />
             </div>
-            <h1 className="mt-5 text-2xl font-bold text-foreground tracking-tight">XiaoJuClaw</h1>
+            <h1 className="mt-5 text-2xl font-bold tracking-tight"><span className="text-gradient-brand">XiaoJuClaw</span></h1>
           </div>
 
           {/* Header Card */}
-          <div className="bg-card rounded-2xl shadow-lg border border-border/50 p-6 space-y-5">
+          <div className="bg-[var(--card)] rounded-2xl shadow-[var(--shadow-card)] border border-[var(--subtle-border)] p-6 space-y-5">
             <div className="flex items-start gap-3">
               <div className="bg-amber-500/10 p-2.5 rounded-xl text-amber-500 shrink-0 mt-0.5">
                 <AlertTriangle className="h-5 w-5" />
@@ -229,7 +234,7 @@ export function EnvSetup({ dependencies }: EnvSetupProps) {
             </div>
 
             {/* Detection Status */}
-            <div className="flex items-center justify-center gap-2 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-center gap-2 pt-2 border-t border-[var(--subtle-border)]">
               {detected ? (
                 <>
                   <CheckCircle2 size={16} className="text-green-500" />
@@ -316,7 +321,7 @@ function DependencyCard({
   // Already satisfied (preinstalled or bundled on the USB drive): compact status row
   if (dep.available && installStatus === 'idle') {
     return (
-      <div className="bg-muted/30 rounded-xl border border-border/30 p-4 flex items-center gap-3">
+      <div className="bg-[var(--surface-raised)] rounded-xl border border-[var(--subtle-border)] p-4 flex items-center gap-3">
         <div className="bg-green-500/10 p-1.5 rounded-lg text-green-500 shrink-0">
           <CheckCircle2 className="h-4 w-4" />
         </div>
@@ -339,12 +344,12 @@ function DependencyCard({
   const isSuccess = installStatus === 'success'
 
   return (
-    <div className="bg-muted/30 rounded-xl border border-border/30 p-4 space-y-3">
+    <div className="bg-[var(--surface-raised)] rounded-xl border border-[var(--subtle-border)] p-4 space-y-3">
       {/* Dependency name and description */}
       <div className="flex items-start gap-2">
         <div className={isSuccess
           ? "bg-green-500/10 p-1.5 rounded-lg text-green-500 shrink-0 mt-0.5"
-          : "bg-red-500/10 p-1.5 rounded-lg text-red-500 shrink-0 mt-0.5"}
+          : "bg-destructive/10 p-1.5 rounded-lg text-destructive shrink-0 mt-0.5"}
         >
           {isSuccess ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
         </div>
@@ -372,7 +377,7 @@ function DependencyCard({
             )}
           </div>
         ) : installStatus === 'error' ? (
-          <div className="text-sm text-red-500 font-medium">
+          <div className="text-sm text-destructive font-medium">
             {t.envSetup.installFailed}
           </div>
         ) : (

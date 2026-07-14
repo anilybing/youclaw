@@ -322,7 +322,7 @@ export function VoicePanel() {
       <p className="text-xs text-muted-foreground">{t.voice.settingsSubtitle}</p>
 
       {/* 服务商快速配置：一次填写，按能力分发 */}
-      <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-4">
+      <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-4">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-primary shrink-0" />
           <h4 className="text-xs font-semibold uppercase tracking-widest">{t.media.quickTitle}</h4>

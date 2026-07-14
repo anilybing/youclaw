@@ -128,7 +128,7 @@ export function AssistantMessage({ message, isLast = false }: { message: Message
         <Avatar className="h-8 w-8">
           <AvatarImage src="/icon.svg" alt="XiaoJuClaw" />
 
-          <AvatarFallback className="bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-[10px] font-semibold">
+          <AvatarFallback className="bg-gradient-to-br from-primary/25 to-primary/10 text-[10px] font-semibold text-primary">
             AI
           </AvatarFallback>
         </Avatar>

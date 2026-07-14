@@ -273,9 +273,9 @@ export function Logs() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Top bar: Title + filters */}
-      <div className="p-4 pb-3 border-b border-border shrink-0 space-y-3">
+      <div className="p-4 pb-3 border-b border-[var(--subtle-border)] shrink-0 space-y-3">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold">{t.logs.title}</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{t.logs.title}</h1>
           {isToday && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-400">
               <span className="relative flex h-2 w-2">

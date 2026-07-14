@@ -10,24 +10,34 @@
          窗口 visible:false 由 Rust 尽早 show，而前端 startup() 要先 await 端口探测+hydrate 才渲染，
          这段空白期由本遮罩覆盖；React 挂载后 main.tsx 淡出并移除 #xjc-splash。
          主题跟随系统 prefers-color-scheme（应用默认主题即 system），避免白闪。 */
-      html, body { margin: 0; height: 100%; background: oklch(0.985 0 0); }
-      @media (prefers-color-scheme: dark) { html, body { background: oklch(0.13 0 0); } }
+      html, body { margin: 0; height: 100%; background: oklch(0.986 0.005 73); }
+      @media (prefers-color-scheme: dark) { html, body { background: oklch(0.168 0.008 56); } }
       #xjc-splash {
         position: fixed; inset: 0; z-index: 2147483000;
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-        background: oklch(0.985 0 0); color: oklch(0.15 0 0);
-        font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        background:
+          radial-gradient(60% 80% at 50% 34%, oklch(0.82 0.11 62 / 0.5), transparent 70%),
+          oklch(0.986 0.005 73);
+        color: oklch(0.23 0.014 55);
+        font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
         transition: opacity .28s ease;
       }
-      @media (prefers-color-scheme: dark) { #xjc-splash { background: oklch(0.13 0 0); color: oklch(0.93 0 0); } }
+      @media (prefers-color-scheme: dark) {
+        #xjc-splash {
+          background:
+            radial-gradient(60% 80% at 50% 34%, oklch(0.62 0.17 56 / 0.28), transparent 70%),
+            oklch(0.168 0.008 56);
+          color: oklch(0.94 0.008 74);
+        }
+      }
       #xjc-splash.xjc-hide { opacity: 0; pointer-events: none; }
       #xjc-splash .xjc-spinner {
         width: 34px; height: 34px; border-radius: 50%;
-        border: 3px solid oklch(0.5 0.2 25 / 0.22);
-        border-top-color: oklch(0.5 0.2 25);
+        border: 3px solid oklch(0.635 0.19 50 / 0.22);
+        border-top-color: oklch(0.635 0.19 50);
         animation: xjc-spin .8s linear infinite;
       }
-      #xjc-splash .xjc-brand { font-size: 18px; font-weight: 600; letter-spacing: .3px; }
+      #xjc-splash .xjc-brand { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
       #xjc-splash .xjc-sub { font-size: 12px; opacity: .5; }
       @keyframes xjc-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { #xjc-splash .xjc-spinner { animation-duration: 2s; } }

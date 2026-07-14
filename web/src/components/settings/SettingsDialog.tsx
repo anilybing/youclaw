@@ -74,18 +74,18 @@ export function SettingsDialog({ open, onOpenChange, initialTab, allowedTabs }: 
         </DialogClose>
 
         {/* Sidebar */}
-        <div className="w-[200px] bg-muted/50 border-r border-border p-4 flex flex-col shrink-0">
-          <h3 className="text-base font-semibold px-3 mb-4">{t.settings.title}</h3>
+        <div className="w-[200px] bg-[var(--surface-raised)] border-r border-[var(--subtle-border)] p-4 flex flex-col shrink-0">
+          <h3 className="text-base font-semibold tracking-tight px-3 mb-4">{t.settings.title}</h3>
           <div className="flex-1 space-y-0.5">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setCurrentTab(tab.id)}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)]",
                   activeTab === tab.id
-                    ? "bg-primary text-primary-foreground shadow-md"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-[var(--shadow-soft)]"
+                    : "text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground"
                 )}
               >
                 <tab.icon size={16} />

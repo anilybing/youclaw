@@ -115,10 +115,10 @@ export function TaskDeliveryFields({
             onClick={() => onModeChange(value)}
             disabled={disabled}
             className={cn(
-              'px-3 py-1.5 text-xs rounded-md border transition-colors',
+              'px-3 py-1.5 text-xs rounded-md border transition-all duration-200 ease-[var(--ease-soft)]',
               mode === value
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-accent/30 border-border text-muted-foreground hover:text-foreground',
+                ? 'bg-primary text-primary-foreground border-primary shadow-[var(--shadow-soft)]'
+                : 'bg-[var(--surface-raised)] border-[var(--subtle-border)] text-muted-foreground hover:text-foreground hover:border-primary/30',
               disabled && 'cursor-not-allowed opacity-50',
             )}
           >
@@ -132,7 +132,7 @@ export function TaskDeliveryFields({
       </p>
 
       {mode === 'push' && (
-        <div className="space-y-3 rounded-md border border-border bg-accent/10 p-3">
+        <div className="space-y-3 rounded-lg border border-[var(--subtle-border)] bg-[var(--surface-raised)] p-3">
           {options.length > 0 && (
             <div className="space-y-1.5">
               <label className="block text-xs font-medium text-foreground/85">{t.tasks.deliveryChannel}</label>
@@ -189,10 +189,10 @@ export function TaskDeliveryFields({
                     disabled={disabled}
                     title={session.chatId}
                     className={cn(
-                      'max-w-[280px] truncate rounded-full border px-2.5 py-1 text-xs transition-colors',
+                      'max-w-[280px] truncate rounded-full border px-2.5 py-1 text-xs transition-all duration-200 ease-[var(--ease-soft)]',
                       target === session.chatId
                         ? 'border-primary bg-primary/10 text-foreground'
-                        : 'border-border bg-accent/20 text-muted-foreground hover:text-foreground',
+                        : 'border-[var(--subtle-border)] bg-[var(--surface-raised)] text-muted-foreground hover:text-foreground hover:border-primary/30',
                       disabled && 'cursor-not-allowed opacity-50',
                     )}
                   >

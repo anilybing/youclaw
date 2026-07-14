@@ -16,7 +16,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
       className={cn(
         "group/input-group dark:bg-input/30 relative flex w-full items-center rounded-2xl outline-none",
         "border border-[var(--subtle-border)]",
-        "shadow-[0_0_0_1px_var(--subtle-border),0_2px_8px_oklch(0_0_0/0.08)]",
+        "shadow-[0_0_0_1px_var(--subtle-border),0_2px_10px_-2px_oklch(0.36_0.05_55/0.1)]",
         "transition-[color,box-shadow,border-color] duration-200 ease-[var(--ease-soft)]",
         "h-9 has-[>textarea]:h-auto",
 
@@ -26,9 +26,9 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
         "has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>[data-align=block-start]]:[&>input]:pb-3",
         "has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-end]]:[&>input]:pt-3",
 
-        // Focus state — primary color glow
-        "has-[[data-slot=input-group-control]:focus-visible]:border-primary/40",
-        "has-[[data-slot=input-group-control]:focus-visible]:shadow-[0_0_0_1px_var(--subtle-border),0_0_0_4px_oklch(0.55_0.2_25/0.12),0_2px_8px_oklch(0_0_0/0.08)]",
+        // Focus state — tangerine brand glow
+        "has-[[data-slot=input-group-control]:focus-visible]:border-primary/45",
+        "has-[[data-slot=input-group-control]:focus-visible]:shadow-[0_0_0_1px_var(--subtle-border),0_0_0_4px_oklch(0.635_0.19_50/0.16),0_2px_10px_-2px_oklch(0.36_0.05_55/0.1)]",
 
         // Error state.
         "has-[[data-slot][aria-invalid=true]]:ring-destructive/20 has-[[data-slot][aria-invalid=true]]:border-destructive dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40",

@@ -117,7 +117,7 @@ export function UserMessage({ message }: { message: Message }) {
               </Attachments>
             )}
             {hasContent && (
-              <div className="w-fit max-w-[min(38rem,100%)] overflow-hidden rounded-2xl bg-secondary px-4 py-2.5 text-foreground">
+              <div className="w-fit max-w-[min(38rem,100%)] overflow-hidden rounded-2xl rounded-tr-md border border-[var(--subtle-border)] bg-secondary px-4 py-2.5 text-foreground shadow-[var(--shadow-soft)]">
                 <MessageResponse className="chat-prose chat-user-bubble">
                   {formattedContent}
                 </MessageResponse>

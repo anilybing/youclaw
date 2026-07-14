@@ -521,10 +521,10 @@ export function ModelsPanel() {
             <button
               onClick={() => handleSetActiveProvider(ActiveModelProvider.Builtin)}
               className={cn(
-                "relative flex items-start gap-4 p-5 rounded-2xl border-2 text-left transition-all",
+                "relative flex items-start gap-4 p-5 rounded-2xl border text-left transition-all duration-200 ease-[var(--ease-soft)]",
                 isBuiltinActive
                   ? "border-primary bg-primary/5"
-                  : "border-border hover:border-muted-foreground/30"
+                  : "border-[var(--subtle-border)] hover:border-primary/30"
               )}
             >
               <div className={cn(
@@ -550,10 +550,10 @@ export function ModelsPanel() {
           <button
             onClick={() => handleSetActiveProvider(ActiveModelProvider.Custom)}
             className={cn(
-              "relative flex items-start gap-4 p-5 rounded-2xl border-2 text-left transition-all",
+              "relative flex items-start gap-4 p-5 rounded-2xl border text-left transition-all duration-200 ease-[var(--ease-soft)]",
               activeModel.provider === ActiveModelProvider.Custom
                 ? "border-primary bg-primary/5"
-                : "border-border hover:border-muted-foreground/30",
+                : "border-[var(--subtle-border)] hover:border-primary/30",
               customModels.length === 0 && "opacity-50 cursor-not-allowed"
             )}
             disabled={customModels.length === 0}
@@ -589,10 +589,10 @@ export function ModelsPanel() {
                 <div
                   key={model.id}
                   className={cn(
-                    "w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all",
+                    "w-full flex items-center justify-between p-4 rounded-2xl border text-left transition-all duration-200 ease-[var(--ease-soft)]",
                     isActive
                       ? "border-primary bg-primary/5"
-                      : "border-border hover:border-muted-foreground/30"
+                      : "border-[var(--subtle-border)] hover:border-primary/30"
                   )}
                 >
                   <div className="flex items-center gap-4">
@@ -672,7 +672,7 @@ export function ModelsPanel() {
         </div>
 
         {customProviders.length === 0 ? (
-          <div className="text-sm text-muted-foreground py-6 text-center border-2 border-dashed rounded-2xl">
+          <div className="text-sm text-muted-foreground py-6 text-center border border-dashed border-[var(--subtle-border)] rounded-2xl">
             {t.settings.noProviderYet}
           </div>
         ) : (
@@ -680,8 +680,8 @@ export function ModelsPanel() {
             {customProviders.map((account) => {
               const models = modelsByProvider.get(account.id) ?? []
               return (
-                <div key={account.id} className="rounded-2xl border border-border overflow-hidden">
-                  <div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-3">
+                <div key={account.id} className="rounded-2xl border border-[var(--subtle-border)] overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 bg-[var(--surface-raised)] px-4 py-3">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold truncate">{account.name}</div>
                       <div className="text-xs text-muted-foreground truncate">

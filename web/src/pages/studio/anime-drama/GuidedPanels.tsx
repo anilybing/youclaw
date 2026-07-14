@@ -248,7 +248,7 @@ export function ProductionLog({
               key={step.id}
               className={cn(
                 'flex items-start gap-3 rounded-2xl border px-3 py-2.5 text-sm',
-                active && 'border-sky-400/50 bg-sky-400/10',
+                active && 'border-primary/50 bg-primary/10',
                 done && !active && 'border-emerald-500/20 bg-emerald-500/5',
                 !done && !active && 'border-border/40 bg-background/20 text-muted-foreground',
               )}
@@ -259,7 +259,7 @@ export function ProductionLog({
                 status === 'awaiting_approval' ? (
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
                 ) : (
-                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-sky-500" />
+                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
                 )
               ) : (
                 <Circle className="mt-0.5 h-4 w-4 shrink-0" />

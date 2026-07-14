@@ -46,9 +46,9 @@ function TaskCard({ task, locale, onSelect }: { task: WorkbenchTask; locale: Wor
     <button
       type="button"
       onClick={onSelect}
-      className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-border bg-background p-5 text-left transition-all hover:border-primary/50 hover:shadow-md"
+      className="group flex flex-col items-start gap-2.5 rounded-2xl border border-[var(--subtle-border)] bg-[var(--card)] p-5 text-left shadow-[var(--shadow-card)] transition-all duration-200 ease-[var(--ease-soft)] hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--shadow-raised)]"
     >
-      <span className="text-2xl" aria-hidden>{task.icon}</span>
+      <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/8 text-2xl transition-colors group-hover:bg-primary/12" aria-hidden>{task.icon}</span>
       <span className="flex items-center gap-2 text-sm font-semibold">
         {task.title[locale]}
         {task.workflowId && (
@@ -305,10 +305,10 @@ function CategoryTab({ active, label, count, onClick }: { active: boolean; label
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-all ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-all duration-200 ease-[var(--ease-soft)] ${
         active
-          ? 'bg-primary text-primary-foreground shadow-sm'
-          : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+          ? 'bg-primary text-primary-foreground shadow-[var(--shadow-soft)]'
+          : 'border border-[var(--subtle-border)] bg-[var(--surface-raised)] text-muted-foreground hover:border-primary/30 hover:text-foreground'
       }`}
     >
       <span>{label}</span>
@@ -341,10 +341,10 @@ export function Workbench() {
       {activeTask ? (
         <TaskForm task={activeTask} locale={locale} onBack={() => setActiveTask(null)} />
       ) : (
-        <div className="mx-auto w-full max-w-3xl space-y-6">
+        <div className="mx-auto w-full max-w-7xl space-y-6">
           <div>
-            <h2 className="text-xl font-bold">{locale === 'zh' ? '数字员工' : 'Digital Staff'}</h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <h2 className="text-2xl font-bold tracking-tight">{locale === 'zh' ? '数字员工' : 'Digital Staff'}</h2>
+            <p className="text-[15px] text-muted-foreground mt-1.5">
               {locale === 'zh'
                 ? '普通任务交给数字员工；自动流水线会逐步执行，并实时展示每一步和最终产出。'
                 : 'Send regular tasks to staff, or run an automated workflow with visible step-by-step progress.'}
@@ -383,7 +383,7 @@ export function Workbench() {
                     : 'More than a single prompt: tools, analysis and delivery run as visible steps.'}
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {workflowTasks.map((task) => (
                   <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
                 ))}
@@ -404,7 +404,7 @@ export function Workbench() {
                       {cat.label[locale]}
                       <span className="text-xs font-normal text-muted-foreground/60">{tasks.length}</span>
                     </h3>
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                       {tasks.map((task) => (
                         <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
                       ))}
@@ -414,7 +414,7 @@ export function Workbench() {
               })}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {allTasks.filter((task) => getTaskCategory(task) === activeCategory).map((task) => (
                 <TaskCard key={task.id} task={task} locale={locale} onSelect={() => setActiveTask(task)} />
               ))}

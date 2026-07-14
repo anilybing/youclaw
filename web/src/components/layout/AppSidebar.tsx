@@ -183,7 +183,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
     <aside
       className={cn(
         "shrink-0 flex flex-col overflow-hidden",
-        "bg-muted/30 border-r",
+        "bg-[var(--surface-raised)] border-r",
         "border-[var(--subtle-border)]",
         "transition-[width] duration-300 ease-[var(--ease-soft)]",
         isCollapsed ? "w-[52px]" : "w-[220px]",
@@ -261,7 +261,7 @@ export function AppSidebar({ onOpenSettings }: AppSidebarProps) {
                 "transition-all duration-200 ease-[var(--ease-soft)]",
                 isCollapsed ? "px-0.5" : "px-1",
                 isActive
-                  ? "bg-primary/10 text-primary font-medium"
+                  ? "bg-primary/10 text-primary font-medium ring-1 ring-inset ring-primary/15 shadow-[var(--shadow-soft)]"
                   : "text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]",
               )
             }

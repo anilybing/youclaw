@@ -257,7 +257,7 @@ export function AccountPanel() {
       </div>
 
       {/* Credit balance card */}
-      <div className="rounded-2xl border-2 border-border p-5">
+      <div className="rounded-2xl border border-[var(--subtle-border)] bg-[var(--card)] p-5 shadow-[var(--shadow-soft)]">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">{t.account.creditBalance}</div>
@@ -287,13 +287,13 @@ export function AccountPanel() {
         {transactions === null ? (
           <div className="text-sm text-muted-foreground text-center py-4">{t.common.loading}</div>
         ) : transactions.length === 0 ? (
-          <div className="text-sm text-muted-foreground text-center py-6 border-2 border-dashed rounded-2xl">
+          <div className="text-sm text-muted-foreground text-center py-6 border border-dashed border-[var(--subtle-border)] rounded-2xl">
             {t.common.noData}
           </div>
         ) : (
           <div className="space-y-2">
             {transactions.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between p-4 rounded-2xl border border-border hover:border-muted-foreground/20 transition-all cursor-pointer group">
+              <div key={tx.id} className="flex items-center justify-between p-4 rounded-2xl border border-[var(--subtle-border)] hover:border-primary/30 hover:shadow-[var(--shadow-soft)] transition-all duration-200 ease-[var(--ease-soft)] cursor-pointer group">
                 <div className="min-w-0 flex-1 flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
                     <Coins size={14} className="text-muted-foreground" />

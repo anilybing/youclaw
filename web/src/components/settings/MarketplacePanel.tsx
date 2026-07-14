@@ -111,7 +111,7 @@ export function MarketplacePanel() {
       </div>
 
       {/* [XJC] 第三方技能源开关：本地偏好即时生效，不依赖后端设置加载 */}
-      <div className="flex items-center justify-between gap-4 rounded-2xl border border-border p-4 max-w-2xl">
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-[var(--subtle-border)] p-4 max-w-2xl">
         <div className="min-w-0">
           <div className="text-sm font-medium text-foreground">{t.settings.showThirdPartySources}</div>
           <div className="mt-1 text-xs text-muted-foreground">{t.settings.showThirdPartySourcesDesc}</div>
@@ -138,7 +138,7 @@ export function MarketplacePanel() {
 
       {!settingsLoading && settingsState && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-border p-4 space-y-4 max-w-2xl">
+          <div className="rounded-2xl border border-[var(--subtle-border)] p-4 space-y-4 max-w-2xl">
             <div>
               <div className="text-sm font-medium">ClawHub</div>
               <div className="text-xs text-muted-foreground mt-1">{t.settings.marketplaceSourceClawhubHint}</div>
@@ -162,7 +162,7 @@ export function MarketplacePanel() {
               {settingsSaving ? t.settings.marketplaceSaving : t.settings.marketplaceSave}
             </Button>
             {settingsMessage && <span className="text-sm text-green-500">{settingsMessage}</span>}
-            {settingsError && <span className="text-sm text-red-400">{settingsError}</span>}
+            {settingsError && <span className="text-sm text-destructive">{settingsError}</span>}
           </div>
         </div>
       )}

@@ -261,8 +261,10 @@ export function Knowledge() {
         <div className="px-4 py-4">
           {docs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <BookOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground">{t.knowledge.empty}</p>
+              <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{t.knowledge.empty}</p>
             </div>
           ) : (
             <div className="rounded-lg border border-[var(--subtle-border)] overflow-hidden">

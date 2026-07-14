@@ -247,7 +247,7 @@ function BrowserGuideCard({ browserDiscovery }: { browserDiscovery: BrowserDisco
 
   return (
     <div className="space-y-4 overflow-hidden">
-      <div className="rounded-2xl border border-border bg-background/70 p-5 sm:p-6">
+      <div className="rounded-2xl border border-[var(--subtle-border)] bg-background/70 p-5 sm:p-6">
         <h2 className="text-lg font-semibold leading-tight sm:text-xl">{t.browser.guideTitle}</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground break-words">
           {t.browser.guideSummary}
@@ -283,7 +283,7 @@ function DetectedBrowsersCard({ browserDiscovery }: { browserDiscovery: BrowserD
   const browsers = browserDiscovery?.browsers ?? []
 
   return (
-    <div className="rounded-2xl border border-border bg-background/70 p-5 sm:p-6">
+    <div className="rounded-2xl border border-[var(--subtle-border)] bg-background/70 p-5 sm:p-6">
       <h3 className="text-base font-semibold">{t.browser.detectedBrowsersTitle}</h3>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.browser.detectedBrowsersHint}</p>
 
@@ -292,7 +292,7 @@ function DetectedBrowsersCard({ browserDiscovery }: { browserDiscovery: BrowserD
       ) : (
         <div className="mt-4 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
           {browsers.map((browser) => (
-            <div key={browser.id} className="rounded-xl border border-border/70 bg-background/80 px-4 py-3">
+            <div key={browser.id} className="rounded-xl border border-[var(--subtle-border)] bg-background/80 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="font-medium text-foreground">{browser.name}</div>
                 {browser.isRecommended && (
@@ -324,7 +324,7 @@ function DriverGuideCard({
   const { t } = useI18n()
 
   return (
-    <div className="h-full min-w-0 rounded-2xl border border-border bg-background/70 p-4 sm:p-5">
+    <div className="h-full min-w-0 rounded-2xl border border-[var(--subtle-border)] bg-background/70 p-4 sm:p-5">
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-0 flex-1 text-base font-semibold leading-tight break-words">{title}</div>
         {recommended && (
@@ -543,7 +543,7 @@ function ProfileDetail({
               <button
                 onClick={onRestart}
                 disabled={isBusy}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border hover:bg-accent transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-[var(--subtle-border)] hover:bg-accent transition-colors disabled:opacity-50"
               >
                 <RotateCw className="h-3.5 w-3.5" />
                 {t.browser.restartBrowser}
@@ -553,7 +553,7 @@ function ProfileDetail({
           <button
             data-testid="browser-delete-btn"
             onClick={onDelete}
-            className="p-2 rounded-xl hover:bg-destructive/20 text-muted-foreground hover:text-red-400 transition-colors"
+            className="p-2 rounded-xl hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
             title={t.browser.deleteLabel}
           >
             <Trash2 className="h-4 w-4" />
@@ -585,7 +585,7 @@ function ProfileDetail({
       </div>
 
       {isExtensionRelay && relay && (
-        <div className="rounded-2xl border border-border p-4 space-y-4">
+        <div className="rounded-2xl border border-[var(--subtle-border)] p-4 space-y-4">
           <MainBridgeCard
             mainBridge={mainBridge}
             relay={relay}
@@ -607,7 +607,7 @@ function ProfileDetail({
       )}
 
       {profile.runtime?.wsEndpoint && (
-        <div className="rounded-2xl border border-border p-4">
+        <div className="rounded-2xl border border-[var(--subtle-border)] p-4">
           <div className="text-xs text-muted-foreground mb-1.5">{t.browser.webSocketEndpointLabel}</div>
           <div className="text-sm font-mono break-all flex items-start gap-2">
             <Link className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
@@ -617,12 +617,12 @@ function ProfileDetail({
       )}
 
       {profile.runtime?.lastError && (
-        <div className="text-xs rounded-xl p-3 border bg-red-500/10 border-red-500/30 text-red-400 whitespace-pre-line">
+        <div className="text-xs rounded-xl p-3 border bg-destructive/10 border-destructive/30 text-destructive whitespace-pre-line">
           {profile.runtime.lastError}
         </div>
       )}
 
-      <div className="text-xs text-muted-foreground bg-muted/50 rounded-2xl p-4 border border-border space-y-1">
+      <div className="text-xs text-muted-foreground bg-muted/50 rounded-2xl p-4 border border-[var(--subtle-border)] space-y-1">
         <p className="font-medium text-foreground mb-2">{t.browser.usageTitle}</p>
         {isExtensionRelay ? (
           <>
@@ -746,7 +746,7 @@ function MainBridgeCard({
                 type="button"
                 onClick={onUseRecommended}
                 disabled={disabled}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
               >
                 {t.browser.mainBridgeUseRecommended}
               </button>
@@ -758,7 +758,7 @@ function MainBridgeCard({
                 value={mainBridge.selectedBrowserId ?? '__recommended__'}
                 onChange={(e) => onSelectBrowser(e.target.value === '__recommended__' ? null : e.target.value)}
                 disabled={disabled}
-                className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                className="w-full rounded-xl border border-[var(--subtle-border)] bg-muted px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
               >
                 <option value="__recommended__">{t.browser.mainBridgeUseRecommended}</option>
                 {mainBridge.browsers.map((browser) => (
@@ -771,7 +771,7 @@ function MainBridgeCard({
 
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
               {mainBridge.browsers.map((browser) => (
-                <div key={browser.id} className="rounded-xl border border-border/70 bg-background/70 px-4 py-3">
+                <div key={browser.id} className="rounded-xl border border-[var(--subtle-border)] bg-background/70 px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="font-medium text-foreground">{browser.name}</div>
                     {browser.isRecommended && (
@@ -806,7 +806,7 @@ function MainBridgeCard({
               <button
                 type="button"
                 onClick={() => copyText(effectiveBackendUrl, t.browser.copyBackendSuccess, t.browser.copyBackendFailed)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
               >
                 {t.browser.mainBridgeCopyBackend}
               </button>
@@ -817,14 +817,14 @@ function MainBridgeCard({
                     durationMs: 6000,
                   })
                 })}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
               >
                 {t.browser.downloadExtensionBundle}
               </button>
               <button
                 type="button"
                 onClick={() => copyText(extensionPackage.directoryPath, t.browser.copyExtensionPathSuccess, t.browser.copyExtensionPathFailed)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
               >
                 {t.browser.copyExtensionPath}
               </button>
@@ -850,14 +850,14 @@ function MainBridgeCard({
             type="button"
             onClick={onCreatePairing}
             disabled={disabled}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
           >
             {mainBridge?.pairingCode ? t.browser.refreshPairingCode : t.browser.generatePairingCode}
           </button>
         </div>
 
         {mainBridge?.pairingCode ? (
-          <div className="space-y-1 rounded-xl border border-border/70 bg-muted/20 p-4">
+          <div className="space-y-1 rounded-xl border border-[var(--subtle-border)] bg-muted/20 p-4">
             <div className="text-xs text-muted-foreground">{t.browser.pairingCodeLabel}</div>
             <div className="font-mono text-sm text-foreground">{mainBridge.pairingCode}</div>
             {mainBridge.pairingCodeExpiresAt && (
@@ -872,7 +872,7 @@ function MainBridgeCard({
               <button
                 type="button"
                 onClick={() => copyText(mainBridge.pairingCode ?? '', t.browser.copyPairingSuccess, t.browser.copyPairingFailed)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
               >
                 {t.browser.mainBridgeCopyPairing}
               </button>
@@ -880,7 +880,7 @@ function MainBridgeCard({
                 type="button"
                 onClick={onCreatePairing}
                 disabled={disabled}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
               >
                 {t.browser.refreshPairingCode}
               </button>
@@ -899,7 +899,7 @@ function MainBridgeCard({
         </p>
 
         {mainBridge?.connectedBrowserName ? (
-          <div className="rounded-xl border border-border/70 bg-muted/30 p-4 space-y-2">
+          <div className="rounded-xl border border-[var(--subtle-border)] bg-muted/30 p-4 space-y-2">
             <div className="text-xs text-muted-foreground">{t.browser.mainBridgeConnectedSession}</div>
             <div className="text-sm font-medium text-foreground">{mainBridge.connectedBrowserName}</div>
             <div className="text-xs text-muted-foreground">{t.browser.connectionModeLabel}: {mainBridge.connectionMode}</div>
@@ -916,7 +916,7 @@ function MainBridgeCard({
             )}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-xs leading-6 text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-[var(--subtle-border)] bg-muted/10 p-4 text-xs leading-6 text-muted-foreground">
             {t.browser.noConnectedTabHint}
           </div>
         )}
@@ -927,14 +927,14 @@ function MainBridgeCard({
         <button
           type="button"
           onClick={onToggleAdvancedRelay}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
         >
           <Link className="h-3.5 w-3.5" />
           {showAdvancedRelay ? t.browser.hideAdvancedRelay : t.browser.showAdvancedRelay}
         </button>
 
         {showAdvancedRelay && (
-          <div className="space-y-4 rounded-xl border border-border/70 bg-background/80 p-4">
+          <div className="space-y-4 rounded-xl border border-[var(--subtle-border)] bg-background/80 p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-xs text-muted-foreground mb-1.5">{t.browser.attachTokenLabel}</div>
@@ -944,7 +944,7 @@ function MainBridgeCard({
                 type="button"
                 onClick={onRelayRotateToken}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-border hover:bg-accent transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-[var(--subtle-border)] hover:bg-accent transition-colors disabled:opacity-50"
               >
                 <RotateCw className="h-3.5 w-3.5" />
                 {t.browser.rotateTokenLabel}
@@ -957,7 +957,7 @@ function MainBridgeCard({
                 value={relayUrl}
                 onChange={(e) => onRelayUrlChange(e.target.value)}
                 placeholder="http://127.0.0.1:9222 or ws://127.0.0.1:9222/devtools/browser/..."
-                className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <p className="mt-2 text-xs text-muted-foreground">
                 {t.browser.loopbackCdpUrlHint}
@@ -978,7 +978,7 @@ function MainBridgeCard({
                 type="button"
                 onClick={onRelayDisconnect}
                 disabled={disabled || !(mainBridge?.status === 'connected')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border hover:bg-accent transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-[var(--subtle-border)] hover:bg-accent transition-colors disabled:opacity-50"
               >
                 <Square className="h-3.5 w-3.5" />
                 {t.browser.disconnectLabel}
@@ -1009,7 +1009,7 @@ function StepCard({
   const { t } = useI18n()
 
   return (
-    <div className="rounded-xl border border-border/70 bg-background/80 p-4 space-y-4">
+    <div className="rounded-xl border border-[var(--subtle-border)] bg-background/80 p-4 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="text-sm font-medium text-foreground">{title}</div>
         {typeof done === 'boolean' && (
@@ -1030,7 +1030,7 @@ function StepCard({
 
 function InfoCard({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-border p-4">
+    <div className="rounded-2xl border border-[var(--subtle-border)] p-4">
       <div className="text-xs text-muted-foreground mb-1.5">{label}</div>
       <div className="text-sm font-semibold break-all">{value}</div>
     </div>
@@ -1234,7 +1234,7 @@ function BrowserProfileSetupDrawer({
     <Drawer open={open} onOpenChange={handleDrawerOpenChange} direction="right">
       <DrawerContent className="p-0">
         <div className="flex h-full flex-col overflow-hidden">
-          <DrawerHeader className="border-b border-border px-6 py-5">
+          <DrawerHeader className="border-b border-[var(--subtle-border)] px-6 py-5">
             <DrawerTitle>{t.browser.createTitle}</DrawerTitle>
             <DrawerDescription>
               {stage === 'choose-mode'
@@ -1270,7 +1270,7 @@ function BrowserProfileSetupDrawer({
                     onClick={() => setMode('remote-cdp')}
                   />
                 </div>
-                <div className="rounded-2xl border border-border bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">
+                <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">
                   {t.browser.setupUseMyBrowserSummary}
                 </div>
               </div>
@@ -1281,7 +1281,7 @@ function BrowserProfileSetupDrawer({
                 e.preventDefault()
                 void handleCreateSimpleProfile('managed')
               }}>
-                <div className="rounded-2xl border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                   {t.browser.setupManagedDescription}
                 </div>
                 <div>
@@ -1291,7 +1291,7 @@ function BrowserProfileSetupDrawer({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={t.browser.profileNamePlaceholder}
-                    className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] focus:outline-none focus:ring-1 focus:ring-ring"
                     autoFocus
                   />
                 </div>
@@ -1303,7 +1303,7 @@ function BrowserProfileSetupDrawer({
                 e.preventDefault()
                 void handleCreateSimpleProfile('remote-cdp')
               }}>
-                <div className="rounded-2xl border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                   {t.browser.setupRemoteDescription}
                 </div>
                 <div>
@@ -1313,7 +1313,7 @@ function BrowserProfileSetupDrawer({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={t.browser.profileNamePlaceholder}
-                    className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] focus:outline-none focus:ring-1 focus:ring-ring"
                     autoFocus
                   />
                 </div>
@@ -1324,7 +1324,7 @@ function BrowserProfileSetupDrawer({
                     value={cdpUrl}
                     onChange={(e) => setCdpUrl(e.target.value)}
                     placeholder="http://127.0.0.1:9222 or ws://host/devtools/browser/..."
-                    className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] focus:outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
               </form>
@@ -1341,7 +1341,7 @@ function BrowserProfileSetupDrawer({
                         key={entry.key}
                         className={cn(
                           'rounded-2xl border px-3 py-3 text-sm transition-colors min-h-[88px]',
-                          active ? 'border-primary bg-primary/5 text-foreground' : 'border-border bg-background/70 text-muted-foreground',
+                          active ? 'border-primary bg-primary/5 text-foreground' : 'border-[var(--subtle-border)] bg-background/70 text-muted-foreground',
                         )}
                       >
                         <div className="flex items-start gap-3">
@@ -1360,7 +1360,7 @@ function BrowserProfileSetupDrawer({
 
                 {stage === 'main-choose' && (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                    <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                       {t.browser.setupChooseBrowserDescription}
                     </div>
                     {mainBridge && mainBridge.browsers.length > 0 ? (
@@ -1370,7 +1370,7 @@ function BrowserProfileSetupDrawer({
                             type="button"
                             onClick={() => void handleSelectSetupBrowser(null)}
                             disabled={mainBusy}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
                           >
                             {t.browser.mainBridgeUseRecommended}
                           </button>
@@ -1381,7 +1381,7 @@ function BrowserProfileSetupDrawer({
                             value={mainBridge.selectedBrowserId ?? '__recommended__'}
                             onChange={(e) => void handleSelectSetupBrowser(e.target.value === '__recommended__' ? null : e.target.value)}
                             disabled={mainBusy}
-                            className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                            className="w-full rounded-xl border border-[var(--subtle-border)] bg-muted px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
                           >
                             <option value="__recommended__">{t.browser.mainBridgeUseRecommended}</option>
                             {mainBridge.browsers.map((browser) => (
@@ -1393,7 +1393,7 @@ function BrowserProfileSetupDrawer({
                         </div>
                         <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
                           {mainBridge.browsers.map((browser) => (
-                            <div key={browser.id} className="rounded-xl border border-border/70 bg-background/80 px-4 py-3">
+                            <div key={browser.id} className="rounded-xl border border-[var(--subtle-border)] bg-background/80 px-4 py-3">
                               <div className="flex flex-wrap items-center gap-2">
                                 <div className="font-medium text-foreground">{browser.name}</div>
                                 {browser.isRecommended && (
@@ -1408,7 +1408,7 @@ function BrowserProfileSetupDrawer({
                         </div>
                       </>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-4 text-sm text-muted-foreground">
+                      <div className="rounded-2xl border border-dashed border-[var(--subtle-border)] bg-muted/10 p-4 text-sm text-muted-foreground">
                         {t.browser.detectedBrowsersEmpty}
                       </div>
                     )}
@@ -1417,7 +1417,7 @@ function BrowserProfileSetupDrawer({
 
                 {stage === 'main-install' && (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                    <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                       {t.browser.setupInstallDescription}
                     </div>
                     {extensionPackage ? (
@@ -1431,7 +1431,7 @@ function BrowserProfileSetupDrawer({
                           <button
                             type="button"
                             onClick={() => copyText(effectiveBackendUrl, t.browser.copyBackendSuccess, t.browser.copyBackendFailed)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
                           >
                             {t.browser.mainBridgeCopyBackend}
                           </button>
@@ -1442,19 +1442,19 @@ function BrowserProfileSetupDrawer({
                                 durationMs: 6000,
                               })
                             })}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
                           >
                             {t.browser.downloadExtensionBundle}
                           </button>
                           <button
                             type="button"
                             onClick={() => copyText(extensionPackage.directoryPath, t.browser.copyExtensionPathSuccess, t.browser.copyExtensionPathFailed)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
                           >
                             {t.browser.copyExtensionPath}
                           </button>
                         </div>
-                        <ol className="space-y-2 rounded-2xl border border-border bg-background/70 p-4 text-sm text-muted-foreground">
+                        <ol className="space-y-2 rounded-2xl border border-[var(--subtle-border)] bg-background/70 p-4 text-sm text-muted-foreground">
                           <li>{t.browser.setupInstallStep1}</li>
                           <li>{t.browser.setupInstallStep2}</li>
                           <li>{t.browser.setupInstallStep3}</li>
@@ -1462,7 +1462,7 @@ function BrowserProfileSetupDrawer({
                         </ol>
                       </>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-4 text-sm text-muted-foreground">
+                      <div className="rounded-2xl border border-dashed border-[var(--subtle-border)] bg-muted/10 p-4 text-sm text-muted-foreground">
                         {t.browser.extensionPackageUnavailable}
                       </div>
                     )}
@@ -1471,23 +1471,23 @@ function BrowserProfileSetupDrawer({
 
                 {stage === 'main-connect' && (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                    <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                       {t.browser.setupConnectDescription}
                     </div>
-                    <div className="space-y-3 rounded-2xl border border-border bg-background/80 p-4">
+                    <div className="space-y-3 rounded-2xl border border-[var(--subtle-border)] bg-background/80 p-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => void handleCreateSetupPairing()}
                           disabled={mainBusy}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
                         >
                           {mainBridge?.pairingCode ? t.browser.refreshPairingCode : t.browser.generatePairingCode}
                         </button>
                         <button
                           type="button"
                           onClick={() => copyText(effectiveBackendUrl, t.browser.copyBackendSuccess, t.browser.copyBackendFailed)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
                         >
                           {t.browser.mainBridgeCopyBackend}
                         </button>
@@ -1504,7 +1504,7 @@ function BrowserProfileSetupDrawer({
                           <button
                             type="button"
                             onClick={() => copyText(mainBridge.pairingCode ?? '', t.browser.copyPairingSuccess, t.browser.copyPairingFailed)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--subtle-border)] px-3 py-2 text-xs font-medium hover:bg-accent transition-colors"
                           >
                             {t.browser.mainBridgeCopyPairing}
                           </button>
@@ -1514,13 +1514,13 @@ function BrowserProfileSetupDrawer({
                           {t.browser.setupPairingUsedConnected}
                         </div>
                       ) : (
-                        <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
+                        <div className="rounded-xl border border-dashed border-[var(--subtle-border)] bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
                           {t.browser.setupConnectGenerateHint}
                         </div>
                       )}
                     </div>
                     {mainBridge?.connectedBrowserName ? (
-                      <div className="space-y-2 rounded-2xl border border-border bg-background/80 p-4">
+                      <div className="space-y-2 rounded-2xl border border-[var(--subtle-border)] bg-background/80 p-4">
                         <div className="text-xs text-muted-foreground">{t.browser.mainBridgeConnectedSession}</div>
                         <div className="text-sm font-medium text-foreground">{mainBridge.connectedBrowserName}</div>
                         {mainBridge.connectedTabTitle && (
@@ -1536,7 +1536,7 @@ function BrowserProfileSetupDrawer({
                         )}
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-4 text-sm text-muted-foreground">
+                      <div className="rounded-2xl border border-dashed border-[var(--subtle-border)] bg-muted/10 p-4 text-sm text-muted-foreground">
                         {t.browser.setupConnectWaiting}
                       </div>
                     )}
@@ -1545,7 +1545,7 @@ function BrowserProfileSetupDrawer({
 
                 {stage === 'main-finish' && (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+                    <div className="rounded-2xl border border-[var(--subtle-border)] bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
                       {t.browser.setupFinishDescription}
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1559,7 +1559,7 @@ function BrowserProfileSetupDrawer({
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder={mainBridge?.connectedBrowserName ?? t.browser.profileNamePlaceholder}
-                        className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                        className="w-full px-3 py-2 text-sm rounded-xl bg-muted border border-[var(--subtle-border)] focus:outline-none focus:ring-1 focus:ring-ring"
                         autoFocus
                       />
                     </div>
@@ -1568,16 +1568,16 @@ function BrowserProfileSetupDrawer({
               </div>
             )}
 
-            {error && <p data-testid="browser-form-error" className="mt-4 text-xs text-red-400">{error}</p>}
+            {error && <p data-testid="browser-form-error" className="mt-4 text-xs text-destructive">{error}</p>}
           </div>
 
-          <DrawerFooter className="border-t border-border px-6 py-4">
+          <DrawerFooter className="border-t border-[var(--subtle-border)] px-6 py-4">
             {stage === 'choose-mode' ? (
               <>
                 <button
                   type="button"
                   onClick={() => handleDrawerOpenChange(false)}
-                  className="px-5 py-2 text-sm font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent transition-colors"
+                  className="px-5 py-2 text-sm font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent transition-colors"
                 >
                   {t.common.cancel}
                 </button>
@@ -1595,7 +1595,7 @@ function BrowserProfileSetupDrawer({
                 <button
                   type="button"
                   onClick={() => setStage('choose-mode')}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent transition-colors"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent transition-colors"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   {t.common.back}
@@ -1614,7 +1614,7 @@ function BrowserProfileSetupDrawer({
                 <button
                   type="button"
                   onClick={() => setStage('choose-mode')}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent transition-colors"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent transition-colors"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   {t.common.back}
@@ -1638,7 +1638,7 @@ function BrowserProfileSetupDrawer({
                     if (stage === 'main-connect') setStage('main-install')
                     if (stage === 'main-finish') setStage('main-connect')
                   }}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent transition-colors"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent transition-colors"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   {t.common.back}
@@ -1668,7 +1668,7 @@ function BrowserProfileSetupDrawer({
                       type="button"
                       onClick={() => setupSession?.id && void loadSetupMainBridge(setupSession.id)}
                       disabled={!setupSession?.id || mainBusy}
-                      className="px-5 py-2 text-sm font-medium rounded-xl border border-border text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                      className="px-5 py-2 text-sm font-medium rounded-xl border border-[var(--subtle-border)] text-muted-foreground hover:bg-accent transition-colors disabled:opacity-50"
                     >
                       {t.browser.mainBridgeRefresh}
                     </button>
@@ -1722,7 +1722,7 @@ function ModeOptionCard({
         'rounded-2xl border p-4 text-left transition-colors',
         selected
           ? 'border-primary bg-primary/5 shadow-sm'
-          : 'border-border bg-background hover:bg-accent/40',
+          : 'border-[var(--subtle-border)] bg-background hover:bg-accent/40',
       )}
     >
       <div className="flex flex-wrap items-start gap-2">

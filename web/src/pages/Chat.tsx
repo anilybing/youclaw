@@ -216,7 +216,7 @@ export function Chat() {
                 ref={searchInputRef}
                 type="text"
                 data-testid="chat-search"
-                className="w-full bg-[var(--surface-raised)] border border-[var(--subtle-border)] rounded-xl px-3 py-1.5 pr-7 text-sm transition-all duration-200 ease-[var(--ease-soft)] focus:outline-none focus:border-primary/40 focus:shadow-[0_0_0_3px_oklch(0.55_0.2_25/0.1)]"
+                className="w-full bg-[var(--surface-raised)] border border-[var(--subtle-border)] rounded-xl px-3 py-1.5 pr-7 text-sm transition-all duration-200 ease-[var(--ease-soft)] focus:outline-none focus:border-primary/40 focus:shadow-[0_0_0_3px_oklch(0.635_0.19_50/0.15)]"
                 placeholder={t.sidebar.search}
                 value={chatCtx.searchQuery}
                 onChange={(e) => chatCtx.setSearchQuery(e.target.value)}
@@ -314,14 +314,19 @@ export function Chat() {
                       : "translate-y-3 opacity-0",
                   )}
                 >
-                  <div className="mb-3 mx-auto w-fit pointer-events-auto">
+                  <div className="relative mb-4 mx-auto w-fit pointer-events-auto">
+                    <span
+                      aria-hidden
+                      className="absolute left-1/2 top-1/2 -z-10 h-36 w-36 -translate-x-1/2 -translate-y-1/2 rounded-full blur-2xl"
+                      style={{ background: "radial-gradient(circle, var(--brand-glow), transparent 70%)" }}
+                    />
                     <img
                       src="/icon.svg"
                       alt="XiaoJuClaw"
                       className="chat-welcome-mascot h-24 w-24"
                     />
                   </div>
-                  <h1 className="text-2xl font-semibold tracking-tight">
+                  <h1 className="text-[1.7rem] font-semibold tracking-tight">
                     {t.chat.welcome}
                   </h1>
                   <p className="mt-4 text-sm text-muted-foreground/70 max-w-md mx-auto leading-relaxed">

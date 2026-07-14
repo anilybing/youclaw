@@ -22,6 +22,8 @@ import { useDragRegion } from "@/hooks/useDragRegion"
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { EmptyState } from '@/components/ui/page'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
@@ -128,12 +130,12 @@ const INLINE_FIELD_LABEL_CLASS = 'flex items-center gap-1 text-sm font-medium te
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    active: 'bg-green-500/20 text-green-400',
-    paused: 'bg-yellow-500/20 text-yellow-400',
-    completed: 'bg-zinc-500/20 text-zinc-400',
+    active: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+    paused: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    completed: 'bg-muted text-muted-foreground',
   }
   return (
-    <span className={cn('px-2 py-0.5 rounded text-xs font-medium', colors[status] ?? 'bg-zinc-500/20 text-zinc-400')}>
+    <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', colors[status] ?? 'bg-muted text-muted-foreground')}>
       {status}
     </span>
   )
@@ -312,23 +314,25 @@ export function Tasks() {
         {/* Task list */}
         <div className="flex-1 overflow-y-auto">
           {tasks.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
+            <div className="flex items-center justify-center h-full px-4">
               <div className="text-center">
-                <Clock className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                <p className="text-sm">{t.tasks.noTasks}</p>
-                <p className="text-xs mt-1">{t.tasks.noTasksHint}</p>
+                <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <Clock className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-medium text-foreground">{t.tasks.noTasks}</p>
+                <p className="text-xs mt-1 text-muted-foreground">{t.tasks.noTasksHint}</p>
               </div>
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-[var(--subtle-border)]">
               {tasks.map((task) => (
                 <div
                   key={task.id}
                   data-testid="task-item"
                   onClick={() => selectTask(task.id)}
                   className={cn(
-                    'px-3 py-2.5 cursor-pointer transition-colors hover:bg-accent/30',
-                    selectedId === task.id && 'bg-accent/50'
+                    'px-3 py-2.5 cursor-pointer transition-all duration-200 ease-[var(--ease-soft)]',
+                    selectedId === task.id ? 'bg-primary/8 text-foreground' : 'hover:bg-[var(--surface-hover)]'
                   )}
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -397,11 +401,8 @@ export function Tasks() {
             onDelete={() => setDeleteId(selectedTask.id)}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <div className="text-center">
-              <CalendarClock className="h-12 w-12 mx-auto mb-4 opacity-20" />
-              <p className="text-sm">{t.tasks.selectTask}</p>
-            </div>
+          <div className="flex h-full items-center justify-center">
+            <EmptyState icon={<CalendarClock />} title={t.tasks.selectTask} />
           </div>
         )}
       </div>
@@ -457,7 +458,7 @@ function TaskDetail({
       {/* Title + action buttons */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-semibold">{task.name || t.tasks.noName}</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{task.name || t.tasks.noName}</h2>
           {task.description && <p className="text-sm text-muted-foreground mt-1">{task.description}</p>}
         </div>
         <div className="flex items-center gap-1">
@@ -498,7 +499,7 @@ function TaskDetail({
           <button
             data-testid="task-delete-btn"
             onClick={onDelete}
-            className="p-2 rounded hover:bg-destructive/20 text-muted-foreground hover:text-red-400 transition-colors"
+            className="p-2 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
             title={t.common.delete}
           >
             <Trash2 className="h-4 w-4" />
@@ -534,7 +535,7 @@ function TaskDetail({
       {/* Prompt */}
       <div>
         <div className="text-xs text-muted-foreground mb-1">{t.tasks.prompt}</div>
-        <div className="text-sm bg-accent/20 rounded p-3 border border-border whitespace-pre-wrap">{task.prompt}</div>
+        <div className="text-sm bg-[var(--surface-raised)] rounded-lg p-3 border border-[var(--subtle-border)] whitespace-pre-wrap">{task.prompt}</div>
       </div>
 
       {/* Run history */}
@@ -550,7 +551,7 @@ function TaskDetail({
               <div
                 key={log.id}
                 data-testid="task-log-item"
-                className="flex items-center gap-3 text-xs py-1.5 px-2 rounded bg-accent/10 border border-border"
+                className="flex items-center gap-3 text-xs py-1.5 px-2 rounded-lg bg-[var(--surface-raised)] border border-[var(--subtle-border)]"
               >
                 {log.status === 'success' ? (
                   <CheckCircle2 className="h-3.5 w-3.5 text-green-400 flex-shrink-0" />
@@ -562,7 +563,7 @@ function TaskDetail({
                 {log.delivery_status && (log.delivery_status !== 'skipped' || task.delivery_mode === 'push') && (
                   <DeliveryStatusBadge status={log.delivery_status} />
                 )}
-                {log.error && <span className="text-red-400 truncate flex-1">{log.error}</span>}
+                {log.error && <span className="text-destructive truncate flex-1">{log.error}</span>}
               </div>
             ))}
           </div>
@@ -995,7 +996,7 @@ function CronPresetBuilder({
             />
           </div>
 
-          <div className="rounded-md border border-dashed border-border bg-accent/10 px-3 py-2">
+          <div className="rounded-lg border border-dashed border-[var(--subtle-border)] bg-[var(--surface-raised)] px-3 py-2">
             <div className="text-[11px] text-muted-foreground">{t.tasks.cronPreview}</div>
             <div data-testid="task-cron-preview" className="mt-1 font-mono text-sm">
               {cronPreview}
@@ -1203,31 +1204,29 @@ function TaskForm({
 
   return (
     <div className="p-6">
-      <h2 className="text-lg font-semibold mb-4">{isEdit ? t.tasks.editTitle : t.tasks.createTitle}</h2>
+      <h2 className="text-lg font-semibold tracking-tight mb-4">{isEdit ? t.tasks.editTitle : t.tasks.createTitle}</h2>
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
         {/* Name */}
         <div>
           <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.name}</label>
-          <input
+          <Input
             data-testid="task-input-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t.tasks.namePlaceholder}
-            className="w-full rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
 
         {/* Description */}
         <div>
           <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.description}</label>
-          <input
+          <Input
             data-testid="task-input-desc"
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={t.tasks.descriptionPlaceholder}
-            className="w-full rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
 
@@ -1295,13 +1294,13 @@ function TaskForm({
           /* Prompt */
           <div>
             <label className={FORM_LABEL_WITH_MARGIN_CLASS}>{t.tasks.prompt}</label>
-            <textarea
+            <Textarea
               data-testid="task-input-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={3}
               placeholder={t.tasks.promptPlaceholder}
-              className="w-full resize-none rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="resize-none"
             />
           </div>
         )}
@@ -1342,10 +1341,10 @@ function TaskForm({
                   setOncePickerOpen(false)
                 }}
                 className={cn(
-                  'px-3 py-1.5 text-xs rounded-md border transition-colors',
+                  'px-3 py-1.5 text-xs rounded-md border transition-all duration-200 ease-[var(--ease-soft)]',
                   scheduleType === st
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-accent/30 border-border text-muted-foreground hover:text-foreground'
+                    ? 'bg-primary text-primary-foreground border-primary shadow-[var(--shadow-soft)]'
+                    : 'bg-[var(--surface-raised)] border-[var(--subtle-border)] text-muted-foreground hover:text-foreground hover:border-primary/30'
                 )}
               >
                 {st === 'interval' ? t.tasks.interval : st === 'cron' ? t.tasks.cron : t.tasks.once}
@@ -1420,7 +1419,7 @@ function TaskForm({
             />
           ) : (
             <div className="flex gap-2">
-              <input
+              <Input
                 data-testid="task-input-schedule"
                 type="number"
                 value={scheduleValue}
@@ -1429,7 +1428,7 @@ function TaskForm({
                 min="0"
                 step="any"
                 placeholder={t.tasks.intervalPlaceholder}
-                className="flex-1 rounded-md border border-border bg-accent/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="flex-1"
               />
               <Select
                 value={intervalUnit}
@@ -1466,25 +1465,15 @@ function TaskForm({
           />
         </div>
 
-        {error && <p data-testid="task-form-error" className="text-xs text-red-400">{error}</p>}
+        {error && <p data-testid="task-form-error" className="text-xs text-destructive">{error}</p>}
 
         <div className="flex gap-2 pt-2">
-          <button
-            data-testid="task-submit-btn"
-            type="submit"
-            disabled={submitting}
-            className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
+          <Button data-testid="task-submit-btn" type="submit" disabled={submitting}>
             {submitting ? t.tasks.saving : isEdit ? t.common.save : t.common.create}
-          </button>
-          <button
-            data-testid="task-cancel-btn"
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-sm rounded-md border border-border text-muted-foreground hover:bg-accent transition-colors"
-          >
+          </Button>
+          <Button data-testid="task-cancel-btn" type="button" variant="outline" onClick={onCancel}>
             {t.common.cancel}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

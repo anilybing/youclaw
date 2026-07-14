@@ -212,7 +212,7 @@ export function AboutPanel() {
   return (
     <div className="flex flex-col items-center py-12 space-y-8">
       {/* App Logo */}
-      <div className="w-20 h-20 bg-primary rounded-3xl flex items-center justify-center shadow-lg">
+      <div className="w-20 h-20 bg-gradient-to-br from-primary to-[var(--brand-strong)] rounded-3xl flex items-center justify-center shadow-[var(--shadow-raised)]">
         <Cog size={40} className="text-primary-foreground" />
       </div>
 
