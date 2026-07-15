@@ -43,6 +43,25 @@ export async function compressImageForUpload(srcPath: string, maxBytes = 1_000_0
 }
 
 /**
+ * 把图缩放/裁剪到精确尺寸（默认 720x1280 竖屏）。部分编辑式模型(如 Qwen-Image-Edit)忽略 image_size、
+ * 输出自有分辨率(如 768x1360)，而 Wan2.2 I2V 要求输入匹配 image_size 枚举 → 尺寸不符会 Failed(空 reason)。
+ * scale cover + 居中裁剪保画面主体。ffmpeg 不可用/失败/尺寸已符则返回原图（best-effort）。
+ */
+export async function resizeToFrame(srcPath: string, outPath: string, width = 720, height = 1280): Promise<string> {
+  try {
+    if (!srcPath || !existsSync(srcPath)) return srcPath
+    await execFileAsync(ffmpegBin(), [
+      '-y', '-i', srcPath,
+      '-vf', `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`,
+      outPath,
+    ])
+    return existsSync(outPath) && statSync(outPath).size > 0 ? outPath : srcPath
+  } catch {
+    return srcPath
+  }
+}
+
+/**
  * 从视频抽取「真实末帧」为 PNG（项2 真前向连续：下镜起始帧 = 上镜真实末帧）。
  * 返回落盘 PNG 路径；ffmpeg 不可用/失败返回 null（调用方回退占位关键帧）。
  */

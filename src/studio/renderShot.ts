@@ -82,10 +82,11 @@ export async function renderShot(input: RenderShotInput): Promise<RenderShotOutc
     const outputDir = studioRunDir(runId, input.agentId, tier)
     const result = await provider.generate(params, { runId, agentId: input.agentId, shotId, tier, outputDir })
 
-    // 项2 真前向连续：live 渲染成功后用 ffmpeg 抽本镜「真实末帧」作 end_path（供下镜 start 继承 = 真连续，
-    // 替代预生成占位关键帧）。mock 不抽。best-effort：抽帧失败回退 provider endPath(通常 null→markShotRendered 保留原末帧)。
+    // 项2 真前向连续（架构抽检 a 定案·方案1）：仅「无原生首尾帧」的 provider(如 wan，result.endPath 为空)
+    // 在 live 渲染成功后用 ffmpeg 抽真实末帧作 end_path（供下镜 start 继承）。原生首尾帧 provider(如 Kling)
+    // 已回传 endPath=传入尾帧 → 直接用、不冗余抽帧（尊重 supportsLastFrame 语义）。mock live=false 不抽。
     let endPath = result.endPath
-    if (live && result.filePath) {
+    if (live && !endPath && result.filePath) {
       const endFrame = await extractLastFrame(result.filePath, resolve(studioRunDir(runId, input.agentId, 'frames'), `${shotId}_end.png`))
       if (endFrame) endPath = endFrame
     }

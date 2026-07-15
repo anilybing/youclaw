@@ -157,13 +157,36 @@ export class MockVideoProvider implements VideoProvider {
   }
 }
 
-/** live 端点/密钥解析：settings.studio 优先，回退 env（SILICONFLOW_*）。 */
-function resolveLiveConfig(tier: VideoTier): { baseUrl: string; apiKey: string; model: string } {
+export interface StudioVideoConfig { kind: string; baseUrl: string; apiKey: string; model: string }
+
+/**
+ * 按 tier 解析视频 provider 配置（多供应商路由）：nested settings.studio.draft/hq 优先 →
+ * 扁平字段(draftProvider/draftModel...) → env(SILICONFLOW_*)。key/baseUrl/model 可配 → 适配聚合器或直连。
+ */
+export function resolveVideoConfig(tier: VideoTier): StudioVideoConfig {
   const s = getStoredSettings().studio
-  const baseUrl = (s.baseUrl?.trim() || process.env.SILICONFLOW_BASE_URL?.trim() || '')
-  const apiKey = (s.apiKey?.trim() || process.env.SILICONFLOW_API_KEY?.trim() || '')
-  const model = ((tier === 'hq' ? s.hqModel : s.draftModel)?.trim() || '')
-  return { baseUrl, apiKey, model }
+  const nested = tier === 'hq' ? s.hq : s.draft
+  const kind = (nested?.kind?.trim() || (tier === 'hq' ? s.hqProvider : s.draftProvider) || (tier === 'hq' ? 'kling' : 'wan')).toLowerCase()
+  const baseUrl = nested?.baseUrl?.trim() || s.baseUrl?.trim() || process.env.SILICONFLOW_BASE_URL?.trim() || ''
+  const apiKey = nested?.apiKey?.trim() || s.apiKey?.trim() || process.env.SILICONFLOW_API_KEY?.trim() || ''
+  const model = nested?.model?.trim() || ((tier === 'hq' ? s.hqModel : s.draftModel)?.trim() || '')
+  return { kind, baseUrl, apiKey, model }
+}
+
+/** 首帧/尾帧图 → dataURI（provider 上传用）。校验扩展名与大小。 */
+function imageToDataUri(path: string): string {
+  const ext = extname(path).toLowerCase()
+  if (!VIDEO_INPUT_IMAGE_EXTS.has(ext)) throw new Error('图生视频输入仅支持 png/jpg/jpeg/webp')
+  const bytes = readFileSync(path)
+  if (bytes.byteLength > VIDEO_INPUT_IMAGE_MAX_BYTES) throw new Error('图生视频输入图过大（>10MB）')
+  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+  return `data:${mime};base64,${bytes.toString('base64')}`
+}
+
+/** 轮询间隔：env XJC_VIDEO_POLL_MS 覆盖（仅 CI/单测压到毫秒级）；生产 5s。 */
+function videoPollIntervalMs(): number {
+  const v = Number(process.env.XJC_VIDEO_POLL_MS)
+  return v > 0 ? v : VIDEO_POLL_INTERVAL_MS
 }
 
 /**
@@ -180,12 +203,12 @@ export class OpenAiCompatibleVideoProvider implements VideoProvider {
   constructor(readonly id: string, private readonly tier: VideoTier) {}
 
   isConfigured(): boolean {
-    const cfg = resolveLiveConfig(this.tier)
+    const cfg = resolveVideoConfig(this.tier)
     return Boolean(cfg.baseUrl && cfg.apiKey && cfg.model)
   }
 
   async generate(params: VideoGenParams, ctx: VideoGenContext): Promise<VideoGenResult> {
-    const cfg = resolveLiveConfig(this.tier)
+    const cfg = resolveVideoConfig(this.tier)
     if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
       throw new Error(`live 视频 provider「${this.id}」未配置：需 settings.studio（或 env SILICONFLOW_BASE_URL/API_KEY）+ ${this.tier} 档模型`)
     }
@@ -200,14 +223,7 @@ export class OpenAiCompatibleVideoProvider implements VideoProvider {
     const sizeMap: Record<string, string> = { '9:16': '720x1280', '16:9': '1280x720', '1:1': '960x960' }
     payload.image_size = (params.aspectRatio && sizeMap[params.aspectRatio]) ? sizeMap[params.aspectRatio] : '720x1280'
     // I2V：首帧转 base64（前向 I2V 兼底 —— SiliconFlow 无原生 FLF2V，lastFramePath 不作 provider 入参）
-    if (params.firstFramePath) {
-      const ext = extname(params.firstFramePath).toLowerCase()
-      if (!VIDEO_INPUT_IMAGE_EXTS.has(ext)) throw new Error('图生视频输入仅支持 png/jpg/jpeg/webp')
-      const bytes = readFileSync(params.firstFramePath)
-      if (bytes.byteLength > VIDEO_INPUT_IMAGE_MAX_BYTES) throw new Error('图生视频输入图过大（>10MB）')
-      const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
-      payload.image = `data:${mime};base64,${bytes.toString('base64')}`
-    }
+    if (params.firstFramePath) payload.image = imageToDataUri(params.firstFramePath)
 
     let submitRes: Response
     try {
@@ -226,8 +242,7 @@ export class OpenAiCompatibleVideoProvider implements VideoProvider {
     if (!requestId) throw new Error('视频提交返回缺 requestId')
 
     const deadline = startedAt + VIDEO_POLL_MAX_MS
-    // 轮询间隔可由 env 覆盖（仅 CI/单测把 5s 压到毫秒级；生产保持 5s）。
-    const pollIntervalMs = Number(process.env.XJC_VIDEO_POLL_MS) > 0 ? Number(process.env.XJC_VIDEO_POLL_MS) : VIDEO_POLL_INTERVAL_MS
+    const pollIntervalMs = videoPollIntervalMs()
     let videoUrl = ''
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, pollIntervalMs))
@@ -287,6 +302,128 @@ export class OpenAiCompatibleVideoProvider implements VideoProvider {
   }
 }
 
+/** Kling 聚合器/直连响应形态各异 → 容错解析 id/status/videoUrl。 */
+interface KlingBody {
+  requestId?: string; task_id?: string; taskId?: string; id?: string
+  status?: string; task_status?: string; state?: string; reason?: string; message?: string
+  url?: string; video_url?: string
+  results?: { videos?: Array<{ url?: string }> }
+  works?: Array<{ url?: string }>
+  videos?: Array<{ url?: string }>
+  data?: {
+    task_id?: string; taskId?: string; id?: string; status?: string; task_status?: string; state?: string
+    video_url?: string; url?: string; works?: Array<{ url?: string }>; videos?: Array<{ url?: string }>
+  }
+}
+function klingExtractId(b: KlingBody | null): string {
+  return String(b?.requestId || b?.task_id || b?.taskId || b?.data?.task_id || b?.data?.taskId || b?.id || b?.data?.id || '')
+}
+function klingExtractStatus(b: KlingBody | null): 'done' | 'failed' | 'pending' {
+  const raw = String(b?.status || b?.task_status || b?.state || b?.data?.status || b?.data?.task_status || b?.data?.state || '').toLowerCase()
+  if (['succeed', 'succeeded', 'success', 'completed', 'done'].includes(raw)) return 'done'
+  if (['failed', 'fail', 'error'].includes(raw)) return 'failed'
+  return 'pending'
+}
+function klingExtractVideoUrl(b: KlingBody | null): string {
+  return String(
+    b?.results?.videos?.[0]?.url || b?.video_url || b?.data?.video_url
+    || b?.data?.works?.[0]?.url || b?.data?.videos?.[0]?.url || b?.works?.[0]?.url || b?.videos?.[0]?.url
+    || b?.data?.url || b?.url || '',
+  )
+}
+
+/**
+ * Kling 2.1 Pro 首尾帧 provider（原生 FLF2V 双控；根治 S3 画风/角色/场景漂移 + 真镜间连续）。
+ * supportsLastFrame=true → 直接吃 params.lastFramePath 作 end_image，不再靠 ffmpeg 抽末帧兼底。
+ * Kling 非 OpenAI 原生 → 经聚合器(302.ai/Fal 等)或直连 REST；baseUrl/apiKey/model 走 settings.studio.<tier>。
+ * submit→poll→download 异步骨架 + 容错解析以适配多聚合器。仅 live 模式返回；¥ 预算硬闸兜底；HTTP 层全 mock 单测。
+ */
+export class KlingVideoProvider implements VideoProvider {
+  readonly supportsLastFrame = true
+  constructor(readonly id: string, private readonly tier: VideoTier) {}
+
+  isConfigured(): boolean {
+    const cfg = resolveVideoConfig(this.tier)
+    return Boolean(cfg.baseUrl && cfg.apiKey && cfg.model)
+  }
+
+  async generate(params: VideoGenParams, ctx: VideoGenContext): Promise<VideoGenResult> {
+    const cfg = resolveVideoConfig(this.tier)
+    if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
+      throw new Error(`live 视频 provider「${this.id}」(kling) 未配置：需 settings.studio.${this.tier}.{baseUrl,apiKey,model}`)
+    }
+    const throwIfCancelled = () => { if (ctx.signal?.aborted) throw new Error('视频生成已取消') }
+    throwIfCancelled()
+    mkdirSync(ctx.outputDir, { recursive: true })
+    const startedAt = Date.now()
+
+    const payload: Record<string, unknown> = {
+      model: cfg.model,
+      prompt: params.prompt,
+      mode: 'pro', // Pro 档才支持 end_image 首尾帧双控
+      duration: params.durationSec && params.durationSec >= 10 ? 10 : 5,
+      aspect_ratio: params.aspectRatio || '9:16',
+    }
+    if (params.firstFramePath) payload.start_image = imageToDataUri(params.firstFramePath)
+    if (params.lastFramePath) payload.end_image = imageToDataUri(params.lastFramePath) // 原生首尾帧=镜末构图锁定
+    if (params.seed != null) payload.seed = params.seed
+
+    const headers = { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' }
+    let submitRes: Response
+    try {
+      submitRes = await fetch(endpointUrl(cfg.baseUrl, '/video/submit'), {
+        method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(VIDEO_SUBMIT_TIMEOUT_MS),
+      })
+    } catch (err) {
+      throw new Error(`视频提交失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+    if (!submitRes.ok) throw new Error(`视频提交失败（HTTP ${submitRes.status}）`)
+    const requestId = klingExtractId((await submitRes.json().catch(() => null)) as KlingBody | null)
+    if (!requestId) throw new Error('视频提交返回缺 requestId/task_id')
+
+    const deadline = startedAt + VIDEO_POLL_MAX_MS
+    const pollIntervalMs = videoPollIntervalMs()
+    let videoUrl = ''
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, pollIntervalMs))
+      throwIfCancelled()
+      let statusRes: Response
+      try {
+        statusRes = await fetch(endpointUrl(cfg.baseUrl, '/video/status'), {
+          method: 'POST', headers, body: JSON.stringify({ requestId, task_id: requestId }), signal: AbortSignal.timeout(VIDEO_SUBMIT_TIMEOUT_MS),
+        })
+      } catch { continue }
+      if (!statusRes.ok) continue
+      const sb = (await statusRes.json().catch(() => null)) as KlingBody | null
+      const st = klingExtractStatus(sb)
+      if (st === 'done') { videoUrl = klingExtractVideoUrl(sb); if (videoUrl) break }
+      if (st === 'failed') {
+        const detail = (sb?.reason?.trim() || sb?.message?.trim() || JSON.stringify(sb ?? {}).slice(0, 500))
+        throw new Error(`视频生成失败：${detail || '供应商未给原因'}`)
+      }
+    }
+    if (!videoUrl) throw new Error('视频生成超时或未返回结果 URL（上限 10 分钟）')
+
+    const stem = `${sanitizeSegment(ctx.shotId)}_${this.tier}`
+    const filePath = resolve(ctx.outputDir, `${stem}.mp4`)
+    const dl = await fetchRemoteMediaToFile(videoUrl, filePath, { maxBytes: GENERATED_VIDEO_MAX_BYTES, timeoutMs: DOWNLOAD_TIMEOUT_MS, fetchFn: ctx.artifactFetchFn })
+    if (!dl || dl.bytesWritten === 0) throw new Error('视频产物下载为空')
+
+    const cost = TIER_COST[this.tier]
+    getLogger().info(
+      { runId: ctx.runId, shotId: ctx.shotId, tier: this.tier, provider: this.id, model: cfg.model, flf2v: Boolean(params.lastFramePath), category: 'studio' },
+      'Studio live video rendered (kling)',
+    )
+    return {
+      filePath, providerId: this.id, model: cfg.model,
+      costUsd: cost.costUsd, costCny: cost.costCny, credits: cost.credits,
+      durationMs: Date.now() - startedAt, dryRun: false,
+      endPath: params.lastFramePath ?? null, // 原生首尾帧：镜末=传入尾帧（已双控，供下镜继承）
+      meta: { runId: ctx.runId, shotId: ctx.shotId, tier: this.tier, model: cfg.model, requestId, flf2v: Boolean(params.lastFramePath) },
+    }
+  }
+}
+
 /** 当前视频渲染模式：env XJC_STUDIO_VIDEO_MODE（仅 CI/dry-run 覆盖）> settings.studio.videoRenderMode > mock。 */
 export function studioVideoMode(): 'mock' | 'live' {
   const envMode = (process.env.XJC_STUDIO_VIDEO_MODE ?? '').trim().toLowerCase()
@@ -299,12 +436,21 @@ export function studioVideoMode(): 'mock' | 'live' {
 }
 
 /**
- * 按 tier 解析 VideoProvider：mock 模式恒返回 MockVideoProvider；live 模式按路由表
- * {draft:draftProvider, hq:hqProvider} 返回 OpenAiCompatibleVideoProvider。
+ * 按 tier 解析 VideoProvider：mock 模式恒返回 MockVideoProvider；live 模式按 settings.studio.<tier>.kind
+ * 路由到对应实现——kling=KlingVideoProvider(原生首尾帧)，wan=OpenAiCompatibleVideoProvider(SiliconFlow)。
+ * seedance/hailuo/pixverse 评估已列、payload 适配待后续里程碑，暂回退 OpenAiCompatible 骨架。
  */
 export function resolveVideoProvider(tier: VideoTier): VideoProvider {
   if (studioVideoMode() === 'mock') return new MockVideoProvider()
-  const s = getStoredSettings().studio
-  const providerId = (tier === 'hq' ? s.hqProvider : s.draftProvider) || (tier === 'hq' ? 'kling' : 'wan')
-  return new OpenAiCompatibleVideoProvider(providerId, tier)
+  const cfg = resolveVideoConfig(tier)
+  switch (cfg.kind) {
+    case 'kling': return new KlingVideoProvider('kling', tier)
+    case 'wan': return new OpenAiCompatibleVideoProvider('wan', tier)
+    // 架构抽检 d：这些供应商评估已选型但 payload 适配未接入 → 显式报错，勿静默走 wan 骨架误判。
+    case 'seedance':
+    case 'hailuo':
+    case 'pixverse':
+      throw new Error(`视频 provider「${cfg.kind}」已选型但尚未接入（payload 适配待后续里程碑）；请改用 kind=wan/kling，或等该供应商接入。`)
+    default: return new OpenAiCompatibleVideoProvider(cfg.kind || 'wan', tier)
+  }
 }

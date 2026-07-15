@@ -170,22 +170,64 @@ export const MediaSettingsSchema = z.object({
 // videoRenderMode 默认 mock（不联网不烧钱）；env XJC_STUDIO_VIDEO_MODE 仅 CI/dry-run 覆盖。
 export const StudioVideoRenderModeSchema = z.enum(['mock', 'live'])
 
+// [XJC] 多供应商视频 provider（G0 多 provider 路由；不押宝单一供应商）。
+// wan=SiliconFlow(无原生首尾帧) / kling=Kling 2.1 Pro(首尾帧双控) / seedance / hailuo / pixverse。
+export const StudioVideoKindSchema = z.enum(['wan', 'kling', 'seedance', 'hailuo', 'pixverse'])
+export const StudioVideoProviderConfigSchema = z.object({
+  kind: StudioVideoKindSchema.default('wan'),
+  baseUrl: z.string().default(''),
+  apiKey: z.string().default(''),
+  model: z.string().default(''),
+})
+
+// [XJC] 关键帧图像 provider（跨镜角色一致；根治角色/画风漂移）。nano-banana=Gemini2.5 Flash Image。
+export const StudioImageKindSchema = z.enum(['kolors', 'nano-banana', 'flux-kontext', 'qwen-image'])
+export const StudioImageProviderConfigSchema = z.object({
+  kind: StudioImageKindSchema.default('kolors'),
+  baseUrl: z.string().default(''),
+  apiKey: z.string().default(''),
+  model: z.string().default(''),
+})
+
+// [XJC] VLM 质检（画风/角色/场景一致性自动打分；不过阈值标记重渲）。默认 qwen3-vl-plus。
+export const StudioQcConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  baseUrl: z.string().default(''),
+  apiKey: z.string().default(''),
+  model: z.string().default('qwen3-vl-plus'),
+  minScore: z.number().default(70),
+})
+
+const DEFAULT_STUDIO_VIDEO_DRAFT = { kind: 'wan' as const, baseUrl: '', apiKey: '', model: '' }
+const DEFAULT_STUDIO_VIDEO_HQ = { kind: 'kling' as const, baseUrl: '', apiKey: '', model: '' }
+const DEFAULT_STUDIO_IMAGE = { kind: 'kolors' as const, baseUrl: '', apiKey: '', model: '' }
+const DEFAULT_STUDIO_QC = { enabled: false, baseUrl: '', apiKey: '', model: 'qwen3-vl-plus', minScore: 70 }
+
 export const StudioSettingsSchema = z.object({
   videoRenderMode: StudioVideoRenderModeSchema.default('mock'),
   /** 每 run 媒体渲染花费硬顶（¥ 全口径；SiliconFlow 按 ¥ 计费，用户预算 ¥32）。 */
   maxRenderCnyPerRun: z.number().default(32),
-  /** tier→provider 路由（live 模式生效） */
+  /** 每档视频 provider（多供应商路由；kind+端点+密钥+模型均可配，适配聚合器或直连）。 */
+  draft: StudioVideoProviderConfigSchema.default(DEFAULT_STUDIO_VIDEO_DRAFT),
+  hq: StudioVideoProviderConfigSchema.default(DEFAULT_STUDIO_VIDEO_HQ),
+  /** 关键帧图像一致性 provider（Nano Banana 等）。 */
+  image: StudioImageProviderConfigSchema.default(DEFAULT_STUDIO_IMAGE),
+  /** VLM 质检打分。 */
+  qc: StudioQcConfigSchema.default(DEFAULT_STUDIO_QC),
+  // [deprecated 兼容保留] 扁平字段：wan/SiliconFlow 默认 + env 回退；优先用 draft/hq 的 kind/baseUrl/apiKey/model。
   draftProvider: z.string().default('wan'),
   hqProvider: z.string().default('kling'),
-  /** 各档视频模型 id（SiliconFlow） */
   draftModel: z.string().default('Wan-AI/Wan2.2-I2V-A14B'),
   hqModel: z.string().default(''),
-  /** live provider 端点/密钥；留空则回退 env（SILICONFLOW_BASE_URL / SILICONFLOW_API_KEY） */
   baseUrl: z.string().default(''),
   apiKey: z.string().default(''),
 }).default({
   videoRenderMode: 'mock',
   maxRenderCnyPerRun: 32,
+  draft: DEFAULT_STUDIO_VIDEO_DRAFT,
+  hq: DEFAULT_STUDIO_VIDEO_HQ,
+  image: DEFAULT_STUDIO_IMAGE,
+  qc: DEFAULT_STUDIO_QC,
   draftProvider: 'wan',
   hqProvider: 'kling',
   draftModel: 'Wan-AI/Wan2.2-I2V-A14B',

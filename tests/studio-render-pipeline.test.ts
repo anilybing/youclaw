@@ -30,6 +30,7 @@ import {
 } from '../src/studio/costLedger.ts'
 import {
   MockVideoProvider,
+  KlingVideoProvider,
   OpenAiCompatibleVideoProvider,
   resolveVideoProvider,
   studioVideoMode,
@@ -160,12 +161,17 @@ describe('VideoProvider（src/media，契约 Q1）', () => {
     expect(existsSync(res.filePath)).toBe(true)
   })
 
-  test('resolveVideoProvider：mock 模式=Mock；live 模式=OpenAiCompatible', () => {
+  test('resolveVideoProvider：mock=Mock；live 按 kind 路由(wan→OpenAiCompatible, kling→Kling)', () => {
     expect(studioVideoMode()).toBe('mock')
     expect(resolveVideoProvider('draft')).toBeInstanceOf(MockVideoProvider)
     process.env.XJC_STUDIO_VIDEO_MODE = 'live'
-    expect(studioVideoMode()).toBe('live')
-    expect(resolveVideoProvider('hq')).toBeInstanceOf(OpenAiCompatibleVideoProvider)
+    try {
+      expect(studioVideoMode()).toBe('live')
+      expect(resolveVideoProvider('draft')).toBeInstanceOf(OpenAiCompatibleVideoProvider) // draft kind 默认 wan
+      expect(resolveVideoProvider('hq')).toBeInstanceOf(KlingVideoProvider) // hq kind 默认 kling(原生首尾帧)
+    } finally {
+      delete process.env.XJC_STUDIO_VIDEO_MODE
+    }
   })
 
   test('OpenAiCompatibleVideoProvider.isConfigured：缺 baseUrl/apiKey/model = false', () => {
