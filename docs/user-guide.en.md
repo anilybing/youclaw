@@ -2,7 +2,7 @@
 
 > This Markdown file is a searchable maintenance reference, not the primary customer guide. The illustrated offline guide is `web/public/user-guide/index.html` and is available from the in-app User Guide entry.
 >
-> Applies to XiaoJuClaw 1.2.13  
+> Applies to XiaoJuClaw 1.2.14  
 > Editions: Windows installer, USB portable, and offline  
 > Last updated: July 11, 2026
 
